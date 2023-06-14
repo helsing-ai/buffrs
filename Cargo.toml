@@ -2,7 +2,7 @@
 name = "buffrs"
 version = "0.1.0"
 edition = "2021"
-description = "Helsings protocol buffers package manager"
+description = "An opinionated protobuf package manager"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
 
 [[bin]]
