@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "An opinionated protobuf package manager"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
+repository = "https://github.com/helsing-ai/buffrs"
+documentation = "https://docs.rs/buffrs"
+keywords = ["protobuf", "protocol", "buffers", "package", "distribution"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+license = "Apache-2.0"
 
 [[bin]]
 name = "buffrs"
