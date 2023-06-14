@@ -1,0 +1,31 @@
+[package]
+name = "buffrs"
+version = "0.1.0"
+edition = "2021"
+description = "Helsings protocol buffers package manager"
+authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
+
+[[bin]]
+name = "buffrs"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1.0"
+clap = { version = "4.3", features = ["cargo", "derive"] }
+color-eyre = "0.6"
+eyre = "0.6"
+flate2 = "1"
+futures = "0.3"
+home = "0.5.5"
+keyring = "2"
+reqwest = "0.11"
+serde = { version = "1", features = ["derive"] }
+tar = "0.4"
+tokio = { version = "1", features = ["full", "tracing"] }
+toml = "0.7"
+toml_edit = "0.19"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+url = { version = "2.4", features = ["serde"] }
+walkdir = "2"
