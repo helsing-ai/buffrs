@@ -1,4 +1,4 @@
-<img src="https://github.com/helsing-ai/buffrs/assets/37018485/794f7922-1b7f-4689-870a-7e1f03108ee5" onerror="this.style.display='none'" />
+<img src="https://github.com/helsing-ai/buffrs/assets/37018485/76c51445-b5a6-4f4e-a39c-7de7e31a0613" onerror="this.style.display='none'" />
 
 <h1 align="center">buffrs</h1>
 <div align="center">
