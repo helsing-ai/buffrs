@@ -21,6 +21,42 @@
 </div>
 <br />
 
+## Motivation
+
+Protocol Buffers are agreeably a great way to define fully typed,
+language-independent API schemas with strong backward compatibility guarantees.
+They offer a neat experience for API consumers through generated bindings. *The
+biggest problem associated with Protocol Buffers is their distribution.*
+
+- How do you consume the raw protobuf files of one project reliably in another
+  one?
+- How do you prevent transitive dependencies?
+- How do you publish to a unified registry with package format across
+  languages?
+
+One obvious way is to generate code bindings in the repository containing the
+Protocol Buffers and publish the generated bindings, but this is associated
+with problems such as language lock-in. You need to proactively publish
+bindings for any possible language your API consumers may use. Also, in
+strongly typed languages like Rust, it is hard to extend the behavior of
+generated code in consuming projects due to _the orphan rule_. Summing up: this
+approach works somehow but hurts frequently.
+
+This is where `buffrs` comes in: `buffrs` solves this by defining a strict,
+package-based distribution mechanism and treats Protocol Buffers as a
+first-class citizen.
+
+*This allows you to publish `buffrs` packages to a registry and properly depend
+on them in other projects.*
+
+## Roadmap
+
+- [x] Support project manifests and dependency declaration
+- [x] Support package distribution via Artifactory
+- [ ] Implement `buffrs-registry`, a self-hostable, S3-based registry.
+- [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, and
+  formatting.
+
 ## Installation
 
 You can install the `buffrs` package manager using:
