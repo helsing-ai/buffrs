@@ -2,7 +2,7 @@
 
 use std::{
     fmt::{self, Formatter},
-    io::{Cursor, Read, Write},
+    io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
-use crate::manifest::{Manifest, RawManifest, MANIFEST_FILE};
+use crate::manifest::{self, Manifest, PackageManifest, RawManifest, MANIFEST_FILE};
 
 /// IO abstraction layer over local `buffrs` package store
 pub struct PackageStore;
@@ -68,17 +68,21 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_DEP_PATH).join(package.name.as_package_dir());
+        let pkg_dir = Path::new(Self::PROTO_DEP_PATH).join(package.manifest.name.as_package_dir());
 
-        Self::uninstall(&package.name).await.ok();
+        Self::uninstall(&package.manifest.name).await.ok();
         fs::create_dir_all(&pkg_dir)
             .await
             .wrap_err("Failed to install dependencies")?;
 
         tar.unpack(pkg_dir)
-            .wrap_err(format!("Failed to unpack tar of {}", package.name))?;
+            .wrap_err(format!("Failed to unpack tar of {}", package.manifest.name))?;
 
-        tracing::info!("+ installed {}@{}", package.name, package.version);
+        tracing::info!(
+            "+ installed {}@{}",
+            package.manifest.name,
+            package.manifest.version
+        );
 
         Ok(())
     }
@@ -97,10 +101,10 @@ impl PackageStore {
         let mut manifest = RawManifest::from(Manifest::read().await?);
         manifest.dependencies = None;
 
-        let api = manifest
-            .api
+        let pkg = manifest
+            .package
             .to_owned()
-            .wrap_err("Releasing a package requires an api manifest")?;
+            .wrap_err("Releasing a package requires a package manifest")?;
 
         let manifest = toml::to_string_pretty(&manifest)
             .wrap_err("Failed to encode release manifest")?
@@ -109,11 +113,11 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        let api_path = fs::canonicalize(PathBuf::from_str(Self::PROTO_API_PATH)?)
+        let pkg_path = fs::canonicalize(PathBuf::from_str(Self::PROTO_API_PATH)?)
             .await
             .wrap_err("Failed to locate api package")?;
 
-        for entry in WalkDir::new(api_path).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(pkg_path).into_iter().filter_map(|e| e.ok()) {
             let ext = entry
                 .path()
                 .extension()
@@ -159,23 +163,17 @@ impl PackageStore {
             .wrap_err("Failed to release package")?
             .into();
 
-        tracing::info!("+ packaged {}@{}", api.name, api.version);
+        tracing::info!("+ packaged {}@{}", pkg.name, pkg.version);
 
-        Ok(Package {
-            name: api.name,
-            version: api.version,
-            tgz,
-        })
+        Ok(Package::new(pkg, tgz))
     }
 }
 
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Package {
-    /// The name of the package
-    pub name: PackageId,
-    /// The version of the package
-    pub version: String,
+    /// Manifest of the package
+    pub manifest: PackageManifest,
     /// The `tar.gz` archive containing the protocol buffers
     #[serde(skip)]
     pub tgz: Bytes,
