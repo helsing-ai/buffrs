@@ -1,7 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::config::Config;
 use buffrs::package::PackageId;
+use buffrs::{config::Config, package::PackageType};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -16,9 +16,9 @@ struct Cli {
 enum Command {
     /// Initializes a buffrs setup
     Init {
-        /// Sets up the repository as api package
+        /// Sets up the repository package
         #[clap(long)]
-        api: Option<PackageId>,
+        r#type: Option<PackageType>,
     },
 
     /// Adds dependencies to a manifest file
@@ -78,7 +78,7 @@ async fn main() -> eyre::Result<()> {
     let config = Config::load().await?;
 
     match cli.command {
-        Command::Init { api } => cmd::init(api).await?,
+        Command::Init { r#type } => cmd::init(r#type).await?,
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
         Command::Publish { repository } => cmd::publish(config, repository).await?,
@@ -94,19 +94,27 @@ async fn main() -> eyre::Result<()> {
 mod cmd {
     use buffrs::{
         config::Config,
-        manifest::{ApiManifest, Dependency, Manifest},
-        package::{Package, PackageId, PackageStore},
+        manifest::{Dependency, Manifest, PackageManifest},
+        package::{Package, PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
     };
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;
 
     /// Initializes the project
-    pub async fn init(api: Option<PackageId>) -> eyre::Result<()> {
+    pub async fn init(r#type: Option<PackageType>) -> eyre::Result<()> {
         let mut manifest = Manifest::default();
 
-        if let Some(name) = api {
-            manifest.api = Some(ApiManifest {
+        if let Some(r#type) = r#type {
+            let name = std::env::current_dir()?
+                .file_name()
+                .wrap_err("Failed to read current directory name")?
+                .to_str()
+                .wrap_err("Failed to read current directory name")?
+                .parse()?;
+
+            manifest.package = Some(PackageManifest {
+                r#type,
                 name,
                 version: "0.0.1".to_owned(),
                 description: None,
