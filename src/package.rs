@@ -23,31 +23,36 @@ impl PackageStore {
     /// Path to the proto directory
     pub const PROTO_PATH: &str = "proto";
     /// Path to the api directory
+    pub const PROTO_LIB_PATH: &str = "proto/lib";
+    /// Path to the api directory
     pub const PROTO_API_PATH: &str = "proto/api";
     /// Path to the dependency store
     pub const PROTO_DEP_PATH: &str = "proto/dep";
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create(api: bool) -> eyre::Result<()> {
-        if api {
-            fs::create_dir_all(Self::PROTO_API_PATH)
-                .await
-                .wrap_err(eyre::eyre!(
-                    "Failed to create api folder {}",
-                    Path::new(Self::PROTO_API_PATH)
-                        .canonicalize()?
-                        .to_string_lossy()
-                ))?;
-        }
-
-        fs::create_dir_all(Self::PROTO_DEP_PATH)
-            .await
-            .wrap_err(eyre::eyre!(
+    pub async fn create(r#type: Option<PackageType>) -> eyre::Result<()> {
+        let create = |dir: &'static str| async move {
+            fs::create_dir_all(dir).await.wrap_err(eyre::eyre!(
                 "Failed to create dependency folder {}",
-                Path::new(Self::PROTO_DEP_PATH)
-                    .canonicalize()?
-                    .to_string_lossy()
+                Path::new(dir).canonicalize()?.to_string_lossy()
             ))
+        };
+
+        match r#type {
+            Some(PackageType::Lib) => {
+                create(Self::PROTO_LIB_PATH).await?;
+                Ok(())
+            }
+            Some(PackageType::Api) => {
+                create(Self::PROTO_API_PATH).await?;
+                create(Self::PROTO_DEP_PATH).await?;
+                Ok(())
+            }
+            None => {
+                create(Self::PROTO_DEP_PATH).await?;
+                Ok(())
+            }
+        }
     }
 
     /// Clears all packages from the file system
@@ -218,7 +223,7 @@ impl Package {
 }
 
 /// Package types
-#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageType {
     /// A library package containing primitive type definitions

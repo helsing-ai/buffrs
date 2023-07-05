@@ -16,9 +16,12 @@ struct Cli {
 enum Command {
     /// Initializes a buffrs setup
     Init {
-        /// Sets up the repository package
-        #[clap(long)]
-        r#type: Option<PackageType>,
+        /// Sets up the package as lib
+        #[clap(long, conflicts_with = "api")]
+        lib: bool,
+        /// Sets up the package as api
+        #[clap(long, conflicts_with = "lib")]
+        api: bool,
     },
 
     /// Adds dependencies to a manifest file
@@ -78,7 +81,16 @@ async fn main() -> eyre::Result<()> {
     let config = Config::load().await?;
 
     match cli.command {
-        Command::Init { r#type } => cmd::init(r#type).await?,
+        Command::Init { lib, api } => {
+            cmd::init(if lib {
+                Some(PackageType::Lib)
+            } else if api {
+                Some(PackageType::Api)
+            } else {
+                None
+            })
+            .await?
+        }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
         Command::Publish { repository } => cmd::publish(config, repository).await?,
@@ -126,7 +138,9 @@ mod cmd {
             "Cant initialize existing project"
         );
 
-        manifest.write().await
+        manifest.write().await?;
+
+        PackageStore::create(r#type).await
     }
 
     /// Adds a dependency to this project
