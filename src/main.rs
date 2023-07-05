@@ -64,6 +64,8 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    human_panic::setup_panic!();
+
     color_eyre::install()?;
 
     tracing_subscriber::fmt()

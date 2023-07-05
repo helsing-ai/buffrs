@@ -24,6 +24,7 @@ eyre = "0.6"
 flate2 = "1"
 futures = "0.3"
 home = "0.5.5"
+human-panic = "1"
 keyring = "2"
 reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
