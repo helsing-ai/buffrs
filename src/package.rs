@@ -181,8 +181,63 @@ pub struct Package {
 
 impl Package {
     /// Creates a new package
-    pub fn new(name: PackageId, version: String, tgz: Bytes) -> Self {
-        Self { name, version, tgz }
+    pub fn new(manifest: PackageManifest, tgz: Bytes) -> Self {
+        Self { manifest, tgz }
+    }
+
+    /// Decodes the tar and returns the encoded manifest
+    pub fn decode(tgz: Bytes) -> eyre::Result<Self> {
+        let mut tar = Vec::new();
+
+        let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
+
+        gz.read_to_end(&mut tar)
+            .wrap_err("Failed to decompress package")?;
+
+        let mut tar = tar::Archive::new(Bytes::from(tar).reader());
+
+        let manifest = tar
+            .entries()?
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                entry
+                    .path()
+                    .ok()
+                    .filter(|path| path.is_file())
+                    .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
+                    .is_some()
+            })
+            .wrap_err("Failed to find manifest in package")?;
+
+        let manifest: Vec<u8> = manifest.bytes().collect::<io::Result<Vec<u8>>>()?;
+        let manifest = toml::from_str(&String::from_utf8(manifest)?)
+            .wrap_err("Failed to parse the manifest")?;
+
+        Ok(Self { manifest, tgz })
+    }
+}
+
+/// Package types
+#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageType {
+    /// A library package containing primitive type definitions
+    Lib,
+    /// A api package containing message and service definition
+    Api,
+}
+
+impl FromStr for PackageType {
+    type Err = serde_typename::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_typename::from_str(s)
+    }
+}
+
+impl fmt::Display for PackageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_typename::to_str(self).unwrap_or_default())
     }
 }
 

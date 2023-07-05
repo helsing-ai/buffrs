@@ -285,6 +285,7 @@ dependencies = [
  "keyring",
  "reqwest",
  "serde",
+ "serde_typename",
  "tar",
  "tokio",
  "toml",
@@ -1648,6 +1649,15 @@ name = "serde_spanned"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93107647184f6027e3b7dcb2e11034cf95ffa1e3a682c67951963ac69c1c007d"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "serde_typename"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2531ff92ba8ea226702685bdd332d30dd56e7d2717c322ec035fc7bb277abfbd"
 dependencies = [
  "serde",
 ]
