@@ -78,9 +78,7 @@ impl PackageStore {
 
         let pkg_dir = path.join(package.manifest.name.as_package_dir());
 
-        fs::remove_dir_all(&pkg_dir)
-            .await
-            .wrap_err(format!("Failed to uninstall {}", package.manifest.name))?;
+        fs::remove_dir_all(&pkg_dir).await.ok();
 
         fs::create_dir_all(&pkg_dir)
             .await
