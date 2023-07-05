@@ -109,7 +109,7 @@ mod cmd {
     use buffrs::{
         config::Config,
         manifest::{Dependency, Manifest, PackageManifest},
-        package::{Package, PackageId, PackageStore, PackageType},
+        package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
     };
     use eyre::{ensure, Context, ContextCompat};
@@ -237,18 +237,10 @@ mod cmd {
 
         let manifest = Manifest::read().await?;
 
-        let mut packages = Vec::with_capacity(manifest.dependencies.len());
-
-        for dep in manifest.dependencies {
-            packages.push(artifactory.download(dep));
-        }
-
-        let packages: Vec<Package> = try_join_all(packages).await?;
-
         let mut install = Vec::new();
 
-        for package in packages {
-            install.push(PackageStore::install(package));
+        for dependency in manifest.dependencies {
+            install.push(PackageStore::install(dependency, artifactory.clone()));
         }
 
         try_join_all(install).await?;
