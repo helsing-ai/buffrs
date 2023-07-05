@@ -1,5 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
+use std::sync::Arc;
+
 use eyre::{ensure, Context};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -8,7 +10,8 @@ use super::Registry;
 use crate::{manifest::Dependency, package::Package};
 
 /// The registry implementation for artifactory
-pub struct Artifactory(ArtifactoryConfig);
+#[derive(Debug, Clone)]
+pub struct Artifactory(Arc<ArtifactoryConfig>);
 
 #[async_trait::async_trait]
 impl Registry for Artifactory {
@@ -70,7 +73,7 @@ impl Registry for Artifactory {
         );
 
         tracing::info!(
-            "+ published {}/{}@{}",
+            ":: published {}/{}@{}",
             repository,
             package.manifest.name,
             package.manifest.version
@@ -82,7 +85,7 @@ impl Registry for Artifactory {
 
 impl From<ArtifactoryConfig> for Artifactory {
     fn from(cfg: ArtifactoryConfig) -> Self {
-        Self(cfg)
+        Self(cfg.into())
     }
 }
 
