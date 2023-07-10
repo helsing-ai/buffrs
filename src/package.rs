@@ -271,9 +271,12 @@ impl Package {
     pub fn new(manifest: PackageManifest, tgz: Bytes) -> Self {
         Self { manifest, tgz }
     }
+}
 
-    /// Decodes the tar and returns the encoded manifest
-    pub fn decode(tgz: Bytes) -> eyre::Result<Self> {
+impl TryFrom<Bytes> for Package {
+    type Error = eyre::Error;
+
+    fn try_from(tgz: Bytes) -> eyre::Result<Self> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
