@@ -13,20 +13,47 @@ use crate::{manifest::Dependency, package::Package};
 #[derive(Debug, Clone)]
 pub struct Artifactory(Arc<ArtifactoryConfig>);
 
+impl Artifactory {
+    /// Pings artifactory to ensure registry access is working
+    pub async fn ping(&self) -> eyre::Result<()> {
+        let repositories_uri: Url = self
+            .0
+            .url
+            .join("api/repositories")
+            .wrap_err("Failed to construct ping uri")?;
+
+        let response = reqwest::Client::new()
+            .get(repositories_uri.clone())
+            .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
+            .send()
+            .await?;
+
+        ensure!(response.status().is_success(), "Failed to ping artifactory");
+
+        tracing::debug!("pinging artifactory succeeded");
+
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl Registry for Artifactory {
     /// Downloads a package from artifactory
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        let artifact_uri: Url = format!(
-            "{}/{}/{}/{}-{}.tgz",
-            self.0.url,
-            dependency.manifest.repository,
-            dependency.package,
-            dependency.package,
-            dependency.manifest.version
-        )
-        .parse()
-        .wrap_err("Failed to construct artifact uri")?;
+        const URI_ERR: &str = "Failed to construct artifact uri";
+
+        let artifact_uri: Url = self
+            .0
+            .url
+            .join(&dependency.manifest.repository)
+            .wrap_err(URI_ERR)?
+            .join(&dependency.package)
+            .wrap_err(URI_ERR)?
+            .join(&format!(
+                "{}-{}.tgz",
+                dependency.package, dependency.manifest.version
+            ))
+            .wrap_err(URI_ERR)?;
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())

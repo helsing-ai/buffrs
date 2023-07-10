@@ -265,8 +265,15 @@ mod cmd {
 
         password = password.trim().to_owned();
 
-        config.artifactory = Some(ArtifactoryConfig::new(url, username, password)?);
+        let cfg = ArtifactoryConfig::new(url, username, password)?;
+        let artifactory = Artifactory::from(cfg.clone());
 
+        artifactory
+            .ping()
+            .await
+            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+
+        config.artifactory = Some(cfg);
         config.write().await
     }
 
