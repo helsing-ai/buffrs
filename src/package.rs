@@ -105,10 +105,9 @@ impl PackageStore {
 
         Self::unpack(&package, dep_dir).await?;
 
-        tracing::info!(
+        let mut tree = format!(
             ":: installed {}@{}",
-            package.manifest.name,
-            package.manifest.version
+            package.manifest.name, package.manifest.version
         );
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
@@ -128,12 +127,13 @@ impl PackageStore {
                 '┣'
             };
 
-            tracing::info!(
-                "   {tree_char} installed {}@{}",
-                dependency.manifest.name,
-                dependency.manifest.version
-            );
+            tree.push_str(&format!(
+                "\n   {tree_char} installed {}@{}",
+                dependency.manifest.name, dependency.manifest.version
+            ));
         }
+
+        tracing::info!("{tree}");
 
         Ok(())
     }
