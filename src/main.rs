@@ -1,7 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::config::Config;
 use buffrs::package::PackageId;
+use buffrs::{config::Config, package::PackageType};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -16,9 +16,12 @@ struct Cli {
 enum Command {
     /// Initializes a buffrs setup
     Init {
-        /// Sets up the repository as api package
-        #[clap(long)]
-        api: Option<PackageId>,
+        /// Sets up the package as lib
+        #[clap(long, conflicts_with = "api")]
+        lib: bool,
+        /// Sets up the package as api
+        #[clap(long, conflicts_with = "lib")]
+        api: bool,
     },
 
     /// Adds dependencies to a manifest file
@@ -61,6 +64,8 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    human_panic::setup_panic!();
+
     color_eyre::install()?;
 
     tracing_subscriber::fmt()
@@ -78,7 +83,16 @@ async fn main() -> eyre::Result<()> {
     let config = Config::load().await?;
 
     match cli.command {
-        Command::Init { api } => cmd::init(api).await?,
+        Command::Init { lib, api } => {
+            cmd::init(if lib {
+                Some(PackageType::Lib)
+            } else if api {
+                Some(PackageType::Api)
+            } else {
+                None
+            })
+            .await?
+        }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
         Command::Publish { repository } => cmd::publish(config, repository).await?,
@@ -94,19 +108,27 @@ async fn main() -> eyre::Result<()> {
 mod cmd {
     use buffrs::{
         config::Config,
-        manifest::{ApiManifest, Dependency, Manifest},
-        package::{Package, PackageId, PackageStore},
+        manifest::{Dependency, Manifest, PackageManifest},
+        package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
     };
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;
 
     /// Initializes the project
-    pub async fn init(api: Option<PackageId>) -> eyre::Result<()> {
+    pub async fn init(r#type: Option<PackageType>) -> eyre::Result<()> {
         let mut manifest = Manifest::default();
 
-        if let Some(name) = api {
-            manifest.api = Some(ApiManifest {
+        if let Some(r#type) = r#type {
+            let name = std::env::current_dir()?
+                .file_name()
+                .wrap_err("Failed to read current directory name")?
+                .to_str()
+                .wrap_err("Failed to read current directory name")?
+                .parse()?;
+
+            manifest.package = Some(PackageManifest {
+                r#type,
                 name,
                 version: "0.0.1".to_owned(),
                 description: None,
@@ -118,7 +140,9 @@ mod cmd {
             "Cant initialize existing project"
         );
 
-        manifest.write().await
+        manifest.write().await?;
+
+        PackageStore::create(r#type).await
     }
 
     /// Adds a dependency to this project
@@ -213,18 +237,10 @@ mod cmd {
 
         let manifest = Manifest::read().await?;
 
-        let mut packages = Vec::with_capacity(manifest.dependencies.len());
-
-        for dep in manifest.dependencies {
-            packages.push(artifactory.download(dep));
-        }
-
-        let packages: Vec<Package> = try_join_all(packages).await?;
-
         let mut install = Vec::new();
 
-        for package in packages {
-            install.push(PackageStore::install(package));
+        for dependency in manifest.dependencies {
+            install.push(PackageStore::install(dependency, artifactory.clone()));
         }
 
         try_join_all(install).await?;

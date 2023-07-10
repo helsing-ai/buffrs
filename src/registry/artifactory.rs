@@ -1,5 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
+use std::sync::Arc;
+
 use eyre::{ensure, Context};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -8,7 +10,8 @@ use super::Registry;
 use crate::{manifest::Dependency, package::Package};
 
 /// The registry implementation for artifactory
-pub struct Artifactory(ArtifactoryConfig);
+#[derive(Debug, Clone)]
+pub struct Artifactory(Arc<ArtifactoryConfig>);
 
 #[async_trait::async_trait]
 impl Registry for Artifactory {
@@ -40,18 +43,18 @@ impl Registry for Artifactory {
 
         let tgz = response.bytes().await.wrap_err("Failed to download tar")?;
 
-        Ok(Package::new(
-            dependency.package,
-            dependency.manifest.version,
-            tgz,
-        ))
+        Package::try_from(tgz)
     }
 
     /// Publishes a package to artifactory
     async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.0.url, repository, package.name, package.name, package.version
+            self.0.url,
+            repository,
+            package.manifest.name,
+            package.manifest.name,
+            package.manifest.version,
         )
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
@@ -66,14 +69,14 @@ impl Registry for Artifactory {
         ensure!(
             response.status().is_success(),
             "Failed to publish {}",
-            package.name
+            package.manifest.name
         );
 
         tracing::info!(
-            "+ pubished {}/{}@{}",
+            ":: published {}/{}@{}",
             repository,
-            package.name,
-            package.version
+            package.manifest.name,
+            package.manifest.version
         );
 
         Ok(())
@@ -82,7 +85,7 @@ impl Registry for Artifactory {
 
 impl From<ArtifactoryConfig> for Artifactory {
     fn from(cfg: ArtifactoryConfig) -> Self {
-        Self(cfg)
+        Self(cfg.into())
     }
 }
 

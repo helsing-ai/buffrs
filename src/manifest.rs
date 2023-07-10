@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 use tokio::fs;
 
-use crate::package::PackageId;
+use crate::package::{PackageId, PackageType};
 
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
@@ -15,7 +15,7 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 /// empty fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RawManifest {
-    pub api: Option<ApiManifest>,
+    pub package: Option<PackageManifest>,
     pub dependencies: Option<DependencyMap>,
 }
 
@@ -30,7 +30,7 @@ impl From<Manifest> for RawManifest {
         let dependencies = (!dependencies.is_empty()).then_some(dependencies);
 
         Self {
-            api: manifest.api,
+            package: manifest.package,
             dependencies,
         }
     }
@@ -43,7 +43,7 @@ pub type DependencyMap = HashMap<PackageId, DependencyManifest>;
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Manifest {
-    pub api: Option<ApiManifest>,
+    pub package: Option<PackageManifest>,
     pub dependencies: Vec<Dependency>,
 }
 
@@ -86,18 +86,20 @@ impl From<RawManifest> for Manifest {
             .collect();
 
         Self {
-            api: raw.api,
+            package: raw.package,
             dependencies,
         }
     }
 }
 
 /// Manifest format for api packages
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ApiManifest {
-    /// Name of the api package
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PackageManifest {
+    /// Type of the package
+    pub r#type: PackageType,
+    /// Name of the package
     pub name: PackageId,
-    /// Version of the api package
+    /// Version of the package
     pub version: String,
     /// Description of the api package
     pub description: Option<String>,

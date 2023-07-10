@@ -2,7 +2,7 @@
 
 use std::{
     fmt::{self, Formatter},
-    io::{Cursor, Read, Write},
+    io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
-use crate::manifest::{Manifest, RawManifest, MANIFEST_FILE};
+use crate::{
+    manifest::{self, Dependency, Manifest, PackageManifest, RawManifest, MANIFEST_FILE},
+    registry::Registry,
+};
 
 /// IO abstraction layer over local `buffrs` package store
 pub struct PackageStore;
@@ -22,32 +25,37 @@ pub struct PackageStore;
 impl PackageStore {
     /// Path to the proto directory
     pub const PROTO_PATH: &str = "proto";
+    /// Path to the lib directory
+    pub const PROTO_LIB_PATH: &str = "proto/lib";
     /// Path to the api directory
     pub const PROTO_API_PATH: &str = "proto/api";
     /// Path to the dependency store
     pub const PROTO_DEP_PATH: &str = "proto/dep";
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create(api: bool) -> eyre::Result<()> {
-        if api {
-            fs::create_dir_all(Self::PROTO_API_PATH)
-                .await
-                .wrap_err(eyre::eyre!(
-                    "Failed to create api folder {}",
-                    Path::new(Self::PROTO_API_PATH)
-                        .canonicalize()?
-                        .to_string_lossy()
-                ))?;
-        }
-
-        fs::create_dir_all(Self::PROTO_DEP_PATH)
-            .await
-            .wrap_err(eyre::eyre!(
+    pub async fn create(r#type: Option<PackageType>) -> eyre::Result<()> {
+        let create = |dir: &'static str| async move {
+            fs::create_dir_all(dir).await.wrap_err(eyre::eyre!(
                 "Failed to create dependency folder {}",
-                Path::new(Self::PROTO_DEP_PATH)
-                    .canonicalize()?
-                    .to_string_lossy()
+                Path::new(dir).canonicalize()?.to_string_lossy()
             ))
+        };
+
+        match r#type {
+            Some(PackageType::Lib) => {
+                create(Self::PROTO_LIB_PATH).await?;
+                Ok(())
+            }
+            Some(PackageType::Api) => {
+                create(Self::PROTO_API_PATH).await?;
+                create(Self::PROTO_DEP_PATH).await?;
+                Ok(())
+            }
+            None => {
+                create(Self::PROTO_DEP_PATH).await?;
+                Ok(())
+            }
+        }
     }
 
     /// Clears all packages from the file system
@@ -57,28 +65,75 @@ impl PackageStore {
             .wrap_err("Failed to uninstall dependencies")
     }
 
-    /// Installs a package into the local file system
-    pub async fn install(package: Package) -> eyre::Result<()> {
+    /// Unpacks a package into a local directory
+    pub async fn unpack(package: &Package, path: &Path) -> eyre::Result<()> {
         let mut tar = Vec::new();
 
-        let mut gz = flate2::read::GzDecoder::new(package.tgz.reader());
+        let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
 
         gz.read_to_end(&mut tar)
             .wrap_err("Failed to decompress package")?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_DEP_PATH).join(package.name.as_package_dir());
+        let pkg_dir = path.join(package.manifest.name.as_package_dir());
 
-        Self::uninstall(&package.name).await.ok();
+        fs::remove_dir_all(&pkg_dir).await.ok();
+
         fs::create_dir_all(&pkg_dir)
             .await
             .wrap_err("Failed to install dependencies")?;
 
-        tar.unpack(pkg_dir)
-            .wrap_err(format!("Failed to unpack tar of {}", package.name))?;
+        tar.unpack(pkg_dir.clone())
+            .wrap_err(format!("Failed to unpack tar of {}", package.manifest.name))?;
 
-        tracing::info!("+ installed {}@{}", package.name, package.version);
+        tracing::debug!(
+            ":: unpacked {}@{} into {}",
+            package.manifest.name,
+            package.manifest.version,
+            pkg_dir.display()
+        );
+
+        Ok(())
+    }
+
+    /// Installs a package and all of its dependency into the local filesystem
+    pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
+        let package = registry.download(dependency).await?;
+
+        let dep_dir = Path::new(Self::PROTO_DEP_PATH);
+
+        Self::unpack(&package, dep_dir).await?;
+
+        let mut tree = format!(
+            ":: installed {}@{}",
+            package.manifest.name, package.manifest.version
+        );
+
+        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
+
+        let package_dir = &dep_dir.join(package.manifest.name.as_str());
+
+        let dependency_count = dependencies.len();
+
+        for (index, dependency) in dependencies.into_iter().enumerate() {
+            let dependency = registry.download(dependency).await?;
+
+            Self::unpack(&dependency, &package_dir).await?;
+
+            let tree_char = if index + 1 == dependency_count {
+                '┗'
+            } else {
+                '┣'
+            };
+
+            tree.push_str(&format!(
+                "\n   {tree_char} installed {}@{}",
+                dependency.manifest.name, dependency.manifest.version
+            ));
+        }
+
+        tracing::info!("{tree}");
 
         Ok(())
     }
@@ -92,28 +147,64 @@ impl PackageStore {
             .wrap_err("Failed to uninstall {dependency}")
     }
 
+    /// Resolves a package in the local file system
+    pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
+        let manifest = Path::new(Self::PROTO_DEP_PATH)
+            .join(package.as_package_dir())
+            .join(MANIFEST_FILE);
+
+        let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
+            "Failed to locate local manifest for package: {package}"
+        ))?;
+
+        toml::from_str::<RawManifest>(&manifest)
+            .wrap_err(format!("Malformed manifest of package {package}"))
+            .map(Manifest::from)
+    }
+
     /// Packages a release from the local file system state
     pub async fn release() -> eyre::Result<Package> {
-        let mut manifest = RawManifest::from(Manifest::read().await?);
-        manifest.dependencies = None;
+        let manifest = Manifest::read().await?;
 
-        let api = manifest
-            .api
+        let pkg = manifest
+            .package
             .to_owned()
-            .wrap_err("Releasing a package requires an api manifest")?;
+            .wrap_err("Releasing a package requires a package manifest")?;
 
-        let manifest = toml::to_string_pretty(&manifest)
+        if let PackageType::Lib = pkg.r#type {
+            ensure!(
+                manifest.dependencies.is_empty(),
+                "Libraries can not have any dependencies"
+            );
+        }
+
+        for ref dependency in manifest.dependencies.iter() {
+            let resolved = Self::resolve(&dependency.package)
+                .await
+                .wrap_err("Failed to resolve dependency locally")?;
+
+            let package = resolved
+                .package
+                .wrap_err("Local dependencies must contain a package declaration")?;
+
+            ensure!(
+                package.r#type == PackageType::Lib,
+                "Depending on api packages is prohibited"
+            );
+        }
+
+        let pkg_path = fs::canonicalize(pkg.r#type.as_path_buf()?)
+            .await
+            .wrap_err("Failed to locate api package")?;
+
+        let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
             .wrap_err("Failed to encode release manifest")?
             .as_bytes()
             .to_vec();
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        let api_path = fs::canonicalize(PathBuf::from_str(Self::PROTO_API_PATH)?)
-            .await
-            .wrap_err("Failed to locate api package")?;
-
-        for entry in WalkDir::new(api_path).into_iter().filter_map(|e| e.ok()) {
+        for entry in WalkDir::new(pkg_path).into_iter().filter_map(|e| e.ok()) {
             let ext = entry
                 .path()
                 .extension()
@@ -159,23 +250,17 @@ impl PackageStore {
             .wrap_err("Failed to release package")?
             .into();
 
-        tracing::info!("+ packaged {}@{}", api.name, api.version);
+        tracing::info!(":: packaged {}@{}", pkg.name, pkg.version);
 
-        Ok(Package {
-            name: api.name,
-            version: api.version,
-            tgz,
-        })
+        Ok(Package::new(pkg, tgz))
     }
 }
 
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Package {
-    /// The name of the package
-    pub name: PackageId,
-    /// The version of the package
-    pub version: String,
+    /// Manifest of the package
+    pub manifest: PackageManifest,
     /// The `tar.gz` archive containing the protocol buffers
     #[serde(skip)]
     pub tgz: Bytes,
@@ -183,8 +268,79 @@ pub struct Package {
 
 impl Package {
     /// Creates a new package
-    pub fn new(name: PackageId, version: String, tgz: Bytes) -> Self {
-        Self { name, version, tgz }
+    pub fn new(manifest: PackageManifest, tgz: Bytes) -> Self {
+        Self { manifest, tgz }
+    }
+}
+
+impl TryFrom<Bytes> for Package {
+    type Error = eyre::Error;
+
+    fn try_from(tgz: Bytes) -> eyre::Result<Self> {
+        let mut tar = Vec::new();
+
+        let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
+
+        gz.read_to_end(&mut tar)
+            .wrap_err("Failed to decompress package")?;
+
+        let mut tar = tar::Archive::new(Bytes::from(tar).reader());
+
+        let manifest = tar
+            .entries()?
+            .filter_map(|entry| entry.ok())
+            .find(|entry| {
+                entry
+                    .path()
+                    .ok()
+                    .filter(|path| path.is_file())
+                    .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
+                    .is_some()
+            })
+            .wrap_err("Failed to find manifest in package")?;
+
+        let manifest: Vec<u8> = manifest.bytes().collect::<io::Result<Vec<u8>>>()?;
+        let manifest: RawManifest = toml::from_str(&String::from_utf8(manifest)?)
+            .wrap_err("Failed to parse the manifest")?;
+
+        let manifest = manifest
+            .package
+            .wrap_err("The package section is missing the manifest")?;
+
+        Ok(Self { manifest, tgz })
+    }
+}
+
+/// Package types
+#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageType {
+    /// A library package containing primitive type definitions
+    Lib,
+    /// A api package containing message and service definition
+    Api,
+}
+
+impl PackageType {
+    pub fn as_path_buf(&self) -> Result<PathBuf, <PathBuf as FromStr>::Err> {
+        match self {
+            Self::Lib => PackageStore::PROTO_LIB_PATH.parse(),
+            Self::Api => PackageStore::PROTO_API_PATH.parse(),
+        }
+    }
+}
+
+impl FromStr for PackageType {
+    type Err = serde_typename::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        serde_typename::from_str(s)
+    }
+}
+
+impl fmt::Display for PackageType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", serde_typename::to_str(self).unwrap_or_default())
     }
 }
 
