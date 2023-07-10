@@ -193,9 +193,14 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = fs::canonicalize(pkg.r#type.as_path_buf()?)
-            .await
-            .wrap_err("Failed to locate api package")?;
+        let pkg_path = pkg.r#type.as_path_buf()?;
+
+        let pkg_path = fs::canonicalize(&pkg_path).await.wrap_err_with(|| {
+            format!(
+                "Failed to locate package folder (expected directory {} to be present)",
+                pkg_path.display()
+            )
+        })?;
 
         let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
             .wrap_err("Failed to encode release manifest")?
