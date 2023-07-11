@@ -16,11 +16,11 @@ pub struct Artifactory(Arc<ArtifactoryConfig>);
 impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let repositories_uri: Url = self
-            .0
-            .url
-            .join("api/repositories")
-            .wrap_err("Failed to construct ping uri")?;
+        let repositories_uri: Url = {
+            let mut url = self.0.url.clone();
+            url.set_path(&format!("{}/api/repositories", url.path()));
+            url
+        };
 
         let response = reqwest::Client::new()
             .get(repositories_uri.clone())
@@ -40,20 +40,20 @@ impl Artifactory {
 impl Registry for Artifactory {
     /// Downloads a package from artifactory
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        const URI_ERR: &str = "Failed to construct artifact uri";
+        let artifact_uri: Url = {
+            let mut url = self.0.url.clone();
 
-        let artifact_uri: Url = self
-            .0
-            .url
-            .join(&dependency.manifest.repository)
-            .wrap_err(URI_ERR)?
-            .join(&dependency.package)
-            .wrap_err(URI_ERR)?
-            .join(&format!(
-                "{}-{}.tgz",
-                dependency.package, dependency.manifest.version
-            ))
-            .wrap_err(URI_ERR)?;
+            url.set_path(&format!(
+                "{}/{}/{}/{}-{}.tgz",
+                url.path(),
+                dependency.manifest.repository,
+                dependency.package,
+                dependency.package,
+                dependency.manifest.version
+            ));
+
+            url
+        };
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
