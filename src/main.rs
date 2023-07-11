@@ -42,6 +42,12 @@ enum Command {
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
+        /// Allow a dirty git working tree while publishing
+        #[clap(long)]
+        allow_dirty: bool,
+        /// Abort right before uploading the release to the registry
+        #[clap(long)]
+        dry_run: bool,
     },
 
     /// Installs dependencies
@@ -95,7 +101,11 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
-        Command::Publish { repository } => cmd::publish(config, repository).await?,
+        Command::Publish {
+            repository,
+            allow_dirty,
+            dry_run,
+        } => cmd::publish(config, repository, allow_dirty, dry_run).await?,
         Command::Install => cmd::install(config).await?,
         Command::Uninstall => cmd::uninstall().await?,
         Command::Login { url, username } => cmd::login(config, url, username).await?,
@@ -106,6 +116,8 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
+    use std::path::Path;
+
     use buffrs::{
         config::Config,
         manifest::{Dependency, Manifest, PackageManifest},
@@ -210,7 +222,30 @@ mod cmd {
     }
 
     /// Publishs the api package to the registry
-    pub async fn publish(config: Config, repository: String) -> eyre::Result<()> {
+    pub async fn publish(
+        config: Config,
+        repository: String,
+        allow_dirty: bool,
+        dry_run: bool,
+    ) -> eyre::Result<()> {
+        if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
+            let statuses = repository
+                .statuses(None)
+                .wrap_err("Failed to get git status")?;
+
+            if !allow_dirty && !statuses.is_empty() {
+                tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
+
+                statuses
+                    .iter()
+                    .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
+
+                tracing::error!("\nTo proceed with publishing despite the uncommited changes, pass the `--allow-dirty` flag\n");
+
+                eyre::bail!("Unable to publish a dirty git repository");
+            }
+        }
+
         let artifactory = {
             let Some(artifactory) = config.artifactory else {
                 eyre::bail!("Unable to publish package to artifactory, please login using `buffrs login`");
@@ -222,6 +257,11 @@ mod cmd {
         let package = PackageStore::release()
             .await
             .wrap_err("Failed to create release")?;
+
+        if dry_run {
+            tracing::warn!(":: aborting upload due to dry run");
+            return Ok(());
+        }
 
         artifactory.publish(package, repository).await?;
 
