@@ -112,7 +112,7 @@ impl PackageStore {
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
 
-        let package_dir = &dep_dir.join(package.manifest.name.as_str());
+        let package_dir = &dep_dir.join(package.manifest.name.as_package_dir());
 
         let dependency_count = dependencies.len();
 
