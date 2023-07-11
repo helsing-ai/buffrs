@@ -120,11 +120,13 @@ mod cmd {
         let mut manifest = Manifest::default();
 
         if let Some(r#type) = r#type {
+            const DIR_ERR: &str = "Failed to read current directory name";
+
             let name = std::env::current_dir()?
                 .file_name()
-                .wrap_err("Failed to read current directory name")?
+                .wrap_err(DIR_ERR)?
                 .to_str()
-                .wrap_err("Failed to read current directory name")?
+                .wrap_err(DIR_ERR)?
                 .parse()?;
 
             manifest.package = Some(PackageManifest {
@@ -159,16 +161,13 @@ mod cmd {
             "Repositories must be in the format <group>-proto-<stability>"
         );
 
-        ensure!(
-            repository.contains("-proto-"),
-            "Only proto repositories are allowed"
-        );
-
         let (package, version) = dependency
             .split_once('@')
             .wrap_err("Invalid dependency specification")?;
 
-        let package = package.parse::<PackageId>()?;
+        let package = package
+            .parse::<PackageId>()
+            .wrap_err("Invalid package id supplied")?;
 
         ensure!(
             version
@@ -203,7 +202,9 @@ mod cmd {
 
         manifest.dependencies.retain(|d| *d != dependency);
 
-        PackageStore::uninstall(&dependency.package).await?;
+        PackageStore::uninstall(&dependency.package)
+            .await
+            .wrap_err("Failed to uninstall dependency")?;
 
         manifest.write().await
     }
@@ -218,7 +219,9 @@ mod cmd {
             Artifactory::from(artifactory)
         };
 
-        let package = PackageStore::release().await?;
+        let package = PackageStore::release()
+            .await
+            .wrap_err("Failed to create release")?;
 
         artifactory.publish(package, repository).await?;
 
@@ -243,7 +246,9 @@ mod cmd {
             install.push(PackageStore::install(dependency, artifactory.clone()));
         }
 
-        try_join_all(install).await?;
+        try_join_all(install)
+            .await
+            .wrap_err("Failed to install dependencies")?;
 
         Ok(())
     }
@@ -265,7 +270,9 @@ mod cmd {
 
         password = password.trim().to_owned();
 
-        let cfg = ArtifactoryConfig::new(url, username, password)?;
+        let cfg = ArtifactoryConfig::new(url, username, password)
+            .wrap_err("Failed to create artifactory configuration")?;
+
         let artifactory = Artifactory::from(cfg.clone());
 
         artifactory
@@ -280,7 +287,8 @@ mod cmd {
     /// Logs you out from a registry
     pub async fn logout(mut config: Config) -> eyre::Result<()> {
         if let Some(cfg) = config.artifactory {
-            cfg.clear()?;
+            cfg.clear()
+                .wrap_err("Failed to clear the artifactory configuration")?;
         }
 
         config.artifactory = None;

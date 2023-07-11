@@ -63,7 +63,8 @@ impl Registry for Artifactory {
 
         ensure!(
             response.status().is_success(),
-            "Failed to fetch {dependency}"
+            "Failed to fetch {dependency}: {}",
+            response.status()
         );
 
         tracing::debug!("downloaded dependency {dependency}");
@@ -91,12 +92,14 @@ impl Registry for Artifactory {
             .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
             .body(package.tgz)
             .send()
-            .await?;
+            .await
+            .wrap_err("Failed to upload release to artifactory")?;
 
         ensure!(
             response.status().is_success(),
-            "Failed to publish {}",
-            package.manifest.name
+            "Failed to publish {}: {}",
+            package.manifest.name,
+            response.status()
         );
 
         tracing::info!(
