@@ -170,16 +170,16 @@ mod cmd {
 
         ensure!(
             repository.chars().all(lower_kebab),
-            "Repositories must be in the format <group>-proto-<stability>"
+            "Repositories must be in lower kebab case"
         );
 
         let (package, version) = dependency
             .split_once('@')
-            .wrap_err("Invalid dependency specification")?;
+            .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
 
         let package = package
             .parse::<PackageId>()
-            .wrap_err("Invalid package id supplied")?;
+            .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
 
         ensure!(
             version
