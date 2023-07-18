@@ -119,7 +119,7 @@ impl PackageStore {
         for (index, dependency) in dependencies.into_iter().enumerate() {
             let dependency = registry.download(dependency).await?;
 
-            Self::unpack(&dependency, &package_dir).await?;
+            Self::unpack(&dependency, package_dir).await?;
 
             let tree_char = if index + 1 == dependency_count {
                 '┗'
@@ -178,7 +178,7 @@ impl PackageStore {
             );
         }
 
-        for ref dependency in manifest.dependencies.iter() {
+        for dependency in manifest.dependencies.iter() {
             let resolved = Self::resolve(&dependency.package)
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
