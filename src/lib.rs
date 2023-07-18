@@ -13,6 +13,8 @@
 
 /// Configuration format and IO
 pub mod config;
+/// Code generation
+pub mod generation;
 /// Manifest format and IO
 pub mod manifest;
 /// Packages formats and utilities

@@ -34,7 +34,9 @@ tar = "0.4"
 tokio = { version = "1", features = ["full", "tracing"] }
 toml = "0.7"
 toml_edit = "0.19"
+tonic-build = "0.9"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 url = { version = "2.4", features = ["serde"] }
 walkdir = "2"
+protobuf-src = "1.1.0+21.5"
