@@ -112,14 +112,14 @@ impl PackageStore {
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
 
-        let package_dir = &dep_dir.join(package.manifest.name.as_str());
+        let package_dir = &dep_dir.join(package.manifest.name.as_package_dir());
 
         let dependency_count = dependencies.len();
 
         for (index, dependency) in dependencies.into_iter().enumerate() {
             let dependency = registry.download(dependency).await?;
 
-            Self::unpack(&dependency, &package_dir).await?;
+            Self::unpack(&dependency, package_dir).await?;
 
             let tree_char = if index + 1 == dependency_count {
                 '┗'
@@ -178,7 +178,7 @@ impl PackageStore {
             );
         }
 
-        for ref dependency in manifest.dependencies.iter() {
+        for dependency in manifest.dependencies.iter() {
             let resolved = Self::resolve(&dependency.package)
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
@@ -193,9 +193,14 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = fs::canonicalize(pkg.r#type.as_path_buf()?)
-            .await
-            .wrap_err("Failed to locate api package")?;
+        let pkg_path = pkg.r#type.as_path_buf()?;
+
+        let pkg_path = fs::canonicalize(&pkg_path).await.wrap_err_with(|| {
+            format!(
+                "Failed to locate package folder (expected directory {} to be present)",
+                pkg_path.display()
+            )
+        })?;
 
         let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
             .wrap_err("Failed to encode release manifest")?

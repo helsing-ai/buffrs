@@ -42,6 +42,12 @@ enum Command {
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
+        /// Allow a dirty git working tree while publishing
+        #[clap(long)]
+        allow_dirty: bool,
+        /// Abort right before uploading the release to the registry
+        #[clap(long)]
+        dry_run: bool,
     },
 
     /// Installs dependencies
@@ -95,7 +101,11 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
-        Command::Publish { repository } => cmd::publish(config, repository).await?,
+        Command::Publish {
+            repository,
+            allow_dirty,
+            dry_run,
+        } => cmd::publish(config, repository, allow_dirty, dry_run).await?,
         Command::Install => cmd::install(config).await?,
         Command::Uninstall => cmd::uninstall().await?,
         Command::Login { url, username } => cmd::login(config, url, username).await?,
@@ -106,6 +116,8 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
+    use std::path::Path;
+
     use buffrs::{
         config::Config,
         manifest::{Dependency, Manifest, PackageManifest},
@@ -120,11 +132,13 @@ mod cmd {
         let mut manifest = Manifest::default();
 
         if let Some(r#type) = r#type {
+            const DIR_ERR: &str = "Failed to read current directory name";
+
             let name = std::env::current_dir()?
                 .file_name()
-                .wrap_err("Failed to read current directory name")?
+                .wrap_err(DIR_ERR)?
                 .to_str()
-                .wrap_err("Failed to read current directory name")?
+                .wrap_err(DIR_ERR)?
                 .parse()?;
 
             manifest.package = Some(PackageManifest {
@@ -156,19 +170,16 @@ mod cmd {
 
         ensure!(
             repository.chars().all(lower_kebab),
-            "Repositories must be in the format <group>-proto-<stability>"
-        );
-
-        ensure!(
-            repository.contains("-proto-"),
-            "Only proto repositories are allowed"
+            "Repositories must be in lower kebab case"
         );
 
         let (package, version) = dependency
             .split_once('@')
-            .wrap_err("Invalid dependency specification")?;
+            .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
 
-        let package = package.parse::<PackageId>()?;
+        let package = package
+            .parse::<PackageId>()
+            .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
 
         ensure!(
             version
@@ -203,13 +214,38 @@ mod cmd {
 
         manifest.dependencies.retain(|d| *d != dependency);
 
-        PackageStore::uninstall(&dependency.package).await?;
+        PackageStore::uninstall(&dependency.package)
+            .await
+            .wrap_err("Failed to uninstall dependency")?;
 
         manifest.write().await
     }
 
     /// Publishs the api package to the registry
-    pub async fn publish(config: Config, repository: String) -> eyre::Result<()> {
+    pub async fn publish(
+        config: Config,
+        repository: String,
+        allow_dirty: bool,
+        dry_run: bool,
+    ) -> eyre::Result<()> {
+        if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
+            let statuses = repository
+                .statuses(None)
+                .wrap_err("Failed to get git status")?;
+
+            if !allow_dirty && !statuses.is_empty() {
+                tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
+
+                statuses
+                    .iter()
+                    .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
+
+                tracing::error!("\nTo proceed with publishing despite the uncommited changes, pass the `--allow-dirty` flag\n");
+
+                eyre::bail!("Unable to publish a dirty git repository");
+            }
+        }
+
         let artifactory = {
             let Some(artifactory) = config.artifactory else {
                 eyre::bail!("Unable to publish package to artifactory, please login using `buffrs login`");
@@ -218,7 +254,14 @@ mod cmd {
             Artifactory::from(artifactory)
         };
 
-        let package = PackageStore::release().await?;
+        let package = PackageStore::release()
+            .await
+            .wrap_err("Failed to create release")?;
+
+        if dry_run {
+            tracing::warn!(":: aborting upload due to dry run");
+            return Ok(());
+        }
 
         artifactory.publish(package, repository).await?;
 
@@ -243,7 +286,9 @@ mod cmd {
             install.push(PackageStore::install(dependency, artifactory.clone()));
         }
 
-        try_join_all(install).await?;
+        try_join_all(install)
+            .await
+            .wrap_err("Failed to install dependencies")?;
 
         Ok(())
     }
@@ -265,15 +310,25 @@ mod cmd {
 
         password = password.trim().to_owned();
 
-        config.artifactory = Some(ArtifactoryConfig::new(url, username, password)?);
+        let cfg = ArtifactoryConfig::new(url, username, password)
+            .wrap_err("Failed to create artifactory configuration")?;
 
+        let artifactory = Artifactory::from(cfg.clone());
+
+        artifactory
+            .ping()
+            .await
+            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+
+        config.artifactory = Some(cfg);
         config.write().await
     }
 
     /// Logs you out from a registry
     pub async fn logout(mut config: Config) -> eyre::Result<()> {
         if let Some(cfg) = config.artifactory {
-            cfg.clear()?;
+            cfg.clear()
+                .wrap_err("Failed to clear the artifactory configuration")?;
         }
 
         config.artifactory = None;

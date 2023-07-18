@@ -13,20 +13,47 @@ use crate::{manifest::Dependency, package::Package};
 #[derive(Debug, Clone)]
 pub struct Artifactory(Arc<ArtifactoryConfig>);
 
+impl Artifactory {
+    /// Pings artifactory to ensure registry access is working
+    pub async fn ping(&self) -> eyre::Result<()> {
+        let repositories_uri: Url = {
+            let mut url = self.0.url.clone();
+            url.set_path(&format!("{}/api/repositories", url.path()));
+            url
+        };
+
+        let response = reqwest::Client::new()
+            .get(repositories_uri.clone())
+            .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
+            .send()
+            .await?;
+
+        ensure!(response.status().is_success(), "Failed to ping artifactory");
+
+        tracing::debug!("pinging artifactory succeeded");
+
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 impl Registry for Artifactory {
     /// Downloads a package from artifactory
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        let artifact_uri: Url = format!(
-            "{}/{}/{}/{}-{}.tgz",
-            self.0.url,
-            dependency.manifest.repository,
-            dependency.package,
-            dependency.package,
-            dependency.manifest.version
-        )
-        .parse()
-        .wrap_err("Failed to construct artifact uri")?;
+        let artifact_uri: Url = {
+            let mut url = self.0.url.clone();
+
+            url.set_path(&format!(
+                "{}/{}/{}/{}-{}.tgz",
+                url.path(),
+                dependency.manifest.repository,
+                dependency.package,
+                dependency.package,
+                dependency.manifest.version
+            ));
+
+            url
+        };
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
@@ -36,7 +63,8 @@ impl Registry for Artifactory {
 
         ensure!(
             response.status().is_success(),
-            "Failed to fetch {dependency}"
+            "Failed to fetch {dependency}: {}",
+            response.status()
         );
 
         tracing::debug!("downloaded dependency {dependency}");
@@ -64,12 +92,14 @@ impl Registry for Artifactory {
             .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
             .body(package.tgz)
             .send()
-            .await?;
+            .await
+            .wrap_err("Failed to upload release to artifactory")?;
 
         ensure!(
             response.status().is_success(),
-            "Failed to publish {}",
-            package.manifest.name
+            "Failed to publish {}: {}",
+            package.manifest.name,
+            response.status()
         );
 
         tracing::info!(
