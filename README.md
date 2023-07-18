@@ -53,6 +53,7 @@ on them in other projects.*
 
 - [x] Support project manifests and dependency declaration
 - [x] Support package distribution via Artifactory
+- [x] Support protoc as code generation backend
 - [ ] Implement `buffrs-registry`, a self-hostable, S3-based registry.
 - [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, and
   formatting.
@@ -120,6 +121,18 @@ Now you can run your language dependent build tool (e.g. `cargo build`) to
 generate local code bindings.
 
 > Note: Use `buffrs uninstall` for cleaning your local proto folder
+
+### Generating Code
+
+To use the just installed `buffrs` packages in your project you can make use
+of the built in `protoc` support.
+
+```bash
+buffrs generate --lang cpp
+```
+
+> Note: This is a utility command and makes life easier when just using protoc.
+> You may easily compile the `proto` folder yourself with custom tooling!
 
 ### Publishing a Package
 
