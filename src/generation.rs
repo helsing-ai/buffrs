@@ -1,53 +1,66 @@
-use eyre::{ensure, Context};
-use tokio::process::Command;
+use eyre::Context;
 
-//use crate::manifest::Manifest;
+use crate::{
+    manifest::{Dependency, Manifest},
+    package::PackageStore,
+};
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+/// The language used for code generation
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, clap::ValueEnum)]
 pub enum Language {
-    Cpp,
-    CSharp,
-    Java,
-    Kotlin,
-    ObjectiveC,
-    Php,
-    Pyi,
-    Python,
-    Ruby,
+    Rust,
 }
 
+/// Backend used to generate code bindings
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Generator {
+    Tonic,
+}
+
+impl Generator {
+    pub async fn run(&self, dependency: &Dependency) -> eyre::Result<()> {
+        let protoc = protobuf_src::protoc();
+        std::env::set_var("PROTOC", protoc.clone());
+
+        match self {
+            Generator::Tonic => {
+                let out = format!("proto/out/{}", dependency.package.as_package_dir());
+                let package = PackageStore::vendor_directory(&dependency.package);
+
+                let protos = PackageStore::collect(&package).await;
+                let includes = &[package];
+
+                tonic_build::configure()
+                    .out_dir(&out)
+                    .include_file(&format!("mod.rs"))
+                    .compile(&protos, includes)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Generate the code bindings for a language
 pub async fn generate(language: Language) -> eyre::Result<()> {
-    // Uses vendored protoc
-    let protoc = protobuf_src::protoc();
-    std::env::set_var("PROTOC", protoc.clone());
+    let manifest = Manifest::read().await?;
 
-    //let manifest = Manifest::read().await?;
+    tracing::info!(":: booting code generator for {language:#?}");
 
-    let path = "proto";
-    //let output = "--cpp_out";
+    // Only tonic is supported right now
+    let generator = Generator::Tonic;
 
-    let status = Command::new(protoc)
-        .arg("-I")
-        .arg(path)
-        .arg("--cpp_out")
-        .arg("./cpp")
-        .arg("proto/api/demo.proto")
-        .status()
-        .await
-        .wrap_err("failed to run protoc")?;
+    for ref dependency in manifest.dependencies {
+        generator
+            .run(dependency)
+            .await
+            .wrap_err_with(|| format!("failed to generate bindings for {}", dependency.package))?;
 
-    ensure!(status.success(), "failed to compile protos using protoc");
-
-    //for ref dependency in manifest.dependencies {
-    //let mut path = PathBuf::from(PackageStore::PROTO_DEP_PATH);
-
-    //path.push(dependency.package.packag)
-
-    //tonic_build::configure().compile(
-    //&["proto/helloworld/helloworld.proto"],
-    //&["proto/helloworld"],
-    //)?;
-    //}
+        tracing::info!(
+            ":: compiled {}",
+            PackageStore::vendor_directory(&dependency.package).display()
+        );
+    }
 
     Ok(())
 }

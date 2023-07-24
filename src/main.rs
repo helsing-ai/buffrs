@@ -167,7 +167,7 @@ mod cmd {
 
         manifest.write().await?;
 
-        PackageStore::create(r#type).await
+        PackageStore::create().await
     }
 
     /// Adds a dependency to this project
