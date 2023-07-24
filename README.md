@@ -128,7 +128,7 @@ To use the just installed `buffrs` packages in your project you can make use
 of the built in `protoc` support.
 
 ```bash
-buffrs generate --lang cpp
+buffrs generate --lang rust
 ```
 
 > Note: This is a utility command and makes life easier when just using protoc.

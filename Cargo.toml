@@ -27,7 +27,7 @@ git2 = "0.17"
 home = "0.5.5"
 human-panic = "1"
 keyring = "2"
-protobuf-src = "1.1.0+21.5"
+protobuf-src = "1.1.0"
 reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_typename = "0.1"
