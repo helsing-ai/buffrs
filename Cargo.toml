@@ -1,6 +1,6 @@
 [package]
 name = "buffrs"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "An opinionated protobuf package manager"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
