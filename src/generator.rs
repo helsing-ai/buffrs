@@ -12,6 +12,7 @@ use crate::{
     package::PackageStore,
 };
 
+/// The directory used for the generated code
 pub const BUILD_DIRECTORY: &str = "proto/build";
 
 /// The language used for code generation
@@ -38,12 +39,14 @@ impl fmt::Display for Language {
 /// Backend used to generate code bindings
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
+    /// The tonic + prost stack
     Tonic,
 }
 
 impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
+    /// Run the generator for a dependency and output files into `out`
     pub async fn run(&self, dependency: &Dependency, out: &Path) -> eyre::Result<()> {
         let protoc = protobuf_src::protoc();
         std::env::set_var("PROTOC", protoc.clone());

@@ -53,7 +53,8 @@ on them in other projects.*
 
 - [x] Support project manifests and dependency declaration
 - [x] Support package distribution via Artifactory
-- [x] Support protoc as code generation backend
+- [x] Support tonic as code generation backend
+- [ ] Support protoc as code generation backend
 - [ ] Implement `buffrs-registry`, a self-hostable, S3-based registry.
 - [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, and
   formatting.
