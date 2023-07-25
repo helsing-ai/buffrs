@@ -45,22 +45,32 @@ impl Generator {
 pub async fn generate(language: Language) -> eyre::Result<()> {
     let manifest = Manifest::read().await?;
 
-    tracing::info!(":: booting code generator for {language:#?}");
+    tracing::info!(":: initializing code generator for {language:#?}");
 
     // Only tonic is supported right now
     let generator = Generator::Tonic;
 
-    for ref dependency in manifest.dependencies {
-        generator
-            .run(dependency)
-            .await
-            .wrap_err_with(|| format!("failed to generate bindings for {}", dependency.package))?;
+    let mut handles = vec![];
 
-        tracing::info!(
-            ":: compiled {}",
-            PackageStore::vendor_directory(&dependency.package).display()
-        );
+    for dependency in manifest.dependencies {
+        handles.push(tokio::spawn(async move {
+            if generator.run(&dependency).await.is_err() {
+                return Err(eyre::eyre!(
+                    "failed to generate bindings for {}",
+                    dependency.package
+                ));
+            }
+
+            tracing::info!(
+                ":: compiled {}",
+                PackageStore::locate(&dependency.package).display()
+            );
+
+            eyre::Result::Ok(())
+        }));
     }
+
+    futures::future::join_all(handles).await;
 
     Ok(())
 }
