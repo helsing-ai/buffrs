@@ -1,25 +1,19 @@
-<img src="https://github.com/helsing-ai/buffrs/assets/37018485/76c51445-b5a6-4f4e-a39c-7de7e31a0613" onerror="this.style.display='none'" />
+<!-- markdownlint-disable-next-line -->
+<div align="center">
 
-<h1 align="center">buffrs</h1>
-<div align="center">
-  <h6>An opinionated protobuf package manager</h6>
+<img src="https://github.com/helsing-ai/buffrs/assets/37018485/76c51445-b5a6-4f4e-a39c-7de7e31a0613" onerror="this.style.display='none'" />
+<br/>
+
+# `buffrs`
+
+**An opinionated protobuf package manager**
+
+[![Helsing](https://img.shields.io/badge/helsing-open%20source-black.svg)](http://helsing.ai)
+[![Buffrs Crate](https://img.shields.io/crates/v/buffrs.svg)](crates.io/crates/buffrs)
+[![Buffrs Book](https://img.shields.io/badge/book-latest-blueviolet.svg)](https://helsing-ai.github.io/buffrs)
+[![Buffrs Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/buffrs)
+
 </div>
-<br />
-<div align="center">
-  <a href="https://crates.io/crates/buffrs">
-    <img
-      src="https://img.shields.io/crates/v/buffrs.svg?style=flat-square"
-      alt="crates.io version"
-    />
-  </a>
-  <a href="https://docs.rs/buffrs">
-    <img
-      src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square"
-      alt="docs.rs docs"
-    />
-  </a>
-</div>
-<br />
 
 ## Motivation
 
