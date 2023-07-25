@@ -1,5 +1,3 @@
-use eyre::Context;
-
 use crate::{
     manifest::{Dependency, Manifest},
     package::PackageStore,
@@ -18,6 +16,8 @@ pub enum Generator {
 }
 
 impl Generator {
+    pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
+
     pub async fn run(&self, dependency: &Dependency) -> eyre::Result<()> {
         let protoc = protobuf_src::protoc();
         std::env::set_var("PROTOC", protoc.clone());
@@ -25,14 +25,19 @@ impl Generator {
         match self {
             Generator::Tonic => {
                 let out = format!("proto/out/{}", dependency.package.as_package_dir());
-                let package = PackageStore::vendor_directory(&dependency.package);
 
+                let package = PackageStore::locate(&dependency.package);
                 let protos = PackageStore::collect(&package).await;
+
                 let includes = &[package];
 
                 tonic_build::configure()
+                    .build_client(true)
+                    .build_server(true)
+                    .build_transport(true)
+                    .compile_well_known_types(true)
                     .out_dir(&out)
-                    .include_file(&format!("mod.rs"))
+                    .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
         }
