@@ -26,7 +26,7 @@ impl PackageStore {
     /// Path to the proto directory
     pub const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
-    pub const PROTO_VEDNOR_PATH: &str = "proto/vendor";
+    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     /// Creates the expected directory structure for `buffrs`
     pub async fn create() -> eyre::Result<()> {
@@ -38,14 +38,14 @@ impl PackageStore {
         };
 
         create(Self::PROTO_PATH).await?;
-        create(Self::PROTO_VEDNOR_PATH).await?;
+        create(Self::PROTO_VENDOR_PATH).await?;
 
         Ok(())
     }
 
     /// Clears all packages from the file system
     pub async fn clear() -> eyre::Result<()> {
-        fs::remove_dir_all(Self::PROTO_VEDNOR_PATH)
+        fs::remove_dir_all(Self::PROTO_VENDOR_PATH)
             .await
             .wrap_err("Failed to uninstall dependencies")
     }
@@ -86,7 +86,7 @@ impl PackageStore {
     pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
         let package = registry.download(dependency).await?;
 
-        let vendor_dir = Path::new(Self::PROTO_VEDNOR_PATH);
+        let vendor_dir = Path::new(Self::PROTO_VENDOR_PATH);
 
         Self::unpack(&package, vendor_dir).await?;
 
@@ -125,7 +125,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VEDNOR_PATH).join(package.as_str());
+        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -235,14 +235,14 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(package: &PackageId) -> PathBuf {
-        PathBuf::from(Self::PROTO_VEDNOR_PATH).join(package.as_str())
+        PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
     pub async fn collect(path: &Path) -> Vec<PathBuf> {
-        let vendor_path = fs::canonicalize(&Self::PROTO_VEDNOR_PATH)
+        let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
             .await
-            .unwrap_or(Self::PROTO_VEDNOR_PATH.into());
+            .unwrap_or(Self::PROTO_VENDOR_PATH.into());
 
         WalkDir::new(path)
             .into_iter()

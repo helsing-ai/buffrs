@@ -309,11 +309,12 @@ mod cmd {
         PackageStore::clear().await
     }
 
-    ///
+    /// Generate bindings for a given language
     pub async fn generate(language: Language) -> eyre::Result<()> {
         generation::generate(language)
             .await
-            .wrap_err("failed to generate")?;
+            .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
+
         Ok(())
     }
 

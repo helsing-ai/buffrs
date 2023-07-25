@@ -118,14 +118,6 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Blocking buffrs generation implementation
-///
-/// Important: Only use this inside of cargo build scripts!
-pub fn generate_blocking(language: Language) -> eyre::Result<()> {
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(generate(language))
-}
-
 /// Include the rust language bindings of a buffrs dependency
 ///
 /// You must specify the buffrs dependency package id.
