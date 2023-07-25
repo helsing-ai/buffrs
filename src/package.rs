@@ -134,7 +134,7 @@ impl PackageStore {
 
     /// Resolves a package in the local file system
     pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
-        let manifest = Self::vendor_directory(&package).join(MANIFEST_FILE);
+        let manifest = Self::locate(&package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
             "Failed to locate local manifest for package: {package}"
@@ -234,10 +234,11 @@ impl PackageStore {
     }
 
     /// Directory for the vendored installation of a package
-    pub fn vendor_directory(package: &PackageId) -> PathBuf {
+    pub fn locate(package: &PackageId) -> PathBuf {
         PathBuf::from(Self::PROTO_VEDNOR_PATH).join(package.as_package_dir())
     }
 
+    /// Collect .proto files in a given path whilst excluding vendored ones
     pub async fn collect(path: &Path) -> Vec<PathBuf> {
         let vendor_path = fs::canonicalize(&Self::PROTO_VEDNOR_PATH)
             .await
