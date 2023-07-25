@@ -1,3 +1,7 @@
 # Summary
 
-- [Chapter 1](./chapter_1.md)
+[Introduction](index.md)
+
+* [Getting Started](getting-started/index.md)
+    * [Installation](getting-started/installation.md)
+    * [First Steps with buffrs](getting-started/first-steps.md)
