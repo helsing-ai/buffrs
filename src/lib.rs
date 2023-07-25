@@ -13,11 +13,13 @@
 
 /// Configuration format and IO
 pub mod config;
-/// Code generation
-pub mod generation;
+/// Code generator
+pub mod generator;
 /// Manifest format and IO
 pub mod manifest;
 /// Packages formats and utilities
 pub mod package;
 /// Supported registries
 pub mod registry;
+
+pub use generator::{generate_blocking as generate, Language};

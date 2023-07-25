@@ -61,7 +61,7 @@ enum Command {
         /// Language used for code generation
         #[clap(long = "lang")]
         #[arg(value_enum)]
-        language: buffrs::generation::Language,
+        language: buffrs::generator::Language,
     },
 
     /// Logs you in for a registry
