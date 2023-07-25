@@ -8,8 +8,8 @@
 
 **An opinionated protobuf package manager**
 
-[![Helsing](https://img.shields.io/badge/helsing-open%20source-black.svg)](http://helsing.ai)
-[![Buffrs Crate](https://img.shields.io/crates/v/buffrs.svg)](http://crates.io/crates/buffrs)
+[![Helsing](https://img.shields.io/badge/helsing-open%20source-black.svg)](https://helsing.ai)
+[![Buffrs Crate](https://img.shields.io/crates/v/buffrs.svg)](https://crates.io/crates/buffrs)
 [![Buffrs Book](https://img.shields.io/badge/book-latest-blueviolet.svg)](https://helsing-ai.github.io/buffrs)
 [![Buffrs Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/buffrs)
 
