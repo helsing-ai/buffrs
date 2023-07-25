@@ -61,7 +61,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = path.join(package.manifest.name.as_package_dir());
+        let pkg_dir = path.join(package.manifest.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -97,7 +97,7 @@ impl PackageStore {
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
 
-        let package_dir = &vendor_dir.join(package.manifest.name.as_package_dir());
+        let package_dir = &vendor_dir.join(package.manifest.name.as_str());
 
         let dependency_count = dependencies.len();
 
@@ -125,7 +125,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VEDNOR_PATH).join(package.as_package_dir());
+        let pkg_dir = Path::new(Self::PROTO_VEDNOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -235,7 +235,7 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(package: &PackageId) -> PathBuf {
-        PathBuf::from(Self::PROTO_VEDNOR_PATH).join(package.as_package_dir())
+        PathBuf::from(Self::PROTO_VEDNOR_PATH).join(package.as_str())
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
@@ -345,12 +345,6 @@ impl fmt::Display for PackageType {
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]
 pub struct PackageId(String);
-
-impl PackageId {
-    pub fn as_package_dir(&self) -> String {
-        self.0.replace('-', "_")
-    }
-}
 
 impl TryFrom<String> for PackageId {
     type Error = eyre::Error;
