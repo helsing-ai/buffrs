@@ -250,13 +250,9 @@ impl PackageStore {
             .map(|entry| entry.into_path())
             .filter(|path| !path.starts_with(&vendor_path))
             .filter(|path| {
-                let ext = path
-                    .extension()
-                    .map(|s| s.to_str())
-                    .unwrap_or_default()
-                    .unwrap_or_default();
+                let ext = path.extension().map(|s| s.to_str());
 
-                ext == "proto"
+                matches!(ext, Some(Some("proto")))
             })
             .collect()
     }
