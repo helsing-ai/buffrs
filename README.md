@@ -81,7 +81,7 @@ buffrs init --api <my-grpc-server-name>
 
 ### Registry Login
 
-To setup a new `buffrs` project you can run:
+Log into your artifactory registry:
 
 ```bash
 buffrs login --url https://<org>.jfrog.io/artifactory --username your.name@your.org
