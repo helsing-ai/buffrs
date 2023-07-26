@@ -130,7 +130,7 @@ mod cmd {
 
     use buffrs::{
         config::Config,
-        generation::{self, Language},
+        generator::{self, Language},
         manifest::{Dependency, Manifest, PackageManifest},
         package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
@@ -311,7 +311,7 @@ mod cmd {
 
     /// Generate bindings for a given language
     pub async fn generate(language: Language) -> eyre::Result<()> {
-        generation::generate(language)
+        generator::generate(language)
             .await
             .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
 

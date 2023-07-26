@@ -4,6 +4,7 @@ use std::{
 };
 
 use eyre::Context;
+use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
@@ -48,7 +49,8 @@ impl Generator {
 
     /// Run the generator for a dependency and output files into `out`
     pub async fn run(&self, dependency: &Dependency, out: &Path) -> eyre::Result<()> {
-        let protoc = protobuf_src::protoc();
+        let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
+
         std::env::set_var("PROTOC", protoc.clone());
 
         match self {
@@ -59,7 +61,7 @@ impl Generator {
 
                 fs::create_dir_all(&out)
                     .await
-                    .wrap_err("failed to recreate dependency output directory")?;
+                    .wrap_err("Failed to recreate dependency output directory")?;
 
                 let package = PackageStore::locate(&dependency.package);
                 let protos = PackageStore::collect(&package).await;
@@ -96,7 +98,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         fs::remove_dir_all(&out).await.ok();
 
         fs::create_dir_all(&out).await.wrap_err(eyre::eyre!(
-            "failed to create clean build directory {} for {language}",
+            "Failed to create clean build directory {} for {language}",
             out.canonicalize()?.to_string_lossy()
         ))?;
 
@@ -107,7 +109,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         generator
             .run(&dependency, &out)
             .await
-            .wrap_err_with(|| format!("failed to generate bindings for {}", dependency.package))?;
+            .wrap_err_with(|| format!("Failed to generate bindings for {}", dependency.package))?;
 
         tracing::info!(
             ":: compiled {}",
