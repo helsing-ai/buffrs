@@ -25,15 +25,11 @@ pub struct PackageStore;
 impl PackageStore {
     /// Path to the proto directory
     pub const PROTO_PATH: &str = "proto";
-    /// Path to the lib directory
-    pub const PROTO_LIB_PATH: &str = "proto/lib";
-    /// Path to the api directory
-    pub const PROTO_API_PATH: &str = "proto/api";
     /// Path to the dependency store
-    pub const PROTO_DEP_PATH: &str = "proto/dep";
+    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create(r#type: Option<PackageType>) -> eyre::Result<()> {
+    pub async fn create() -> eyre::Result<()> {
         let create = |dir: &'static str| async move {
             fs::create_dir_all(dir).await.wrap_err(eyre::eyre!(
                 "Failed to create dependency folder {}",
@@ -41,26 +37,15 @@ impl PackageStore {
             ))
         };
 
-        match r#type {
-            Some(PackageType::Lib) => {
-                create(Self::PROTO_LIB_PATH).await?;
-                Ok(())
-            }
-            Some(PackageType::Api) => {
-                create(Self::PROTO_API_PATH).await?;
-                create(Self::PROTO_DEP_PATH).await?;
-                Ok(())
-            }
-            None => {
-                create(Self::PROTO_DEP_PATH).await?;
-                Ok(())
-            }
-        }
+        create(Self::PROTO_PATH).await?;
+        create(Self::PROTO_VENDOR_PATH).await?;
+
+        Ok(())
     }
 
     /// Clears all packages from the file system
     pub async fn clear() -> eyre::Result<()> {
-        fs::remove_dir_all(Self::PROTO_DEP_PATH)
+        fs::remove_dir_all(Self::PROTO_VENDOR_PATH)
             .await
             .wrap_err("Failed to uninstall dependencies")
     }
@@ -76,7 +61,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = path.join(package.manifest.name.as_package_dir());
+        let pkg_dir = path.join(package.manifest.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -101,9 +86,9 @@ impl PackageStore {
     pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
         let package = registry.download(dependency).await?;
 
-        let dep_dir = Path::new(Self::PROTO_DEP_PATH);
+        let vendor_dir = Path::new(Self::PROTO_VENDOR_PATH);
 
-        Self::unpack(&package, dep_dir).await?;
+        Self::unpack(&package, vendor_dir).await?;
 
         let mut tree = format!(
             ":: installed {}@{}",
@@ -112,7 +97,7 @@ impl PackageStore {
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
 
-        let package_dir = &dep_dir.join(package.manifest.name.as_package_dir());
+        let package_dir = &vendor_dir.join(package.manifest.name.as_str());
 
         let dependency_count = dependencies.len();
 
@@ -140,7 +125,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_DEP_PATH).join(package.as_package_dir());
+        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -149,9 +134,7 @@ impl PackageStore {
 
     /// Resolves a package in the local file system
     pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
-        let manifest = Path::new(Self::PROTO_DEP_PATH)
-            .join(package.as_package_dir())
-            .join(MANIFEST_FILE);
+        let manifest = Self::locate(&package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
             "Failed to locate local manifest for package: {package}"
@@ -193,14 +176,14 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = pkg.r#type.as_path_buf()?;
-
-        let pkg_path = fs::canonicalize(&pkg_path).await.wrap_err_with(|| {
-            format!(
-                "Failed to locate package folder (expected directory {} to be present)",
-                pkg_path.display()
-            )
-        })?;
+        let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to locate package folder (expected directory {} to be present)",
+                    Self::PROTO_PATH
+                )
+            })?;
 
         let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
             .wrap_err("Failed to encode release manifest")?
@@ -209,27 +192,17 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        for entry in WalkDir::new(pkg_path).into_iter().filter_map(|e| e.ok()) {
-            let ext = entry
-                .path()
-                .extension()
-                .map(|s| s.to_str())
-                .unwrap_or_default()
-                .unwrap_or_default();
-
-            if ext != "proto" {
-                continue;
-            }
-
+        for entry in Self::collect(&pkg_path).await {
             archive
                 .append_path_with_name(
-                    entry.path(),
-                    entry
-                        .path()
-                        .file_name()
-                        .wrap_err("Failed to add protos to release")?,
+                    &entry,
+                    entry.file_name().wrap_err_with(|| {
+                        format!("Failed to get filename of entry {}", entry.display())
+                    })?,
                 )
-                .wrap_err("Failed to add protos to release")?;
+                .wrap_err_with(|| {
+                    format!("Failed to add proto {} to release tar", entry.display())
+                })?;
         }
 
         let mut header = tar::Header::new_gnu();
@@ -258,6 +231,30 @@ impl PackageStore {
         tracing::info!(":: packaged {}@{}", pkg.name, pkg.version);
 
         Ok(Package::new(pkg, tgz))
+    }
+
+    /// Directory for the vendored installation of a package
+    pub fn locate(package: &PackageId) -> PathBuf {
+        PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
+    }
+
+    /// Collect .proto files in a given path whilst excluding vendored ones
+    pub async fn collect(path: &Path) -> Vec<PathBuf> {
+        let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
+            .await
+            .unwrap_or(Self::PROTO_VENDOR_PATH.into());
+
+        WalkDir::new(path)
+            .into_iter()
+            .filter_map(Result::ok)
+            .map(|entry| entry.into_path())
+            .filter(|path| !path.starts_with(&vendor_path))
+            .filter(|path| {
+                let ext = path.extension().map(|s| s.to_str());
+
+                matches!(ext, Some(Some("proto")))
+            })
+            .collect()
     }
 }
 
@@ -326,15 +323,6 @@ pub enum PackageType {
     Api,
 }
 
-impl PackageType {
-    pub fn as_path_buf(&self) -> Result<PathBuf, <PathBuf as FromStr>::Err> {
-        match self {
-            Self::Lib => PackageStore::PROTO_LIB_PATH.parse(),
-            Self::Api => PackageStore::PROTO_API_PATH.parse(),
-        }
-    }
-}
-
 impl FromStr for PackageType {
     type Err = serde_typename::Error;
 
@@ -353,12 +341,6 @@ impl fmt::Display for PackageType {
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]
 pub struct PackageId(String);
-
-impl PackageId {
-    fn as_package_dir(&self) -> String {
-        self.0.replace('-', "_")
-    }
-}
 
 impl TryFrom<String> for PackageId {
     type Error = eyre::Error;

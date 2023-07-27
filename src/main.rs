@@ -55,6 +55,15 @@ enum Command {
     /// Uninstalls dependencies
     Uninstall,
 
+    /// Generate code from installed buffrs packages
+    #[clap(alias = "gen")]
+    Generate {
+        /// Language used for code generation
+        #[clap(long = "lang")]
+        #[arg(value_enum)]
+        language: buffrs::generator::Language,
+    },
+
     /// Logs you in for a registry
     Login {
         /// Artifactory url (e.g. https://<domain>/artifactory)
@@ -108,6 +117,7 @@ async fn main() -> eyre::Result<()> {
         } => cmd::publish(config, repository, allow_dirty, dry_run).await?,
         Command::Install => cmd::install(config).await?,
         Command::Uninstall => cmd::uninstall().await?,
+        Command::Generate { language } => cmd::generate(language).await?,
         Command::Login { url, username } => cmd::login(config, url, username).await?,
         Command::Logout => cmd::logout(config).await?,
     }
@@ -120,6 +130,7 @@ mod cmd {
 
     use buffrs::{
         config::Config,
+        generator::{self, Language},
         manifest::{Dependency, Manifest, PackageManifest},
         package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
@@ -156,7 +167,7 @@ mod cmd {
 
         manifest.write().await?;
 
-        PackageStore::create(r#type).await
+        PackageStore::create().await
     }
 
     /// Adds a dependency to this project
@@ -296,6 +307,15 @@ mod cmd {
     /// Uninstalls dependencies
     pub async fn uninstall() -> eyre::Result<()> {
         PackageStore::clear().await
+    }
+
+    /// Generate bindings for a given language
+    pub async fn generate(language: Language) -> eyre::Result<()> {
+        generator::generate(language)
+            .await
+            .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
+
+        Ok(())
     }
 
     /// Logs you in for a registry
