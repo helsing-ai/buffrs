@@ -134,7 +134,7 @@ impl PackageStore {
 
     /// Resolves a package in the local file system
     pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
-        let manifest = Self::locate(&package).join(MANIFEST_FILE);
+        let manifest = Self::locate(package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
             "Failed to locate local manifest for package: {package}"

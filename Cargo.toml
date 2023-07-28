@@ -34,7 +34,6 @@ serde_typename = "0.1"
 tar = "0.4"
 tokio = { version = "1", features = ["full", "tracing"] }
 toml = "0.7"
-toml_edit = "0.19"
 tonic-build = "0.9"
 tracing = "0.1"
 tracing-subscriber = "0.3"
