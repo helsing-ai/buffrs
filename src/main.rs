@@ -251,7 +251,7 @@ mod cmd {
                     .iter()
                     .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
 
-                tracing::error!("\nTo proceed with publishing despite the uncommited changes, pass the `--allow-dirty` flag\n");
+                tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
 
                 eyre::bail!("Unable to publish a dirty git repository");
             }

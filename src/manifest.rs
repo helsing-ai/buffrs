@@ -137,7 +137,7 @@ impl fmt::Display for Dependency {
     }
 }
 
-/// Manifest forat for dependencies
+/// Manifest format for dependencies
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DependencyManifest {
     /// Version requirement in the helsing format, currently only supports pinning

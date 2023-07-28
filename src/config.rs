@@ -9,7 +9,7 @@ use crate::registry::ArtifactoryConfig;
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
-/// Filename of the configration
+/// Filename of the configuration
 pub const CONFIG_FILE: &str = "config.toml";
 
 /// Configuration format for storing authentication and settings

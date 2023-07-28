@@ -322,7 +322,6 @@ dependencies = [
  "tar",
  "tokio",
  "toml",
- "toml_edit",
  "tonic-build",
  "tracing",
  "tracing-subscriber",
