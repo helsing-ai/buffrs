@@ -6,6 +6,9 @@ mod artifactory;
 
 pub use artifactory::{Artifactory, ArtifactoryConfig};
 
+/// Environment variable used for token if keyring is unavailable
+pub const REGISTRY_TOKEN_VAR: &str = "BUFFRS_REGISTRY_TOKEN";
+
 /// A `buffrs` registry used for remote package management
 #[async_trait::async_trait]
 pub trait Registry {

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::Registry;
-use crate::{manifest::Dependency, package::Package};
+use crate::{manifest::Dependency, package::Package, registry::REGISTRY_TOKEN_VAR};
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
@@ -149,6 +149,10 @@ impl ArtifactoryConfig {
 
     /// Loads the password for this artifactory config
     fn password(&self) -> eyre::Result<String> {
+        if let Ok(password) = std::env::var(REGISTRY_TOKEN_VAR) {
+            return Ok(password);
+        };
+
         self.entry()?
             .get_password()
             .wrap_err("Failed to load password from keyring, please login")
@@ -156,7 +160,10 @@ impl ArtifactoryConfig {
 
     /// Accesses the keyring entry associated with this artifactory config
     fn entry(&self) -> eyre::Result<keyring::Entry> {
-        keyring::Entry::new(self.url.as_str(), &self.username)
-            .wrap_err("Failed to load keyring entry")
+        keyring::Entry::new(
+            self.url.domain().unwrap_or("org.buffrs.registry.unknown"),
+            &self.username,
+        )
+        .wrap_err("Failed to load keyring entry")
     }
 }
