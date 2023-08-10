@@ -61,12 +61,12 @@ impl Credentials {
     ///
     /// Note: Initializes the credential file if its not present
     pub async fn load() -> eyre::Result<Self> {
-        let Ok(cfg) = Self::read().await else {
-            let cfg = Credentials::default();
-            cfg.write().await?;
-            return Ok(cfg);
+        let Ok(credentials) = Self::read().await else {
+            let credentials = Credentials::default();
+            credentials.write().await?;
+            return Ok(credentials);
         };
 
-        Ok(cfg)
+        Ok(credentials)
     }
 }
