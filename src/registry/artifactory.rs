@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::Registry;
-use crate::{manifest::Dependency, package::Package, registry::REGISTRY_TOKEN_VAR};
+use crate::{manifest::Dependency, package::Package};
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
@@ -24,7 +24,7 @@ impl Artifactory {
 
         let response = reqwest::Client::new()
             .get(repositories_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
+            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
             .send()
             .await?;
 
@@ -57,7 +57,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
+            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
             .send()
             .await?;
 
@@ -89,7 +89,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .put(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(self.0.password()?))
+            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
             .body(package.tgz)
             .send()
             .await
@@ -124,46 +124,16 @@ impl From<ArtifactoryConfig> for Artifactory {
 pub struct ArtifactoryConfig {
     pub url: Url,
     pub username: String,
+    pub password: String,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url, username: String, password: String) -> eyre::Result<Self> {
-        let cfg = Self { url, username };
-
-        cfg.entry()?
-            .set_password(&password)
-            .wrap_err("Failed to store password in keyring")?;
-
-        Ok(cfg)
-    }
-
-    /// Clears the artifactory config from the system keyring
-    pub fn clear(self) -> eyre::Result<()> {
-        self.entry()?
-            .delete_password()
-            .wrap_err("Failed to delete password from keyring")?;
-
-        Ok(())
-    }
-
-    /// Loads the password for this artifactory config
-    fn password(&self) -> eyre::Result<String> {
-        if let Ok(password) = std::env::var(REGISTRY_TOKEN_VAR) {
-            return Ok(password);
-        };
-
-        self.entry()?
-            .get_password()
-            .wrap_err("Failed to load password from keyring, please login")
-    }
-
-    /// Accesses the keyring entry associated with this artifactory config
-    fn entry(&self) -> eyre::Result<keyring::Entry> {
-        keyring::Entry::new(
-            self.url.domain().unwrap_or("org.buffrs.registry.unknown"),
-            &self.username,
-        )
-        .wrap_err("Failed to load keyring entry")
+    pub fn new(url: Url, username: String, password: String) -> Self {
+        Self {
+            url,
+            username,
+            password,
+        }
     }
 }
