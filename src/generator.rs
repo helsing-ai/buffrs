@@ -132,6 +132,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 #[macro_export]
 macro_rules! include {
     ($package:expr) => {
+        #[allow(non_snake_case)]
         ::std::include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/proto/build/rust/",
