@@ -18,10 +18,15 @@ enum Command {
     Init {
         /// Sets up the package as lib
         #[clap(long, conflicts_with = "api")]
+        #[arg(group = "pkg")]
         lib: bool,
         /// Sets up the package as api
         #[clap(long, conflicts_with = "lib")]
+        #[arg(group = "pkg")]
         api: bool,
+        /// The package id used for initialization
+        #[clap(requires = "pkg")]
+        package: Option<PackageId>,
     },
 
     /// Adds dependencies to a manifest file
@@ -98,11 +103,11 @@ async fn main() -> eyre::Result<()> {
     let config = Config::load().await?;
 
     match cli.command {
-        Command::Init { lib, api } => {
+        Command::Init { lib, api, package } => {
             cmd::init(if lib {
-                Some(PackageType::Lib)
+                Some((PackageType::Lib, package))
             } else if api {
-                Some(PackageType::Api)
+                Some((PackageType::Api, package))
             } else {
                 None
             })
@@ -139,18 +144,21 @@ mod cmd {
     use futures::future::try_join_all;
 
     /// Initializes the project
-    pub async fn init(r#type: Option<PackageType>) -> eyre::Result<()> {
+    pub async fn init(r#type: Option<(PackageType, Option<PackageId>)>) -> eyre::Result<()> {
         let mut manifest = Manifest::default();
 
-        if let Some(r#type) = r#type {
+        if let Some((r#type, name)) = r#type {
             const DIR_ERR: &str = "Failed to read current directory name";
 
-            let name = std::env::current_dir()?
-                .file_name()
-                .wrap_err(DIR_ERR)?
-                .to_str()
-                .wrap_err(DIR_ERR)?
-                .parse()?;
+            let name = match name {
+                Some(name) => name,
+                None => std::env::current_dir()?
+                    .file_name()
+                    .wrap_err(DIR_ERR)?
+                    .to_str()
+                    .wrap_err(DIR_ERR)?
+                    .parse()?,
+            };
 
             manifest.package = Some(PackageManifest {
                 r#type,
@@ -259,7 +267,9 @@ mod cmd {
 
         let artifactory = {
             let Some(artifactory) = config.artifactory else {
-                eyre::bail!("Unable to publish package to artifactory, please login using `buffrs login`");
+                eyre::bail!(
+                    "Unable to publish package to artifactory, please login using `buffrs login`"
+                );
             };
 
             Artifactory::from(artifactory)
@@ -283,7 +293,9 @@ mod cmd {
     pub async fn install(config: Config) -> eyre::Result<()> {
         let artifactory = {
             let Some(artifactory) = config.artifactory else {
-                eyre::bail!("Unable to install artifactory dependencies, please login using `buffrs login`");
+                eyre::bail!(
+                    "Unable to install artifactory dependencies, please login using `buffrs login`"
+                );
             };
 
             Artifactory::from(artifactory)
