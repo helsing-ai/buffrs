@@ -11,8 +11,8 @@
 
 #![doc = include_str!("../README.md")]
 
-/// Configuration format and IO
-pub mod config;
+/// Credential management
+pub mod credentials;
 /// Code generator
 pub mod generator;
 /// Manifest format and IO
@@ -28,7 +28,7 @@ pub use generator::Language;
 ///
 /// Important: Only use this inside of cargo build scripts!
 pub fn build(language: Language) -> eyre::Result<()> {
-    use config::Config;
+    use credentials::Credentials;
     use eyre::ContextCompat;
     use eyre::WrapErr;
     use manifest::Manifest;
@@ -38,10 +38,10 @@ pub fn build(language: Language) -> eyre::Result<()> {
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
 
     async fn install() -> eyre::Result<()> {
-        let config = Config::read().await?;
+        let credentials = Credentials::read().await?;
 
         let artifactory = Artifactory::from(
-            config
+            credentials
                 .artifactory
                 .wrap_err("Artifactory configuration is required")?,
         );

@@ -9,64 +9,64 @@ use crate::registry::ArtifactoryConfig;
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
-/// Filename of the configuration
-pub const CONFIG_FILE: &str = "config.toml";
+/// Filename of the credential store
+pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
-/// Configuration format for storing authentication and settings
+/// Credential store for storing authentication data
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Config {
-    /// Artifactory related configuration
+pub struct Credentials {
+    /// Artifactory credentials
     pub artifactory: Option<ArtifactoryConfig>,
 }
 
-impl Config {
+impl Credentials {
     fn location() -> eyre::Result<PathBuf> {
         let home = home::home_dir().wrap_err("Failed to locate home directory")?;
 
-        Ok(home.join(BUFFRS_HOME).join(CONFIG_FILE))
+        Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
     }
 
-    /// Checks if the configuration exists
+    /// Checks if the credentials exists
     pub async fn exists() -> eyre::Result<bool> {
         fs::try_exists(Self::location()?)
             .await
-            .wrap_err("Failed to detect config")
+            .wrap_err("Failed to detect credentials")
     }
 
-    /// Reads the configuration from the file system
+    /// Reads the credentials from the file system
     pub async fn read() -> eyre::Result<Self> {
         let toml = fs::read_to_string(Self::location()?)
             .await
             .wrap_err("Failed to read manifest")?;
 
-        toml::from_str(&toml).wrap_err("Failed to parse config")
+        toml::from_str(&toml).wrap_err("Failed to parse credentials")
     }
 
-    /// Writes the configuration to the file system
+    /// Writes the credentials to the file system
     pub async fn write(&self) -> eyre::Result<()> {
         fs::create_dir(
             Self::location()?
                 .parent()
-                .wrap_err("Invalid config location")?,
+                .wrap_err("Invalid credentials location")?,
         )
         .await
         .ok();
 
         fs::write(Self::location()?, toml::to_string(&self)?.into_bytes())
             .await
-            .wrap_err("Failed to write config")
+            .wrap_err("Failed to write credentials")
     }
 
-    /// Loads the configuration from the file system
+    /// Loads the credentials from the file system
     ///
-    /// Note: Initializes the configuration if its not present
+    /// Note: Initializes the credential file if its not present
     pub async fn load() -> eyre::Result<Self> {
-        let Ok(cfg) = Self::read().await else {
-            let cfg = Config::default();
-            cfg.write().await?;
-            return Ok(cfg);
+        let Ok(credentials) = Self::read().await else {
+            let credentials = Credentials::default();
+            credentials.write().await?;
+            return Ok(credentials);
         };
 
-        Ok(cfg)
+        Ok(credentials)
     }
 }

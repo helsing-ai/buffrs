@@ -1,7 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
 use buffrs::package::PackageId;
-use buffrs::{config::Config, package::PackageType};
+use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -100,7 +100,7 @@ async fn main() -> eyre::Result<()> {
 
     let cli = Cli::parse();
 
-    let config = Config::load().await?;
+    let config = Credentials::load().await?;
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -134,7 +134,7 @@ mod cmd {
     use std::path::Path;
 
     use buffrs::{
-        config::Config,
+        credentials::Credentials,
         generator::{self, Language},
         manifest::{Dependency, Manifest, PackageManifest},
         package::{PackageId, PackageStore, PackageType},
@@ -242,7 +242,7 @@ mod cmd {
 
     /// Publishs the api package to the registry
     pub async fn publish(
-        config: Config,
+        credentials: Credentials,
         repository: String,
         allow_dirty: bool,
         dry_run: bool,
@@ -266,7 +266,7 @@ mod cmd {
         }
 
         let artifactory = {
-            let Some(artifactory) = config.artifactory else {
+            let Some(artifactory) = credentials.artifactory else {
                 eyre::bail!(
                     "Unable to publish package to artifactory, please login using `buffrs login`"
                 );
@@ -290,9 +290,9 @@ mod cmd {
     }
 
     /// Installs dependencies
-    pub async fn install(config: Config) -> eyre::Result<()> {
+    pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         let artifactory = {
-            let Some(artifactory) = config.artifactory else {
+            let Some(artifactory) = credentials.artifactory else {
                 eyre::bail!(
                     "Unable to install artifactory dependencies, please login using `buffrs login`"
                 );
@@ -331,19 +331,26 @@ mod cmd {
     }
 
     /// Logs you in for a registry
-    pub async fn login(mut config: Config, url: url::Url, username: String) -> eyre::Result<()> {
-        tracing::info!("Please enter your artifactory token:");
+    pub async fn login(
+        mut credentials: Credentials,
+        url: url::Url,
+        username: String,
+    ) -> eyre::Result<()> {
+        let password = {
+            tracing::info!("Please enter your artifactory token:");
 
-        let mut password = String::new();
+            let mut raw = String::new();
 
-        std::io::stdin()
-            .read_line(&mut password)
-            .wrap_err("Failed to read token")?;
+            std::io::stdin()
+                .read_line(&mut raw)
+                .wrap_err("Failed to read token")?;
 
-        password = password.trim().to_owned();
+            raw = raw.trim().to_owned();
 
-        let cfg = ArtifactoryConfig::new(url, username, password)
-            .wrap_err("Failed to create artifactory configuration")?;
+            raw
+        };
+
+        let cfg = ArtifactoryConfig::new(url, username, password);
 
         let artifactory = Artifactory::from(cfg.clone());
 
@@ -352,18 +359,13 @@ mod cmd {
             .await
             .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
 
-        config.artifactory = Some(cfg);
-        config.write().await
+        credentials.artifactory = Some(cfg);
+        credentials.write().await
     }
 
     /// Logs you out from a registry
-    pub async fn logout(mut config: Config) -> eyre::Result<()> {
-        if let Some(cfg) = config.artifactory {
-            cfg.clear()
-                .wrap_err("Failed to clear the artifactory configuration")?;
-        }
-
-        config.artifactory = None;
-        config.write().await
+    pub async fn logout(mut credentials: Credentials) -> eyre::Result<()> {
+        credentials.artifactory = None;
+        credentials.write().await
     }
 }
