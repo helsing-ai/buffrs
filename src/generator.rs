@@ -89,6 +89,11 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 
     tracing::info!(":: initializing code generator for {language}");
 
+    eyre::ensure!(
+        !manifest.dependencies.is_empty(),
+        "At least one dependency is needed to generate code bindings."
+    );
+
     // Only tonic is supported right now
     let generator = Generator::Tonic;
 
