@@ -120,7 +120,7 @@ generate local code bindings.
 ### Generating Code
 
 To use the just installed `buffrs` packages in your project you can make use
-of the built in `protoc` support.
+of the built in `tonic` support.
 
 ```bash
 buffrs generate --lang rust
