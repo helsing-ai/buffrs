@@ -8,10 +8,7 @@ use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::{
-    manifest::Manifest,
-    package::{PackageId, PackageStore},
-};
+use crate::{manifest::Manifest, package::PackageStore};
 
 /// The directory used for the generated code
 pub const BUILD_DIRECTORY: &str = "proto/build";
@@ -37,14 +34,6 @@ impl fmt::Display for Language {
     }
 }
 
-/// A configuration passed to a generator to compile a package
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct GenerationConfig<'i, 'p> {
-    pub package: &'i PackageId,
-    pub location: &'p Path,
-    pub out: &'p Path,
-}
-
 /// Backend used to generate code bindings
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
@@ -56,31 +45,23 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
     /// Run the generator for a dependency and output files into `out`
-    pub async fn run(&self, config: GenerationConfig<'_, '_>) -> eyre::Result<()> {
+    pub async fn run(&self, output: &Path) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
-        let out = config.out.join(config.package.as_str());
-
-        fs::remove_dir_all(&out).await.ok();
-
-        fs::create_dir_all(&out)
-            .await
-            .wrap_err("Failed to recreate dependency output directory")?;
+        let store = Path::new(PackageStore::PROTO_PATH);
+        let protos = PackageStore::collect(store).await;
+        let includes = &[store];
 
         match self {
             Generator::Tonic => {
-                let protos = PackageStore::collect(config.location).await;
-
-                let includes = &[&config.location];
-
                 tonic_build::configure()
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
                     .compile_well_known_types(true)
-                    .out_dir(&out)
+                    .out_dir(output)
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
@@ -117,33 +98,18 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         out
     };
 
+    generator
+        .run(&out)
+        .await
+        .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
+
     if let Some(ref pkg) = manifest.package {
         let location = Path::new(PackageStore::PROTO_PATH);
-
-        generator
-            .run(GenerationConfig {
-                package: &pkg.name,
-                location,
-                out: &out,
-            })
-            .await
-            .wrap_err_with(|| format!("Failed to generate bindings for {}", pkg.name))?;
-
         tracing::info!(":: compiled {} [{}]", pkg.name, location.display());
     }
 
     for dependency in manifest.dependencies {
         let location = PackageStore::locate(&dependency.package);
-
-        generator
-            .run(GenerationConfig {
-                package: &dependency.package,
-                location: &location,
-                out: &out,
-            })
-            .await
-            .wrap_err_with(|| format!("Failed to generate bindings for {}", dependency.package))?;
-
         tracing::info!(
             ":: compiled {} [{}]",
             dependency.package,
@@ -154,23 +120,19 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Include the rust language bindings of a buffrs dependency
-///
-/// You must specify the buffrs dependency package id.
+/// Include generated rust language bindings for buffrs.
 ///
 /// ```rust,ignore
 /// mod protos {
-///     buffrs::include!("demo");
+///     buffrs::include!();
 /// }
 /// ```
 #[macro_export]
 macro_rules! include {
-    ($package:expr) => {
+    () => {
         ::std::include!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/proto/build/rust/",
-            $package,
-            "/mod.rs"
+            "/proto/build/rust/mod.rs",
         ));
     };
 }
