@@ -26,4 +26,4 @@ buffer definitions and the `proto/vendor` directory, which contains external
 protocol buffers.
 
 **Important:** The vendor directory is managed by buffrs, all manual changes
-will be overridden / cam cause not reproducable behavior.
+will be overridden / cam cause not reproducible behavior.
