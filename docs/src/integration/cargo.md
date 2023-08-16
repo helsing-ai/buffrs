@@ -2,9 +2,9 @@
 
 To integrate Buffrs into your Cargo workflow, the `buffrs` crate on crates.io
 is available. It contains types and functionality to interact with buffrs
-programatically (as opposed to the cli).
+programmatically (as opposed to the cli).
 
-To enable your project to interact with buffrs programatically you need to add
+To enable your project to interact with buffrs programmatically you need to add
 the `buffrs` crate to your `[build-dependencies]` section:
 
 ```toml
