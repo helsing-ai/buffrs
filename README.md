@@ -17,7 +17,7 @@
 
 ## Quickstart
 
-```
+```bash,ignore
 $ cargo install buffrs
 $ buffrs login
 $ buffrs init --api
@@ -33,7 +33,7 @@ Useful resources:
 
 ## Synopsis
 
-```
+```text,ignore
 An opinionated protobuf package manager
 
 Usage: buffrs <COMMAND>
