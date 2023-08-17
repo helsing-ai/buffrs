@@ -45,7 +45,7 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
     /// Run the generator for a dependency and output files into `out`
-    pub async fn run(&self, output: &Path) -> eyre::Result<()> {
+    pub async fn run(&self, output: impl AsRef<Path>) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
