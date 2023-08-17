@@ -44,7 +44,7 @@ pub enum Generator {
 impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
-    /// Run the generator for a dependency and output files into `out`
+    /// Run the generator for a dependency and output files at the provided path
     pub async fn run(&self, output: impl AsRef<Path>) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
