@@ -45,7 +45,7 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, output: impl AsRef<Path>) -> eyre::Result<()> {
+    pub async fn run(&self, out_dir: impl AsRef<Path>) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -61,7 +61,7 @@ impl Generator {
                     .build_server(true)
                     .build_transport(true)
                     .compile_well_known_types(true)
-                    .out_dir(output)
+                    .out_dir(out_dir)
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
@@ -85,21 +85,21 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     // Only tonic is supported right now
     let generator = Generator::Tonic;
 
-    let out = {
-        let out = language.build_directory();
+    let out_dir = {
+        let out_dir = language.build_directory();
 
-        fs::remove_dir_all(&out).await.ok();
+        fs::remove_dir_all(&out_dir).await.ok();
 
-        fs::create_dir_all(&out).await.wrap_err(eyre::eyre!(
+        fs::create_dir_all(&out_dir).await.wrap_err(eyre::eyre!(
             "Failed to create clean build directory {} for {language}",
-            out.canonicalize()?.to_string_lossy()
+            out_dir.canonicalize()?.to_string_lossy()
         ))?;
 
-        out
+        out_dir
     };
 
     generator
-        .run(&out)
+        .run(&out_dir)
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
