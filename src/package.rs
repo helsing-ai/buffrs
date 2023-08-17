@@ -51,7 +51,7 @@ impl PackageStore {
     }
 
     /// Unpacks a package into a local directory
-    pub async fn unpack(package: &Package, path: &Path) -> eyre::Result<()> {
+    pub async fn unpack(package: &Package) -> eyre::Result<()> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
@@ -61,7 +61,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = path.join(package.manifest.name.as_str());
+        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -86,9 +86,7 @@ impl PackageStore {
     pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
         let package = registry.download(dependency).await?;
 
-        let vendor_dir = Path::new(Self::PROTO_VENDOR_PATH);
-
-        Self::unpack(&package, vendor_dir).await?;
+        Self::unpack(&package).await?;
 
         let mut tree = format!(
             ":: installed {}@{}",
@@ -97,14 +95,29 @@ impl PackageStore {
 
         let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
 
-        let package_dir = &vendor_dir.join(package.manifest.name.as_str());
-
         let dependency_count = dependencies.len();
 
         for (index, dependency) in dependencies.into_iter().enumerate() {
+            if let Ok(manifest) = Self::resolve(&dependency.package).await {
+                let existing = manifest.package.wrap_err(eyre::eyre!(
+                    "Found installed manifest for {} but it is malformed",
+                    dependency.package,
+                ))?;
+
+                eyre::ensure!(
+                    existing.version == dependency.manifest.version,
+                    "A dependency of your project requires {}@{} which collides with {}@{} required by {}",
+                    existing.name,
+                    existing.version,
+                    dependency.package,
+                    dependency.manifest.version,
+                    package.manifest.name,
+                );
+            }
+
             let dependency = registry.download(dependency).await?;
 
-            Self::unpack(&dependency, package_dir).await?;
+            Self::unpack(&dependency).await?;
 
             let tree_char = if index + 1 == dependency_count {
                 '┗'
