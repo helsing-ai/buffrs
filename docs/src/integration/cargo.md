@@ -19,6 +19,8 @@ This tells Cargo to make the `buffrs` crate available within your build scripts
 language bindings when your project is compiled via `buffrs::build` an out of
 the box build script which utilizes tonic and prost.
 
+`build.rs`:
+
 ```rust
 fn main() {
     buffrs::build(buffrs::Language::Rust).unwrap();
@@ -32,3 +34,22 @@ Invoking `buffrs::build` will:
 2. Compile locally defined Buffrs packages (if present)
 3. Compile all dependencies specified in your `Proto.toml` (if present)
 4. Output the language bindings into `proto/build/rust`
+
+## Using the generated bindings
+
+To use the generated rust code within your application code, you can either use
+the `buffrs::include!` macro, or use the std version and manually locate the
+buffrs module.
+
+```rust
+// Using buffrs
+mod proto { buffrs::include!(); }
+
+// Using std
+mod proto {
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/proto/build/rust/mod.rs",
+    ))
+}
+```
