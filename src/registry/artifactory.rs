@@ -40,6 +40,8 @@ impl Artifactory {
 impl Registry for Artifactory {
     /// Downloads a package from artifactory
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+        todo!("IMPLEMENT VERSION RESOLUTION");
+
         let artifact_uri: Url = {
             let mut url = self.0.url.clone();
 
