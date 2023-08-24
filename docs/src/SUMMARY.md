@@ -15,10 +15,14 @@
     * [Creating a New Package]()
     * [Working on an Existing Package]()
     * [Dependencies]()
-    * [Project Layout]()
+    * [Project Layout](guide/project-layout.md)
     * [Proto.toml vs Proto.lock]()
     * [Continuous Integration]()
     * [Buffrs Home]()
+
+* [Buffrs Integrations]()
+    * [Cargo](integration/cargo.md)
+    * [Poetry]()
 
 * [Buffrs Reference]()
     * [Specifying Dependencies]()

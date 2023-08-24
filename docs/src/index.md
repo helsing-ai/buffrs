@@ -2,10 +2,9 @@
 
 ![Buffrs Logo](images/buffrs.svg)
 
-Buffrs is a protocol buffers package manager. Buffrs downloads your projects
-grpc dependencies, generates instantly usable language bindings, packages
-distributable packages, and uploads them to [buff.rs], the buffrs package
-registry.
+Buffrs is a protocol buffers package manager. It downloads your projects
+gRPC dependencies, packages distributable protocol buffer libraries and apis,
+and uploads them to the buffrs package registry.
 
 ### Sections
 
