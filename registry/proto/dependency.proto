@@ -1,0 +1,10 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
+syntax = "proto3";
+
+package buffrs.dependency;
+
+message Dependency {
+    string name = 1;
+    string version = 2;
+}

@@ -1,0 +1,17 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
+syntax = "proto3";
+
+import "package.proto";
+import "dependency.proto";
+
+package buffrs.manifest;
+
+message Manifest {
+    buffrs.package.Package package = 1;
+    repeated buffrs.dependency.Dependency dependencies = 2;
+}
+
+message LockFile {
+    // tbd
+}

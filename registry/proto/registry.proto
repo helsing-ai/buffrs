@@ -1,0 +1,51 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
+syntax = "proto3";
+
+import "package.proto";
+import "dependency.proto";
+
+package buffrs.registry;
+
+service Registry {
+    // Resolve a set of dependencies to packages
+    rpc Resolve(ResolveRequest)
+      returns (ResolveResponse);
+
+    // Publish a package
+    rpc Publish(PublishRequest)
+      returns (PublishResponse);
+
+    // Download a package
+    rpc Download(DownloadRequest)
+      returns (DownloadResponse);
+}
+
+// resolving
+
+message ResolveRequest {
+    repeated buffrs.dependency.Dependency dependencies = 1;
+    repeated buffrs.package.Package locked = 2;
+}
+
+message ResolveResponse {
+    repeated buffrs.package.Package packages = 1;
+}
+
+// publishing
+
+message PublishRequest {
+    buffrs.package.Compressed package = 1;
+}
+
+message PublishResponse {}
+
+// downloading
+
+message DownloadRequest {
+    buffrs.package.Package package = 1;
+}
+
+message DownloadResponse {
+    buffrs.package.Compressed package = 1;
+}
