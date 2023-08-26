@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use eyre::{ensure, Context};
+use eyre::{ensure, Context, ContextCompat};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -40,6 +40,36 @@ impl Artifactory {
 impl Registry for Artifactory {
     /// Downloads a package from artifactory
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+        ensure!(
+            dependency.manifest.version.comparators.len() == 1,
+            "{} uses unsupported semver comparators",
+            dependency.package
+        );
+
+        let version = dependency
+            .manifest
+            .version
+            .comparators
+            .first()
+            .wrap_err("internal error")?;
+
+        ensure!(
+            version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
+            "artifactory only support pinned dependencies"
+        );
+
+        let version = format!(
+            "{}.{}.{}{}",
+            version.major,
+            version.minor.wrap_err("internal error")?,
+            version.patch.wrap_err("internal error")?,
+            if version.pre.is_empty() {
+                "".to_owned()
+            } else {
+                format!("-{}", version.pre)
+            }
+        );
+
         let artifact_uri: Url = {
             let mut url = self.0.url.clone();
 
@@ -49,7 +79,7 @@ impl Registry for Artifactory {
                 dependency.manifest.repository,
                 dependency.package,
                 dependency.package,
-                dependency.manifest.version
+                version
             ));
 
             url

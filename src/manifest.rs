@@ -1,6 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
 use eyre::Context;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 use tokio::fs;
@@ -100,13 +101,13 @@ pub struct PackageManifest {
     /// Name of the package
     pub name: PackageId,
     /// Version of the package
-    pub version: String,
+    pub version: Version,
     /// Description of the api package
     pub description: Option<String>,
 }
 
 /// Represents a single project dependency
-#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Dependency {
     /// Package name of this dependency
     pub package: PackageId,
@@ -116,7 +117,7 @@ pub struct Dependency {
 
 impl Dependency {
     /// Creates a new dependency
-    pub fn new(repository: String, package: PackageId, version: String) -> Self {
+    pub fn new(repository: String, package: PackageId, version: VersionReq) -> Self {
         Self {
             package,
             manifest: DependencyManifest {
@@ -138,10 +139,10 @@ impl fmt::Display for Dependency {
 }
 
 /// Manifest format for dependencies
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DependencyManifest {
     /// Version requirement in the helsing format, currently only supports pinning
-    pub version: String,
+    pub version: VersionReq,
     /// Artifactory repository to pull dependency from
     pub repository: String,
 }

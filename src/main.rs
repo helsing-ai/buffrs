@@ -142,6 +142,7 @@ mod cmd {
     };
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;
+    use semver::{Version, VersionReq};
 
     /// Initializes the project
     pub async fn init(r#type: Option<(PackageType, Option<PackageId>)>) -> eyre::Result<()> {
@@ -163,7 +164,7 @@ mod cmd {
             manifest.package = Some(PackageManifest {
                 r#type,
                 name,
-                version: "0.0.1".to_owned(),
+                version: Version::new(0, 0, 1),
                 description: None,
             });
         }
@@ -200,20 +201,15 @@ mod cmd {
             .parse::<PackageId>()
             .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
 
-        ensure!(
-            version
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '.' || c == '-'),
-            "Version specifications must be in the format <major>.<minor>.<patch>-<tag>"
-        );
+        let version = version
+            .parse::<VersionReq>()
+            .wrap_err_with(|| format!("Invalid version requirement supplied: {package}"))?;
 
         let mut manifest = Manifest::read().await?;
 
-        manifest.dependencies.push(Dependency::new(
-            repository.to_owned(),
-            package,
-            version.to_owned(),
-        ));
+        manifest
+            .dependencies
+            .push(Dependency::new(repository.to_owned(), package, version));
 
         manifest.write().await
     }
