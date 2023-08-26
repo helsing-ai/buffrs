@@ -50,7 +50,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
                     )
                 })?;
 
-                if pkg.version == dependency.manifest.version {
+                if dependency.manifest.version.matches(&pkg.version) {
                     continue;
                 }
             }

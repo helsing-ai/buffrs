@@ -105,7 +105,7 @@ impl PackageStore {
                 ))?;
 
                 eyre::ensure!(
-                    existing.version == dependency.manifest.version,
+                    dependency.manifest.version.matches(&existing.version),
                     "A dependency of your project requires {}@{} which collides with {}@{} required by {}",
                     existing.name,
                     existing.version,
