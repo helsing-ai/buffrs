@@ -10,9 +10,10 @@ cargo install buffrs
 ```
 
 As of right now you are required to authenticate yourself against your private
-artifactory instance (which will be replaced by the Buffrs Registry in Q4 2023).
+artifactory instance (which will be replaced by the Buffrs Registry in Q4
+2023).
 
-Loging in to your instance is done using the following `buffrs` command:
+Logging in to your instance is done using the following `buffrs` command:
 
 ```bash
 buffrs login
@@ -21,7 +22,7 @@ buffrs login
 ```
 
 You will be prompted for an artifactory identity token which you can create
-within the artifactory user interface or programatically through terraform.
+within the artifactory user interface or programmatically through terraform.
 
 ### Build and Install Buffrs from Source
 
