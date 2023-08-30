@@ -62,8 +62,6 @@ impl Registry for LocalRegistry {
             dependency.manifest.repository, dependency.package, dependency.package, version
         )));
 
-        println!("{:?}", path);
-
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
         let bytes = Bytes::from(std::fs::read(path)?);
@@ -120,7 +118,7 @@ mod tests {
             description: None,
         };
         let package_bytes = Bytes::from(
-            fs::read(PathBuf::from("src/registry/test-data/test-api-0.1.0.tgz")).unwrap(),
+            include_bytes!("../../tests/data/test-api-0.1.0.tgz").to_vec()
         );
 
         // Publish to local registry and assert the tgz exists in the file system
