@@ -3,6 +3,7 @@
 use crate::{manifest::Dependency, package::Package};
 
 mod artifactory;
+#[cfg(test)]
 mod local;
 
 pub use artifactory::{Artifactory, ArtifactoryConfig};

@@ -117,9 +117,8 @@ mod tests {
             },
             description: None,
         };
-        let package_bytes = Bytes::from(
-            include_bytes!("../../tests/data/test-api-0.1.0.tgz").to_vec()
-        );
+        let package_bytes =
+            Bytes::from(include_bytes!("../../tests/data/test-api-0.1.0.tgz").to_vec());
 
         // Publish to local registry and assert the tgz exists in the file system
         registry
