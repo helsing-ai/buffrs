@@ -1,9 +1,11 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
+use std::path::Path;
+use std::{collections::HashMap, fmt};
+
 use eyre::Context;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
 use tokio::fs;
 
 use crate::package::{PackageId, PackageType};
@@ -55,8 +57,8 @@ impl Manifest {
             .wrap_err("Failed to detect manifest")
     }
 
-    pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(MANIFEST_FILE)
+    pub async fn read(base_dir: &Path) -> eyre::Result<Self> {
+        let toml = fs::read_to_string(base_dir.join(MANIFEST_FILE))
             .await
             .wrap_err("Failed to read manifest")?;
 
@@ -65,12 +67,15 @@ impl Manifest {
         Ok(raw.into())
     }
 
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self, base_dir: &Path) -> eyre::Result<()> {
         let raw = RawManifest::from(self.to_owned());
 
-        fs::write(MANIFEST_FILE, toml::to_string(&raw)?.into_bytes())
-            .await
-            .wrap_err("Failed to write manifest")
+        fs::write(
+            base_dir.join(MANIFEST_FILE),
+            toml::to_string(&raw)?.into_bytes(),
+        )
+        .await
+        .wrap_err("Failed to write manifest")
     }
 }
 

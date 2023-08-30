@@ -1,8 +1,9 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::package::PackageId;
+use buffrs::package::{PackageId, PackageStore};
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -102,36 +103,46 @@ async fn main() -> eyre::Result<()> {
 
     let config = Credentials::load().await?;
 
+    let base_dir = PathBuf::new();
+    let commands = cmd::Cmd {
+        base_dir: base_dir.clone(),
+        package_store: PackageStore { base_dir },
+    };
     match cli.command {
         Command::Init { lib, api, package } => {
-            cmd::init(if lib {
-                Some((PackageType::Lib, package))
-            } else if api {
-                Some((PackageType::Api, package))
-            } else {
-                None
-            })
-            .await?
+            commands
+                .init(if lib {
+                    Some((PackageType::Lib, package))
+                } else if api {
+                    Some((PackageType::Api, package))
+                } else {
+                    None
+                })
+                .await?
         }
-        Command::Add { dependency } => cmd::add(dependency).await?,
-        Command::Remove { package } => cmd::remove(package).await?,
+        Command::Add { dependency } => commands.add(dependency).await?,
+        Command::Remove { package } => commands.remove(package).await?,
         Command::Publish {
             repository,
             allow_dirty,
             dry_run,
-        } => cmd::publish(config, repository, allow_dirty, dry_run).await?,
-        Command::Install => cmd::install(config).await?,
-        Command::Uninstall => cmd::uninstall().await?,
-        Command::Generate { language } => cmd::generate(language).await?,
-        Command::Login { url, username } => cmd::login(config, url, username).await?,
-        Command::Logout => cmd::logout(config).await?,
+        } => {
+            commands
+                .publish(config, repository, allow_dirty, dry_run)
+                .await?
+        }
+        Command::Install => commands.install(config).await?,
+        Command::Uninstall => commands.uninstall().await?,
+        Command::Generate { language } => commands.generate(language).await?,
+        Command::Login { url, username } => commands.login(config, url, username).await?,
+        Command::Logout => commands.logout(config).await?,
     }
 
     Ok(())
 }
 
 mod cmd {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use buffrs::{
         credentials::Credentials,
@@ -144,224 +155,239 @@ mod cmd {
     use futures::future::try_join_all;
     use semver::{Version, VersionReq};
 
-    /// Initializes the project
-    pub async fn init(r#type: Option<(PackageType, Option<PackageId>)>) -> eyre::Result<()> {
-        let mut manifest = Manifest::default();
-
-        if let Some((r#type, name)) = r#type {
-            const DIR_ERR: &str = "Failed to read current directory name";
-
-            let name = match name {
-                Some(name) => name,
-                None => std::env::current_dir()?
-                    .file_name()
-                    .wrap_err(DIR_ERR)?
-                    .to_str()
-                    .wrap_err(DIR_ERR)?
-                    .parse()?,
-            };
-
-            manifest.package = Some(PackageManifest {
-                r#type,
-                name,
-                version: Version::new(0, 0, 1),
-                description: None,
-            });
-        }
-
-        ensure!(
-            !Manifest::exists().await?,
-            "Cant initialize existing project"
-        );
-
-        manifest.write().await?;
-
-        PackageStore::create().await
+    pub struct Cmd {
+        pub(crate) base_dir: PathBuf,
+        pub(crate) package_store: PackageStore,
     }
 
-    /// Adds a dependency to this project
-    pub async fn add(dependency: String) -> eyre::Result<()> {
-        let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
+    impl Cmd {
+        /// Initializes the project
+        pub async fn init(
+            &self,
+            r#type: Option<(PackageType, Option<PackageId>)>,
+        ) -> eyre::Result<()> {
+            let mut manifest = Manifest::default();
 
-        let (repository, dependency) = dependency
-            .trim()
-            .split_once('/')
-            .wrap_err("Invalid dependency specification")?;
+            if let Some((r#type, name)) = r#type {
+                const DIR_ERR: &str = "Failed to read current directory name";
 
-        ensure!(
-            repository.chars().all(lower_kebab),
-            "Repositories must be in lower kebab case"
-        );
+                let name = match name {
+                    Some(name) => name,
+                    None => std::env::current_dir()?
+                        .file_name()
+                        .wrap_err(DIR_ERR)?
+                        .to_str()
+                        .wrap_err(DIR_ERR)?
+                        .parse()?,
+                };
 
-        let (package, version) = dependency
-            .split_once('@')
-            .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
-
-        let package = package
-            .parse::<PackageId>()
-            .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
-
-        let version = version
-            .parse::<VersionReq>()
-            .wrap_err_with(|| format!("Invalid version requirement supplied: {package}"))?;
-
-        let mut manifest = Manifest::read().await?;
-
-        manifest
-            .dependencies
-            .push(Dependency::new(repository.to_owned(), package, version));
-
-        manifest.write().await
-    }
-
-    /// Removes a dependency from this project
-    pub async fn remove(package: PackageId) -> eyre::Result<()> {
-        let mut manifest = Manifest::read().await?;
-
-        let dependency = manifest
-            .dependencies
-            .iter()
-            .find(|d| d.package != package)
-            .wrap_err(eyre::eyre!(
-                "Unable to remove unknown dependency {package:?}"
-            ))?
-            .to_owned();
-
-        manifest.dependencies.retain(|d| *d != dependency);
-
-        PackageStore::uninstall(&dependency.package)
-            .await
-            .wrap_err("Failed to uninstall dependency")?;
-
-        manifest.write().await
-    }
-
-    /// Publishs the api package to the registry
-    pub async fn publish(
-        credentials: Credentials,
-        repository: String,
-        allow_dirty: bool,
-        dry_run: bool,
-    ) -> eyre::Result<()> {
-        if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
-            let statuses = repository
-                .statuses(None)
-                .wrap_err("Failed to get git status")?;
-
-            if !allow_dirty && !statuses.is_empty() {
-                tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
-
-                statuses
-                    .iter()
-                    .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
-
-                tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
-
-                eyre::bail!("Unable to publish a dirty git repository");
+                manifest.package = Some(PackageManifest {
+                    r#type,
+                    name,
+                    version: Version::new(0, 0, 1),
+                    description: None,
+                });
             }
+
+            ensure!(
+                !Manifest::exists().await?,
+                "Cant initialize existing project"
+            );
+
+            manifest.write(&self.base_dir).await?;
+
+            self.package_store.create().await
         }
 
-        let artifactory = {
-            let Some(artifactory) = credentials.artifactory else {
-                eyre::bail!(
+        /// Adds a dependency to this project
+        pub async fn add(&self, dependency: String) -> eyre::Result<()> {
+            let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
+
+            let (repository, dependency) = dependency
+                .trim()
+                .split_once('/')
+                .wrap_err("Invalid dependency specification")?;
+
+            ensure!(
+                repository.chars().all(lower_kebab),
+                "Repositories must be in lower kebab case"
+            );
+
+            let (package, version) = dependency
+                .split_once('@')
+                .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
+
+            let package = package
+                .parse::<PackageId>()
+                .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
+
+            let version = version
+                .parse::<VersionReq>()
+                .wrap_err_with(|| format!("Invalid version requirement supplied: {package}"))?;
+
+            let mut manifest = Manifest::read(&self.base_dir).await?;
+
+            manifest
+                .dependencies
+                .push(Dependency::new(repository.to_owned(), package, version));
+
+            manifest.write(&self.base_dir).await
+        }
+
+        /// Removes a dependency from this project
+        pub async fn remove(&self, package: PackageId) -> eyre::Result<()> {
+            let mut manifest = Manifest::read(&self.base_dir).await?;
+
+            let dependency = manifest
+                .dependencies
+                .iter()
+                .find(|d| d.package != package)
+                .wrap_err(eyre::eyre!(
+                    "Unable to remove unknown dependency {package:?}"
+                ))?
+                .to_owned();
+
+            manifest.dependencies.retain(|d| *d != dependency);
+
+            self.package_store
+                .uninstall(&dependency.package)
+                .await
+                .wrap_err("Failed to uninstall dependency")?;
+
+            manifest.write(&self.base_dir).await
+        }
+
+        /// Publishes the api package to the registry
+        pub async fn publish(
+            &self,
+            credentials: Credentials,
+            repository: String,
+            allow_dirty: bool,
+            dry_run: bool,
+        ) -> eyre::Result<()> {
+            if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
+                let statuses = repository
+                    .statuses(None)
+                    .wrap_err("Failed to get git status")?;
+
+                if !allow_dirty && !statuses.is_empty() {
+                    tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
+
+                    statuses
+                        .iter()
+                        .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
+
+                    tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
+
+                    eyre::bail!("Unable to publish a dirty git repository");
+                }
+            }
+
+            let artifactory = {
+                let Some(artifactory) = credentials.artifactory else {
+                    eyre::bail!(
                     "Unable to publish package to artifactory, please login using `buffrs login`"
                 );
+                };
+
+                Artifactory::from(artifactory)
             };
 
-            Artifactory::from(artifactory)
-        };
+            let package = self
+                .package_store
+                .release()
+                .await
+                .wrap_err("Failed to create release")?;
 
-        let package = PackageStore::release()
-            .await
-            .wrap_err("Failed to create release")?;
+            if dry_run {
+                tracing::warn!(":: aborting upload due to dry run");
+                return Ok(());
+            }
 
-        if dry_run {
-            tracing::warn!(":: aborting upload due to dry run");
-            return Ok(());
+            artifactory.publish(package, repository).await?;
+
+            Ok(())
         }
 
-        artifactory.publish(package, repository).await?;
-
-        Ok(())
-    }
-
-    /// Installs dependencies
-    pub async fn install(credentials: Credentials) -> eyre::Result<()> {
-        let artifactory = {
-            let Some(artifactory) = credentials.artifactory else {
-                eyre::bail!(
+        /// Installs dependencies
+        pub async fn install(&self, credentials: Credentials) -> eyre::Result<()> {
+            let artifactory = {
+                let Some(artifactory) = credentials.artifactory else {
+                    eyre::bail!(
                     "Unable to install artifactory dependencies, please login using `buffrs login`"
                 );
+                };
+
+                Artifactory::from(artifactory)
             };
 
-            Artifactory::from(artifactory)
-        };
+            let manifest = Manifest::read(&self.base_dir).await?;
 
-        let manifest = Manifest::read().await?;
+            let mut install = Vec::new();
 
-        let mut install = Vec::new();
+            for dependency in manifest.dependencies {
+                install.push(self.package_store.install(dependency, artifactory.clone()));
+            }
 
-        for dependency in manifest.dependencies {
-            install.push(PackageStore::install(dependency, artifactory.clone()));
+            try_join_all(install)
+                .await
+                .wrap_err("Failed to install dependencies")?;
+
+            Ok(())
         }
 
-        try_join_all(install)
-            .await
-            .wrap_err("Failed to install dependencies")?;
+        /// Uninstalls dependencies
+        pub async fn uninstall(&self) -> eyre::Result<()> {
+            self.package_store.clear().await
+        }
 
-        Ok(())
-    }
+        /// Generate bindings for a given language
+        pub async fn generate(&self, language: Language) -> eyre::Result<()> {
+            generator::generate(language, &self.base_dir)
+                .await
+                .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
 
-    /// Uninstalls dependencies
-    pub async fn uninstall() -> eyre::Result<()> {
-        PackageStore::clear().await
-    }
+            Ok(())
+        }
 
-    /// Generate bindings for a given language
-    pub async fn generate(language: Language) -> eyre::Result<()> {
-        generator::generate(language)
-            .await
-            .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
+        /// Logs you in for a registry
+        pub async fn login(
+            &self,
+            mut credentials: Credentials,
+            url: url::Url,
+            username: String,
+        ) -> eyre::Result<()> {
+            let password = {
+                tracing::info!("Please enter your artifactory token:");
 
-        Ok(())
-    }
+                let mut raw = String::new();
 
-    /// Logs you in for a registry
-    pub async fn login(
-        mut credentials: Credentials,
-        url: url::Url,
-        username: String,
-    ) -> eyre::Result<()> {
-        let password = {
-            tracing::info!("Please enter your artifactory token:");
+                std::io::stdin()
+                    .read_line(&mut raw)
+                    .wrap_err("Failed to read token")?;
 
-            let mut raw = String::new();
+                raw = raw.trim().to_owned();
 
-            std::io::stdin()
-                .read_line(&mut raw)
-                .wrap_err("Failed to read token")?;
+                raw
+            };
 
-            raw = raw.trim().to_owned();
+            let cfg = ArtifactoryConfig::new(url, username, password);
 
-            raw
-        };
+            let artifactory = Artifactory::from(cfg.clone());
 
-        let cfg = ArtifactoryConfig::new(url, username, password);
+            artifactory
+                .ping()
+                .await
+                .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
 
-        let artifactory = Artifactory::from(cfg.clone());
+            credentials.artifactory = Some(cfg);
+            credentials.write().await
+        }
 
-        artifactory
-            .ping()
-            .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
-
-        credentials.artifactory = Some(cfg);
-        credentials.write().await
-    }
-
-    /// Logs you out from a registry
-    pub async fn logout(mut credentials: Credentials) -> eyre::Result<()> {
-        credentials.artifactory = None;
-        credentials.write().await
+        /// Logs you out from a registry
+        pub async fn logout(&self, mut credentials: Credentials) -> eyre::Result<()> {
+            credentials.artifactory = None;
+            credentials.write().await
+        }
     }
 }

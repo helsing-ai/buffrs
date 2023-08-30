@@ -45,13 +45,20 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, out_dir: impl AsRef<Path>) -> eyre::Result<()> {
+    pub async fn run(
+        &self,
+        base_dir: impl AsRef<Path>,
+        out_dir: impl AsRef<Path>,
+    ) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
+        let package_store = PackageStore {
+            base_dir: base_dir.as_ref().to_path_buf(),
+        };
         let store = Path::new(PackageStore::PROTO_PATH);
-        let protos = PackageStore::collect(store).await;
+        let protos = package_store.collect(store).await;
         let includes = &[store];
 
         match self {
@@ -72,8 +79,8 @@ impl Generator {
 }
 
 /// Generate the code bindings for a language
-pub async fn generate(language: Language) -> eyre::Result<()> {
-    let manifest = Manifest::read().await?;
+pub async fn generate(language: Language, base_dir: &PathBuf) -> eyre::Result<()> {
+    let manifest = Manifest::read(base_dir).await?;
 
     tracing::info!(":: initializing code generator for {language}");
 
@@ -99,7 +106,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     };
 
     generator
-        .run(&out_dir)
+        .run(base_dir, &out_dir)
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
@@ -108,8 +115,11 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         tracing::info!(":: compiled {} [{}]", pkg.name, location.display());
     }
 
+    let package_store = PackageStore {
+        base_dir: base_dir.clone(),
+    };
     for dependency in manifest.dependencies {
-        let location = PackageStore::locate(&dependency.package);
+        let location = package_store.locate(&dependency.package);
         tracing::info!(
             ":: compiled {} [{}]",
             dependency.package,

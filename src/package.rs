@@ -20,7 +20,9 @@ use crate::{
 };
 
 /// IO abstraction layer over local `buffrs` package store
-pub struct PackageStore;
+pub struct PackageStore {
+    pub base_dir: PathBuf,
+}
 
 impl PackageStore {
     /// Path to the proto directory
@@ -29,7 +31,7 @@ impl PackageStore {
     pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create() -> eyre::Result<()> {
+    pub async fn create(&self) -> eyre::Result<()> {
         let create = |dir: &'static str| async move {
             fs::create_dir_all(dir).await.wrap_err(eyre::eyre!(
                 "Failed to create dependency folder {}",
@@ -44,14 +46,14 @@ impl PackageStore {
     }
 
     /// Clears all packages from the file system
-    pub async fn clear() -> eyre::Result<()> {
+    pub async fn clear(&self) -> eyre::Result<()> {
         fs::remove_dir_all(Self::PROTO_VENDOR_PATH)
             .await
             .wrap_err("Failed to uninstall dependencies")
     }
 
     /// Unpacks a package into a local directory
-    pub async fn unpack(package: &Package) -> eyre::Result<()> {
+    pub async fn unpack(&self, package: &Package) -> eyre::Result<()> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
@@ -83,22 +85,26 @@ impl PackageStore {
     }
 
     /// Installs a package and all of its dependency into the local filesystem
-    pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
+    pub async fn install<R: Registry>(
+        &self,
+        dependency: Dependency,
+        registry: R,
+    ) -> eyre::Result<()> {
         let package = registry.download(dependency).await?;
 
-        Self::unpack(&package).await?;
+        self.unpack(&package).await?;
 
         let mut tree = format!(
             ":: installed {}@{}",
             package.manifest.name, package.manifest.version
         );
 
-        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
+        let Manifest { dependencies, .. } = self.resolve(&package.manifest.name).await?;
 
         let dependency_count = dependencies.len();
 
         for (index, dependency) in dependencies.into_iter().enumerate() {
-            if let Ok(manifest) = Self::resolve(&dependency.package).await {
+            if let Ok(manifest) = self.resolve(&dependency.package).await {
                 let existing = manifest.package.wrap_err(eyre::eyre!(
                     "Found installed manifest for {} but it is malformed",
                     dependency.package,
@@ -117,7 +123,7 @@ impl PackageStore {
 
             let dependency = registry.download(dependency).await?;
 
-            Self::unpack(&dependency).await?;
+            self.unpack(&dependency).await?;
 
             let tree_char = if index + 1 == dependency_count {
                 '┗'
@@ -137,7 +143,7 @@ impl PackageStore {
     }
 
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
+    pub async fn uninstall(&self, package: &PackageId) -> eyre::Result<()> {
         let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
@@ -146,8 +152,8 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
-        let manifest = Self::locate(package).join(MANIFEST_FILE);
+    pub async fn resolve(&self, package: &PackageId) -> eyre::Result<Manifest> {
+        let manifest = self.locate(package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
             "Failed to locate local manifest for package: {package}"
@@ -159,8 +165,8 @@ impl PackageStore {
     }
 
     /// Packages a release from the local file system state
-    pub async fn release() -> eyre::Result<Package> {
-        let manifest = Manifest::read().await?;
+    pub async fn release(&self) -> eyre::Result<Package> {
+        let manifest = Manifest::read(&self.base_dir).await?;
 
         let pkg = manifest
             .package
@@ -175,7 +181,8 @@ impl PackageStore {
         }
 
         for dependency in manifest.dependencies.iter() {
-            let resolved = Self::resolve(&dependency.package)
+            let resolved = self
+                .resolve(&dependency.package)
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
 
@@ -205,7 +212,7 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        for entry in Self::collect(&pkg_path).await {
+        for entry in self.collect(&pkg_path).await {
             archive
                 .append_path_with_name(
                     &entry,
@@ -247,12 +254,12 @@ impl PackageStore {
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(package: &PackageId) -> PathBuf {
+    pub fn locate(&self, package: &PackageId) -> PathBuf {
         PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
-    pub async fn collect(path: &Path) -> Vec<PathBuf> {
+    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
         let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
             .await
             .unwrap_or(Self::PROTO_VENDOR_PATH.into());

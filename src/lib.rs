@@ -2,6 +2,10 @@
 
 #![doc = include_str!("../README.md")]
 
+use std::path::{Path, PathBuf};
+
+pub use generator::Language;
+
 /// Credential management
 pub mod credentials;
 /// Code generator
@@ -13,12 +17,10 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
-pub use generator::Language;
-
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
-pub fn build(language: Language) -> eyre::Result<()> {
+pub fn build(language: Language, base_dir: &PathBuf) -> eyre::Result<()> {
     use credentials::Credentials;
     use eyre::ContextCompat;
     use eyre::WrapErr;
@@ -28,7 +30,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
 
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
 
-    async fn install() -> eyre::Result<()> {
+    async fn install(base_dir: &Path) -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
 
         let artifactory = Artifactory::from(
@@ -37,12 +39,15 @@ pub fn build(language: Language) -> eyre::Result<()> {
                 .wrap_err("Artifactory configuration is required")?,
         );
 
-        let manifest = Manifest::read().await?;
+        let manifest = Manifest::read(base_dir).await?;
 
+        let package_store = PackageStore {
+            base_dir: base_dir.to_path_buf(),
+        };
         let mut install = Vec::new();
 
         for dependency in manifest.dependencies {
-            if let Ok(pkg) = PackageStore::resolve(&dependency.package).await {
+            if let Ok(pkg) = package_store.resolve(&dependency.package).await {
                 let pkg = pkg.package.wrap_err_with(|| {
                     format!(
                         "required package entry in manifest of {} to be present",
@@ -55,7 +60,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
                 }
             }
 
-            install.push(PackageStore::install(dependency, artifactory.clone()));
+            install.push(package_store.install(dependency, artifactory.clone()));
         }
 
         futures::future::try_join_all(install)
@@ -67,8 +72,8 @@ pub fn build(language: Language) -> eyre::Result<()> {
 
     let rt = tokio::runtime::Runtime::new()?;
 
-    rt.block_on(install())?;
-    rt.block_on(generator::generate(language))?;
+    rt.block_on(install(base_dir))?;
+    rt.block_on(generator::generate(language, base_dir))?;
 
     Ok(())
 }
