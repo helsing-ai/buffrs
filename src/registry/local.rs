@@ -105,6 +105,8 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
+
+
         let manifest = PackageManifest {
             r#type: PackageType::Api,
             name: PackageId::from_str("test-api").unwrap(),

@@ -57,9 +57,7 @@ impl Generator {
         let package_store = PackageStore {
             base_dir: base_dir.as_ref().to_path_buf(),
         };
-        let store = Path::new(PackageStore::PROTO_PATH);
-        let protos = package_store.collect(store).await;
-        let includes = &[store];
+        let protos = package_store.collect().await?;
 
         match self {
             Generator::Tonic => {
@@ -70,7 +68,7 @@ impl Generator {
                     .compile_well_known_types(true)
                     .out_dir(out_dir)
                     .include_file(Self::TONIC_INCLUDE_FILE)
-                    .compile(&protos, includes)?;
+                    .compile(&protos, &[package_store.proto_path()])?;
             }
         }
 
@@ -110,14 +108,14 @@ pub async fn generate(language: Language, base_dir: &PathBuf) -> eyre::Result<()
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
-    if let Some(ref pkg) = manifest.package {
-        let location = Path::new(PackageStore::PROTO_PATH);
-        tracing::info!(":: compiled {} [{}]", pkg.name, location.display());
-    }
-
     let package_store = PackageStore {
         base_dir: base_dir.clone(),
     };
+
+    if let Some(ref pkg) = manifest.package {
+        tracing::info!(":: compiled {} [{}]", pkg.name, package_store.proto_path().display());
+    }
+
     for dependency in manifest.dependencies {
         let location = package_store.locate(&dependency.package);
         tracing::info!(

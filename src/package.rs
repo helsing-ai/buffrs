@@ -26,7 +26,7 @@ pub struct PackageStore {
 
 impl PackageStore {
     /// Path to the proto directory
-    pub const PROTO_PATH: &str = "proto";
+    const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
     pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
@@ -43,6 +43,16 @@ impl PackageStore {
         create(Self::PROTO_VENDOR_PATH).await?;
 
         Ok(())
+    }
+
+    /// Returns the path to this stores proto files, typically `<base_dir>/proto`.
+    pub fn proto_path(&self) -> PathBuf {
+        self.base_dir.join(Self::PROTO_PATH)
+    }
+
+    /// Returns the path to this stores vendered proto files, typically `<base_dir>/proto/vendor`.
+    pub fn proto_vendor_path(&self) -> PathBuf {
+        self.base_dir.join(Self::PROTO_VENDOR_PATH)
     }
 
     /// Clears all packages from the file system
@@ -196,15 +206,6 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to locate package folder (expected directory {} to be present)",
-                    Self::PROTO_PATH
-                )
-            })?;
-
         let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
             .wrap_err("Failed to encode release manifest")?
             .as_bytes()
@@ -212,7 +213,7 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        for entry in self.collect(&pkg_path).await {
+        for entry in self.collect().await? {
             archive
                 .append_path_with_name(
                     &entry,
@@ -258,13 +259,22 @@ impl PackageStore {
         PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
     }
 
-    /// Collect .proto files in a given path whilst excluding vendored ones
-    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
+    /// Collect .proto files whilst excluding vendored ones
+    pub async fn collect(&self) -> eyre::Result<Vec<PathBuf>> {
+        let path = fs::canonicalize(&Self::PROTO_PATH)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to locate package folder (expected directory {} to be present)",
+                    Self::PROTO_PATH
+                )
+            })?;
+
         let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
             .await
             .unwrap_or(Self::PROTO_VENDOR_PATH.into());
 
-        WalkDir::new(path)
+        Ok(WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
@@ -274,7 +284,7 @@ impl PackageStore {
 
                 matches!(ext, Some(Some("proto")))
             })
-            .collect()
+            .collect())
     }
 }
 
