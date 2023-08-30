@@ -90,55 +90,42 @@ impl Registry for LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, PackageManifest};
-    use crate::package::{Package, PackageId, PackageType};
+    use crate::manifest::Dependency;
+    use crate::package::{Package, PackageId, PackageStore};
     use crate::registry::local::LocalRegistry;
     use crate::registry::Registry;
     use bytes::Bytes;
-    use semver::{Version, VersionReq};
+    use semver::VersionReq;
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::{env, fs};
 
     #[tokio::test]
     async fn can_publish_and_fetch() {
-        let dir = env::temp_dir();
-        let registry = LocalRegistry::new(dir.clone());
+        let tmp_dir = env::temp_dir();
+        let registry = LocalRegistry::new(tmp_dir.clone());
 
+        // Create an (in-memory) release of the test proto package
+        let package_store = PackageStore {base_dir: PathBuf::from("tests/data/test-api")};
+        let release = package_store.release().await.unwrap();
 
-
-        let manifest = PackageManifest {
-            r#type: PackageType::Api,
-            name: PackageId::from_str("test-api").unwrap(),
-            version: Version {
-                major: 0,
-                minor: 1,
-                patch: 0,
-                pre: Default::default(),
-                build: Default::default(),
-            },
-            description: None,
-        };
-        let package_bytes =
-            Bytes::from(include_bytes!("../../tests/data/test-api-0.1.0.tgz").to_vec());
-
-        // Publish to local registry and assert the tgz exists in the file system
+        // Publish the package to the local registry and assert the tgz exists in the file system
         registry
             .publish(
-                Package::new(manifest.clone(), package_bytes.clone()),
+                Package::new(release.manifest.clone(), release.tgz.clone()),
                 "test-repo".into(),
             )
             .await
             .unwrap();
         assert_eq!(
             Bytes::from(
-                fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
+                fs::read(tmp_dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
             ),
-            package_bytes
+            release.tgz
         );
 
-        // Download package from local registry and assert the tgz bytes and the metadata match what we
-        // had published.
+        // Download the package from local registry and assert the tgz bytes and the metadata match
+        // what we had published.
         let fetched = registry
             .download(Dependency::new(
                 "test-repo".into(),
@@ -147,7 +134,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(fetched.manifest, manifest);
-        assert_eq!(fetched.tgz, package_bytes);
+        assert_eq!(fetched.manifest, release.manifest);
+        assert_eq!(fetched.tgz, release.tgz);
     }
 }

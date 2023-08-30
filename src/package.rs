@@ -4,18 +4,18 @@ use std::{
     fmt::{self, Formatter},
     io::{self, Cursor, Read, Write},
     ops::Deref,
-    path::{Path, PathBuf},
+    path::PathBuf,
     str::FromStr,
 };
 
 use bytes::{Buf, Bytes};
-use eyre::{ensure, Context, ContextCompat};
+use eyre::{Context, ContextCompat, ensure};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{self, Dependency, Manifest, PackageManifest, RawManifest, MANIFEST_FILE},
+    manifest::{self, Dependency, Manifest, MANIFEST_FILE, PackageManifest, RawManifest},
     registry::Registry,
 };
 
@@ -25,39 +25,34 @@ pub struct PackageStore {
 }
 
 impl PackageStore {
-    /// Path to the proto directory
-    const PROTO_PATH: &str = "proto";
-    /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
-
     /// Creates the expected directory structure for `buffrs`
     pub async fn create(&self) -> eyre::Result<()> {
-        let create = |dir: &'static str| async move {
-            fs::create_dir_all(dir).await.wrap_err(eyre::eyre!(
+        let create = |dir: PathBuf| async move {
+            fs::create_dir_all(&dir).await.wrap_err(eyre::eyre!(
                 "Failed to create dependency folder {}",
-                Path::new(dir).canonicalize()?.to_string_lossy()
+                dir.canonicalize()?.to_string_lossy()
             ))
         };
 
-        create(Self::PROTO_PATH).await?;
-        create(Self::PROTO_VENDOR_PATH).await?;
+        create(self.proto_path()).await?;
+        create(self.proto_vendor_path()).await?;
 
         Ok(())
     }
 
-    /// Returns the path to this stores proto files, typically `<base_dir>/proto`.
+    /// Returns the path to this stores proto files, ie, `<base_dir>/proto`.
     pub fn proto_path(&self) -> PathBuf {
-        self.base_dir.join(Self::PROTO_PATH)
+        self.base_dir.join("proto")
     }
 
-    /// Returns the path to this stores vendered proto files, typically `<base_dir>/proto/vendor`.
+    /// Returns the path to this stores vendered proto files, ie, `<base_dir>/proto/vendor`.
     pub fn proto_vendor_path(&self) -> PathBuf {
-        self.base_dir.join(Self::PROTO_VENDOR_PATH)
+        self.base_dir.join("proto/vendor")
     }
 
     /// Clears all packages from the file system
     pub async fn clear(&self) -> eyre::Result<()> {
-        fs::remove_dir_all(Self::PROTO_VENDOR_PATH)
+        fs::remove_dir_all(self.proto_vendor_path())
             .await
             .wrap_err("Failed to uninstall dependencies")
     }
@@ -73,7 +68,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.name.as_str());
+        let pkg_dir = self.proto_vendor_path().join(package.manifest.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -154,7 +149,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(&self, package: &PackageId) -> eyre::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
+        let pkg_dir = self.proto_vendor_path().join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -256,23 +251,21 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(&self, package: &PackageId) -> PathBuf {
-        PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
+        self.proto_vendor_path().join(package.as_str())
     }
 
     /// Collect .proto files whilst excluding vendored ones
     pub async fn collect(&self) -> eyre::Result<Vec<PathBuf>> {
-        let path = fs::canonicalize(&Self::PROTO_PATH)
-            .await
+        let path = self.proto_path().canonicalize()
             .wrap_err_with(|| {
                 format!(
                     "Failed to locate package folder (expected directory {} to be present)",
-                    Self::PROTO_PATH
+                    self.proto_path().display()
                 )
             })?;
 
-        let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
-            .await
-            .unwrap_or(Self::PROTO_VENDOR_PATH.into());
+        let vendor_path = self.proto_vendor_path().canonicalize()
+            .unwrap_or(self.proto_vendor_path());
 
         Ok(WalkDir::new(path)
             .into_iter()
@@ -452,5 +445,55 @@ impl fmt::Debug for PackageId {
         f.debug_tuple("PackageId")
             .field(&format!("{self}"))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs};
+    use std::path::PathBuf;
+    use std::str::FromStr;
+
+    use bytes::Bytes;
+    use semver::Version;
+
+    use crate::manifest::PackageManifest;
+    use crate::package::{PackageId, PackageStore, PackageType};
+
+    #[tokio::test]
+    async fn release_has_correct_manifest() {
+        let store = PackageStore { base_dir: PathBuf::from("tests/data/test-api") };
+        let release = store.release().await.unwrap();
+
+        // Assert release manifest is correct
+        let expected_manifest = PackageManifest {
+            r#type: PackageType::Api,
+            name: PackageId::from_str("test-api").unwrap(),
+            version: Version {
+                major: 0,
+                minor: 1,
+                patch: 0,
+                pre: Default::default(),
+                build: Default::default(),
+            },
+            description: None,
+        };
+        assert_eq!(release.manifest, expected_manifest);
+    }
+
+    #[tokio::test]
+    async fn can_unpack_release_into_vendor_directory() {
+        let read_store = PackageStore { base_dir: PathBuf::from("tests/data/test-api") };
+        let release = read_store.release().await.unwrap();
+
+        let tmp_dir = env::temp_dir();
+        let write_store = PackageStore { base_dir: tmp_dir.clone() };
+        write_store.unpack(&release).await.unwrap();
+        assert_eq!(read_bytes(tmp_dir.join("proto/vendor/test-api/Proto.toml")), read_bytes("tests/data/test-api/Proto.toml"));
+        assert_eq!(read_bytes(tmp_dir.join("proto/vendor/test-api/test.proto")), read_bytes("tests/data/test-api/proto/test.proto"));
+    }
+
+    fn read_bytes(file: impl Into<PathBuf>) -> Bytes {
+        Bytes::from(fs::read(file.into()).unwrap())
     }
 }

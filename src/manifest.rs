@@ -10,6 +10,8 @@ use tokio::fs;
 
 use crate::package::{PackageId, PackageType};
 
+// TODO(rfink): For symmetry between the vendored and the local packages, we should consider
+//  putting the manifest file into proto/Proto.toml .
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
 /// A `buffrs` manifest format used for serialization and deserialization.
