@@ -31,7 +31,10 @@ pub fn build(language: Language, base_dir: &PathBuf) -> eyre::Result<()> {
     let package_store = PackageStore {
         base_dir: base_dir.to_path_buf(),
     };
-    println!("cargo:rerun-if-changed={}", package_store.proto_vendor_path().display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        package_store.proto_vendor_path().display()
+    );
 
     async fn install(base_dir: &Path) -> eyre::Result<()> {
         let credentials = Credentials::read().await?;

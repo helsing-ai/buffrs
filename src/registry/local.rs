@@ -106,7 +106,9 @@ mod tests {
         let registry = LocalRegistry::new(tmp_dir.clone());
 
         // Create an (in-memory) release of the test proto package
-        let package_store = PackageStore {base_dir: PathBuf::from("tests/data/test-api")};
+        let package_store = PackageStore {
+            base_dir: PathBuf::from("tests/data/test-api"),
+        };
         let release = package_store.release().await.unwrap();
 
         // Publish the package to the local registry and assert the tgz exists in the file system
@@ -119,7 +121,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             Bytes::from(
-                fs::read(tmp_dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
+                fs::read(tmp_dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz")))
+                    .unwrap()
             ),
             release.tgz
         );

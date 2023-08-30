@@ -9,13 +9,13 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use eyre::{Context, ContextCompat, ensure};
+use eyre::{ensure, Context, ContextCompat};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{self, Dependency, Manifest, MANIFEST_FILE, PackageManifest, RawManifest},
+    manifest::{self, Dependency, Manifest, PackageManifest, RawManifest, MANIFEST_FILE},
     registry::Registry,
 };
 
@@ -68,7 +68,9 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = self.proto_vendor_path().join(package.manifest.name.as_str());
+        let pkg_dir = self
+            .proto_vendor_path()
+            .join(package.manifest.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -256,15 +258,16 @@ impl PackageStore {
 
     /// Collect .proto files whilst excluding vendored ones
     pub async fn collect(&self) -> eyre::Result<Vec<PathBuf>> {
-        let path = self.proto_path().canonicalize()
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to locate package folder (expected directory {} to be present)",
-                    self.proto_path().display()
-                )
-            })?;
+        let path = self.proto_path().canonicalize().wrap_err_with(|| {
+            format!(
+                "Failed to locate package folder (expected directory {} to be present)",
+                self.proto_path().display()
+            )
+        })?;
 
-        let vendor_path = self.proto_vendor_path().canonicalize()
+        let vendor_path = self
+            .proto_vendor_path()
+            .canonicalize()
             .unwrap_or(self.proto_vendor_path());
 
         Ok(WalkDir::new(path)
@@ -450,9 +453,9 @@ impl fmt::Debug for PackageId {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs};
     use std::path::PathBuf;
     use std::str::FromStr;
+    use std::{env, fs};
 
     use bytes::Bytes;
     use semver::Version;
@@ -462,7 +465,9 @@ mod tests {
 
     #[tokio::test]
     async fn release_has_correct_manifest() {
-        let store = PackageStore { base_dir: PathBuf::from("tests/data/test-api") };
+        let store = PackageStore {
+            base_dir: PathBuf::from("tests/data/test-api"),
+        };
         let release = store.release().await.unwrap();
 
         // Assert release manifest is correct
@@ -483,14 +488,24 @@ mod tests {
 
     #[tokio::test]
     async fn can_unpack_release_into_vendor_directory() {
-        let read_store = PackageStore { base_dir: PathBuf::from("tests/data/test-api") };
+        let read_store = PackageStore {
+            base_dir: PathBuf::from("tests/data/test-api"),
+        };
         let release = read_store.release().await.unwrap();
 
         let tmp_dir = env::temp_dir();
-        let write_store = PackageStore { base_dir: tmp_dir.clone() };
+        let write_store = PackageStore {
+            base_dir: tmp_dir.clone(),
+        };
         write_store.unpack(&release).await.unwrap();
-        assert_eq!(read_bytes(tmp_dir.join("proto/vendor/test-api/Proto.toml")), read_bytes("tests/data/test-api/Proto.toml"));
-        assert_eq!(read_bytes(tmp_dir.join("proto/vendor/test-api/test.proto")), read_bytes("tests/data/test-api/proto/test.proto"));
+        assert_eq!(
+            read_bytes(tmp_dir.join("proto/vendor/test-api/Proto.toml")),
+            read_bytes("tests/data/test-api/Proto.toml")
+        );
+        assert_eq!(
+            read_bytes(tmp_dir.join("proto/vendor/test-api/test.proto")),
+            read_bytes("tests/data/test-api/proto/test.proto")
+        );
     }
 
     fn read_bytes(file: impl Into<PathBuf>) -> Bytes {

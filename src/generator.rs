@@ -113,7 +113,11 @@ pub async fn generate(language: Language, base_dir: &PathBuf) -> eyre::Result<()
     };
 
     if let Some(ref pkg) = manifest.package {
-        tracing::info!(":: compiled {} [{}]", pkg.name, package_store.proto_path().display());
+        tracing::info!(
+            ":: compiled {} [{}]",
+            pkg.name,
+            package_store.proto_path().display()
+        );
     }
 
     for dependency in manifest.dependencies {
