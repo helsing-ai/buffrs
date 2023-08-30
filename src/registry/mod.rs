@@ -3,6 +3,7 @@
 use crate::{manifest::Dependency, package::Package};
 
 mod artifactory;
+mod local;
 
 pub use artifactory::{Artifactory, ArtifactoryConfig};
 
@@ -11,7 +12,7 @@ pub use artifactory::{Artifactory, ArtifactoryConfig};
 pub trait Registry {
     /// Downloads a package from the registry
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package>;
-    /// Publishs a package to the registry
+    /// Publishes a package to the registry
     async fn publish(&self, package: Package, repository: String) -> eyre::Result<()>;
 }
 

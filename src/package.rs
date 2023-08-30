@@ -308,7 +308,10 @@ impl TryFrom<Bytes> for Package {
                 entry
                     .path()
                     .ok()
-                    .filter(|path| path.is_file())
+                    // TODO(rfink): The following line is a bug since it checks whether
+                    //  actual path (relative to the process pwd) is a file, *not* whether
+                    //  the tar entry would be a file if unpacked
+                    // .filter(|path| path.is_file())
                     .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
                     .is_some()
             })
