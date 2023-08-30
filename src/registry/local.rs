@@ -130,7 +130,7 @@ mod tests {
                 "test-repo".into(),
             )
             .await
-            .expect("Publish failed");
+            .unwrap();
         assert_eq!(
             Bytes::from(
                 fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
@@ -138,7 +138,7 @@ mod tests {
             package_bytes
         );
 
-        // Download package from local repo and assert the tgz bytes and the metadata match what we
+        // Download package from local registry and assert the tgz bytes and the metadata match what we
         // had published.
         let fetched = registry
             .download(Dependency::new(
