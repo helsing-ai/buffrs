@@ -111,7 +111,7 @@ pub struct PackageManifest {
 pub struct Dependency {
     /// Package name of this dependency
     pub package: PackageId,
-    /// Version requirement in the helsing format, currently only supports pinning
+    /// Version requirement in the buffrs format, currently only supports pinning
     pub manifest: DependencyManifest,
 }
 
@@ -141,7 +141,7 @@ impl fmt::Display for Dependency {
 /// Manifest format for dependencies
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DependencyManifest {
-    /// Version requirement in the helsing format, currently only supports pinning
+    /// Version requirement in the buffrs format, currently only supports pinning
     pub version: VersionReq,
     /// Artifactory repository to pull dependency from
     pub repository: String,
