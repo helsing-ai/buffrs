@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          lfs: 'true'
       - run: rustup update
       - uses: Swatinem/rust-cache@v2
       - run: cargo test
