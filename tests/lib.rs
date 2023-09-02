@@ -19,7 +19,7 @@ pub fn cli() -> assert_cmd::Command {
 pub struct VirtualFileSystem(TempDir);
 
 impl VirtualFileSystem {
-    /// Init an empty virtual vile system
+    /// Init an empty virtual file system
     pub fn empty() -> Self {
         Self(TempDir::new().unwrap())
     }
