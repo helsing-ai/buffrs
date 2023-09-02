@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -20,7 +19,7 @@ pub fn cli() -> assert_cmd::Command {
 pub struct VirtualFileSystem(TempDir);
 
 impl VirtualFileSystem {
-    /// Init an empty vritual vile system
+    /// Init an empty virtual vile system
     pub fn empty() -> Self {
         Self(TempDir::new().unwrap())
     }
