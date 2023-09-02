@@ -16,7 +16,7 @@ name = "buffrs"
 path = "src/main.rs"
 
 [[test]]
-name = "integration"
+name = "e2e"
 path = "tests/lib.rs"
 test = true
 
