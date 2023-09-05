@@ -117,8 +117,9 @@ mod tests {
             },
             description: None,
         };
+
         let package_bytes =
-            Bytes::from(include_bytes!("../../tests/data/test-api-0.1.0.tgz").to_vec());
+            Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
 
         // Publish to local registry and assert the tgz exists in the file system
         registry
@@ -128,6 +129,7 @@ mod tests {
             )
             .await
             .unwrap();
+
         assert_eq!(
             Bytes::from(
                 fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
@@ -145,6 +147,7 @@ mod tests {
             ))
             .await
             .unwrap();
+
         assert_eq!(fetched.manifest, manifest);
         assert_eq!(fetched.tgz, package_bytes);
     }
