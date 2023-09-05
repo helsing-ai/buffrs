@@ -33,7 +33,7 @@ Invoking `buffrs::build` will:
    `cargo run`)
 2. Compile locally defined Buffrs packages (if present)
 3. Compile all dependencies specified in your `Proto.toml` (if present)
-4. Output the language bindings into `proto/build/rust`
+4. Output the language bindings into Cargo's `OUT_DIR`
 
 ## Using the generated bindings
 
@@ -47,9 +47,6 @@ mod proto { buffrs::include!(); }
 
 // Using std
 mod proto {
-    include!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/proto/build/rust/mod.rs",
-    ))
+    include!(concat!(env!("OUT_DIR"), "/buffrs.rs"));
 }
 ```
