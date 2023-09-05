@@ -101,15 +101,8 @@ impl Drop for VirtualFileSystem {
 }
 
 #[macro_export]
-macro_rules! test_input {
+macro_rules! parent_directory {
     () => {{
-        std::path::Path::new(file!()).parent().unwrap().join("in")
-    }};
-}
-
-#[macro_export]
-macro_rules! test_output {
-    () => {{
-        std::path::Path::new(file!()).parent().unwrap().join("out")
+        std::path::Path::new(file!()).parent().unwrap()
     }};
 }
