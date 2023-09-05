@@ -14,11 +14,17 @@ license = "Apache-2.0"
 [[bin]]
 name = "buffrs"
 path = "src/main.rs"
+required-features = ["build", "git"]
 
 [[test]]
 name = "e2e"
 path = "tests/lib.rs"
 test = true
+
+[features]
+default = ["build", "git"]
+build = ["tonic-build", "protoc-bin-vendored"]
+git = ["git2"]
 
 [dependencies]
 async-trait = "0.1"
@@ -28,10 +34,10 @@ color-eyre = "0.6"
 eyre = "0.6"
 flate2 = "1"
 futures = "0.3"
-git2 = "0.17"
+git2 = { version = "0.17", optional = true }
 home = "0.5.5"
 human-panic = "1"
-protoc-bin-vendored = "3.0.0"
+protoc-bin-vendored = { version = "3.0.0", optional = true }
 reqwest = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_typename = "0.1"
@@ -39,7 +45,7 @@ semver = { version = "1", features = ["serde"] }
 tar = "0.4"
 tokio = { version = "1", features = ["full", "tracing"] }
 toml = "0.7"
-tonic-build = "0.9"
+tonic-build = { version = "0.9", optional = true }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 url = { version = "2.4", features = ["serde"] }
