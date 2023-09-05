@@ -76,7 +76,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Include generated rust protobuf stubs.
+/// Include generated rust language bindings for buffrs.
 ///
 /// ```rust,ignore
 /// mod protos {
@@ -86,9 +86,6 @@ pub fn build(language: Language) -> eyre::Result<()> {
 #[macro_export]
 macro_rules! include {
     () => {
-        ::std::include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proto/build/rust/mod.rs",
-        ));
+        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
     };
 }
