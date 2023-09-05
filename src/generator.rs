@@ -1,12 +1,8 @@
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::{fmt, path::Path};
 
 use eyre::Context;
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
-use tokio::fs;
 
 use crate::{manifest::Manifest, package::PackageStore};
 
@@ -20,12 +16,6 @@ pub const BUILD_DIRECTORY: &str = "proto/build";
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
     Rust,
-}
-
-impl Language {
-    pub fn build_directory(&self) -> PathBuf {
-        Path::new(BUILD_DIRECTORY).join(self.to_string())
-    }
 }
 
 impl fmt::Display for Language {
@@ -42,10 +32,10 @@ pub enum Generator {
 }
 
 impl Generator {
-    pub const TONIC_INCLUDE_FILE: &str = "mod.rs";
+    pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, out_dir: impl AsRef<Path>) -> eyre::Result<()> {
+    pub async fn run(&self) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -60,8 +50,6 @@ impl Generator {
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
-                    .compile_well_known_types(true)
-                    .out_dir(out_dir)
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
@@ -85,21 +73,8 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     // Only tonic is supported right now
     let generator = Generator::Tonic;
 
-    let out_dir = {
-        let out_dir = language.build_directory();
-
-        fs::remove_dir_all(&out_dir).await.ok();
-
-        fs::create_dir_all(&out_dir).await.wrap_err(eyre::eyre!(
-            "Failed to create clean build directory {} for {language}",
-            out_dir.canonicalize()?.to_string_lossy()
-        ))?;
-
-        out_dir
-    };
-
     generator
-        .run(&out_dir)
+        .run()
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
@@ -130,9 +105,6 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 #[macro_export]
 macro_rules! include {
     () => {
-        ::std::include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/proto/build/rust/mod.rs",
-        ));
+        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
     };
 }
