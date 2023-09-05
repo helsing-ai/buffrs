@@ -94,17 +94,3 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 
     Ok(())
 }
-
-/// Include generated rust language bindings for buffrs.
-///
-/// ```rust,ignore
-/// mod protos {
-///     buffrs::include!();
-/// }
-/// ```
-#[macro_export]
-macro_rules! include {
-    () => {
-        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
-    };
-}
