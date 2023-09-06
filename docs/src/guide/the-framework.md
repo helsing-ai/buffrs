@@ -9,7 +9,7 @@ desirable and why. Key aspects include:
 A versioning scheme for APIs — similar to versioned library dependencies —
 explicitly encodes compatibility properties. This allows developers to make
 either backwards-compatible or breaking changes and encode the compatibility
-guarantees in the API version: a minor version upgrade "just works", while
+guarantees in the API version: a minor version upgrade “just works”, while
 a new major version API may require manual migration/adaption in the consuming
 server/client implementations.
 
@@ -20,20 +20,20 @@ is desirable to have a system in which wire-format compatible APIs are also
 source-code compatible. This means that engineers can update minor patches
 automatically and that APIs that build upon the same protocol buffer types can
 be used with the same generated code types. This is especially important in
-strict languages like Rust (due to eg. the orphan rule).
+strict languages like Rust (due to, e.g., the orphan rule).
 
 ### Composition
 
 Enabling engineers to reuse and combine code in order to build new
 systems from existing building blocks is a key feature. A common composition
 scheme with protocol buffers is to use a set of base messages and data types
-across many different APIs.
+across many APIs.
 
 ### Discoverability
 
 Before engineers can reuse and compose protocol buffers, they
 need to be able to discover and understand what APIs exist and how to use them.
-Discoverability is an important accelerator for engineering productivity and
+Discoverability is a significant accelerator for engineering productivity and
 helps developers stay abreast of the evolution of APIs and architecture.
 
 ###
@@ -52,7 +52,7 @@ packages.
 Complex software projects frequently turn out to depend on different versions
 of the same APIs over time and individual components in those systems may have
 diverging compatibility guarantees. Internal services may break their API
-backwards compatibility way more frequent than external gateways that serve
+backwards compatibility, way more frequent than external gateways that serve
 millions of users.
 
 The three fundamental ideas of Buffrs to enable a stable management approach
@@ -61,8 +61,8 @@ for scenarios like the above are:
 #### Buffrs Packages
 
 A closed and meaningful unit of protocol buffers which enables either
-productivity through shared types (eg. Google's `google.protobuf.Timestamp`)
-or describes a domain / API (eg. `service GeoLocator`).
+productivity through shared types (e.g., Google's `google.protobuf.Timestamp`)
+or describes a domain / API (e.g., `service GeoLocator`).
 
 #### Buffrs Registry
 
