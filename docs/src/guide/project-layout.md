@@ -1,4 +1,4 @@
-# Project Layout
+## Project Layout
 
 To get an understanding of the project layout that buffers uses it is helpful to
 start in a clean manner and introspect the outcome.

@@ -5,6 +5,7 @@
 /// Credential management
 pub mod credentials;
 /// Code generator
+#[cfg(feature = "build")]
 pub mod generator;
 /// Manifest format and IO
 pub mod manifest;
@@ -13,11 +14,13 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
+#[cfg(feature = "build")]
 pub use generator::Language;
 
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
+#[cfg(feature = "build")]
 pub fn build(language: Language) -> eyre::Result<()> {
     use credentials::Credentials;
     use eyre::ContextCompat;
@@ -71,4 +74,18 @@ pub fn build(language: Language) -> eyre::Result<()> {
     rt.block_on(generator::generate(language))?;
 
     Ok(())
+}
+
+/// Include generated rust language bindings for buffrs.
+///
+/// ```rust,ignore
+/// mod protos {
+///     buffrs::include!();
+/// }
+/// ```
+#[macro_export]
+macro_rules! include {
+    () => {
+        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
+    };
 }
