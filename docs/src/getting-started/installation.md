@@ -17,7 +17,7 @@ Logging in to your instance is done using the following `buffrs` command:
 
 ```bash
 buffrs login
-    --url https://<organization>.jfrog.io
+    --url https://<organization>.jfrog.io/artifactory
     --username your.name@organization.com
 ```
 
