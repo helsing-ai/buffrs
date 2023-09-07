@@ -1,0 +1,31 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
+syntax = "proto3";
+
+import "package.proto";
+
+package buffrs.registry;
+
+service Registry {
+    // Publish a package
+    rpc Publish(PublishRequest)
+      returns (PublishResponse);
+
+    // Download a package
+    rpc Download(DownloadRequest)
+      returns (DownloadResponse);
+}
+
+message PublishRequest {
+    buffrs.package.Compressed package = 1;
+}
+
+message PublishResponse {}
+
+message DownloadRequest {
+    buffrs.package.Package package = 1;
+}
+
+message DownloadResponse {
+    buffrs.package.Compressed package = 1;
+}
