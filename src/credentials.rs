@@ -37,7 +37,7 @@ impl Credentials {
     pub async fn read() -> eyre::Result<Self> {
         let toml = fs::read_to_string(Self::location()?)
             .await
-            .wrap_err("Failed to read manifest")?;
+            .wrap_err("Failed to read credentials")?;
 
         toml::from_str(&toml).wrap_err("Failed to parse credentials")
     }
