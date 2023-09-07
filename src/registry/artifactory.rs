@@ -24,7 +24,7 @@ impl Artifactory {
 
         let response = reqwest::Client::new()
             .get(repositories_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header("X-JFrog-Art-Api", self.0.password.to_string())
             .send()
             .await?;
 
@@ -87,7 +87,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header("X-JFrog-Art-Api", self.0.password.to_string())
             .send()
             .await?;
 
@@ -119,7 +119,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .put(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header("X-JFrog-Art-Api", self.0.password.to_string())
             .body(package.tgz)
             .send()
             .await
