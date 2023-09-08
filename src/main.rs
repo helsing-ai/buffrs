@@ -131,7 +131,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
-    use std::path::Path;
+    use std::{env, path::Path};
 
     use buffrs::{
         credentials::Credentials,
@@ -164,7 +164,7 @@ mod cmd {
             manifest.package = Some(PackageManifest {
                 r#type,
                 name,
-                version: Version::new(0, 0, 1),
+                version: Version::new(0, 1, 0),
                 description: None,
             });
         }
@@ -221,7 +221,7 @@ mod cmd {
         let dependency = manifest
             .dependencies
             .iter()
-            .find(|d| d.package != package)
+            .find(|d| d.package == package)
             .wrap_err(eyre::eyre!(
                 "Unable to remove unknown dependency {package:?}"
             ))?
@@ -229,9 +229,7 @@ mod cmd {
 
         manifest.dependencies.retain(|d| *d != dependency);
 
-        PackageStore::uninstall(&dependency.package)
-            .await
-            .wrap_err("Failed to uninstall dependency")?;
+        PackageStore::uninstall(&dependency.package).await.ok();
 
         manifest.write().await
     }
@@ -350,10 +348,12 @@ mod cmd {
 
         let artifactory = Artifactory::from(cfg.clone());
 
-        artifactory
-            .ping()
-            .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        if env::var("BUFFRS_TESTSUITE").is_err() {
+            artifactory
+                .ping()
+                .await
+                .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        }
 
         credentials.artifactory = Some(cfg);
         credentials.write().await

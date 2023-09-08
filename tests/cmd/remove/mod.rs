@@ -5,8 +5,8 @@ fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
     crate::cli!()
-        .arg("add")
-        .arg("my-repository/my-package@=1.0.0")
+        .arg("remove")
+        .arg("my-package")
         .current_dir(vfs.root())
         .assert()
         .success()

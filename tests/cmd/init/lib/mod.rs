@@ -2,11 +2,12 @@ use crate::VirtualFileSystem;
 
 #[test]
 fn fixture() {
-    let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
+    let vfs = VirtualFileSystem::empty();
 
     crate::cli!()
-        .arg("add")
-        .arg("my-repository/my-package@=1.0.0")
+        .arg("init")
+        .arg("--lib")
+        .arg("some-lib")
         .current_dir(vfs.root())
         .assert()
         .success()

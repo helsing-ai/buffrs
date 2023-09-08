@@ -2,7 +2,7 @@
 
 use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 use tokio::fs;
 
 use crate::registry::ArtifactoryConfig;
@@ -22,6 +22,8 @@ pub struct Credentials {
 impl Credentials {
     fn location() -> eyre::Result<PathBuf> {
         let home = home::home_dir().wrap_err("Failed to locate home directory")?;
+
+        let home = env::var("BUFFRS_HOME").map(PathBuf::from).unwrap_or(home);
 
         Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
     }

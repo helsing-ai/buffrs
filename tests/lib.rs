@@ -3,7 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use assert_cmd::Command;
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
@@ -11,25 +10,47 @@ use pretty_assertions::{assert_eq, assert_str_eq};
 mod cmd;
 
 /// Create a command which runs the cli
-pub fn cli() -> assert_cmd::Command {
-    Command::cargo_bin(assert_cmd::crate_name!()).unwrap()
+#[macro_export]
+macro_rules! cli {
+    () => {
+        assert_cmd::Command::cargo_bin(assert_cmd::crate_name!())
+            .unwrap()
+            .env(
+                "BUFFRS_HOME",
+                &format!("./{}", $crate::VirtualFileSystem::VIRTUAL_HOME),
+            )
+            .env("BUFFRS_TESTSUITE", "1")
+    };
 }
 
 /// A virtual file system which enables temporary fs operations
-pub struct VirtualFileSystem(TempDir);
+pub struct VirtualFileSystem {
+    root: TempDir,
+    virtual_home: bool,
+}
 
 impl VirtualFileSystem {
+    const VIRTUAL_HOME: &str = "$HOME";
+
     /// Init an empty virtual file system
     pub fn empty() -> Self {
-        Self(TempDir::new().unwrap())
+        let root = TempDir::new().unwrap();
+
+        fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
+
+        Self {
+            root,
+            virtual_home: false,
+        }
     }
 
     /// Init a virtual file system from a local directory
     pub fn copy(template: impl AsRef<Path>) -> Self {
-        let cwd = TempDir::new().unwrap();
+        let root = TempDir::new().unwrap();
+
         fs_extra::dir::copy(
             template.as_ref(),
-            cwd.path(),
+            root.path(),
             &CopyOptions {
                 overwrite: true,
                 skip_exist: false,
@@ -40,12 +61,24 @@ impl VirtualFileSystem {
             },
         )
         .unwrap();
-        Self(cwd)
+
+        fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
+
+        Self {
+            root,
+            virtual_home: false,
+        }
     }
 
     /// Root path to run operations in
     pub fn root(&self) -> &Path {
-        self.0.path()
+        self.root.path()
+    }
+
+    /// Enable verification of the virtual home
+    pub fn with_virtual_home(mut self) -> Self {
+        self.virtual_home = true;
+        self
     }
 
     /// Verify the virtual file system to be equal to a local directory
@@ -54,11 +87,23 @@ impl VirtualFileSystem {
         let exp = get_dir_content(expected.as_ref()).unwrap();
 
         let files = {
+            let filter_vhome = |f: &PathBuf| {
+                if self.virtual_home {
+                    true
+                } else {
+                    !f.starts_with(Self::VIRTUAL_HOME)
+                }
+            };
+
+            let filter_gitkeep = |f: &PathBuf| !f.ends_with(".gitkeep");
+
             let mut actual_files: Vec<PathBuf> = vfs
                 .files
                 .iter()
                 .map(Path::new)
                 .map(|f| f.strip_prefix(self.root()).unwrap().to_path_buf())
+                .filter(filter_vhome)
+                .filter(filter_gitkeep)
                 .collect();
 
             actual_files.sort();
@@ -68,6 +113,8 @@ impl VirtualFileSystem {
                 .iter()
                 .map(Path::new)
                 .map(|f| f.strip_prefix(expected.as_ref()).unwrap().to_path_buf())
+                .filter(filter_vhome)
+                .filter(filter_gitkeep)
                 .collect();
 
             expected_files.sort();
