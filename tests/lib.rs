@@ -17,7 +17,7 @@ macro_rules! cli {
             .unwrap()
             .env(
                 "BUFFRS_HOME",
-                &format!("./{}", crate::VirtualFileSystem::VIRTUAL_HOME),
+                &format!("./{}", $crate::VirtualFileSystem::VIRTUAL_HOME),
             )
             .env("BUFFRS_TESTSUITE", "1")
     };
@@ -75,7 +75,7 @@ impl VirtualFileSystem {
         self.root.path()
     }
 
-    /// Enable verfication of the virtual home
+    /// Enable verification of the virtual home
     pub fn with_virtual_home(mut self) -> Self {
         self.virtual_home = true;
         self
