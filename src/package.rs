@@ -142,7 +142,7 @@ impl PackageStore {
 
         fs::remove_dir_all(&pkg_dir)
             .await
-            .wrap_err("Failed to uninstall {dependency}")
+            .wrap_err_with(|| format!("Failed to uninstall {package}"))
     }
 
     /// Resolves a package in the local file system
