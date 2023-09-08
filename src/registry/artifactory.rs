@@ -153,17 +153,12 @@ impl From<ArtifactoryConfig> for Artifactory {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactoryConfig {
     pub url: Url,
-    pub username: String,
     pub password: String,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url, username: String, password: String) -> Self {
-        Self {
-            url,
-            username,
-            password,
-        }
+    pub fn new(url: Url, password: String) -> Self {
+        Self { url, password }
     }
 }

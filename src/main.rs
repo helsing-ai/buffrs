@@ -74,9 +74,9 @@ enum Command {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
         url: url::Url,
-        /// Artifactory username
+        /// Artifactory username [DEPRECATED, IGNORED]
         #[clap(long)]
-        username: String,
+        username: Option<String>,
     },
     /// Logs you out from a registry
     Logout,
@@ -330,8 +330,12 @@ mod cmd {
     pub async fn login(
         mut credentials: Credentials,
         url: url::Url,
-        username: String,
+        username: Option<String>,
     ) -> eyre::Result<()> {
+        if username.is_some() {
+            tracing::warn!("The --username flag is deprecated and will be removed in a future release");
+        }
+
         let password = {
             tracing::info!("Please enter your artifactory token:");
 
@@ -346,8 +350,7 @@ mod cmd {
             raw
         };
 
-        let cfg = ArtifactoryConfig::new(url, username, password);
-
+        let cfg = ArtifactoryConfig::new(url, password);
         let artifactory = Artifactory::from(cfg.clone());
 
         artifactory
