@@ -348,10 +348,12 @@ mod cmd {
 
         let artifactory = Artifactory::from(cfg.clone());
 
-        artifactory
-            .ping()
-            .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        if env::var("BUFFRS_TESTSUITE").is_err() {
+            artifactory
+                .ping()
+                .await
+                .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        }
 
         credentials.artifactory = Some(cfg);
         credentials.write().await
