@@ -21,9 +21,9 @@ import {
 import { Dialog, Transition } from '@headlessui/react'
 import clsx from 'clsx'
 
-import { type Result } from '@/mdx/search.mjs'
-
 type EmptyObject = Record<string, never>
+
+type Result = any
 
 type Autocomplete = AutocompleteApi<
   Result,
@@ -62,7 +62,7 @@ function useAutocomplete({ close }: { close: () => void }) {
       React.KeyboardEvent
     >({
       id,
-      placeholder: 'Find something...',
+      placeholder: 'Search packages..',
       defaultActiveItemId: 0,
       onStateChange({ state }) {
         setAutocompleteState(state)
@@ -74,12 +74,11 @@ function useAutocomplete({ close }: { close: () => void }) {
         navigate,
       },
       getSources({ query }) {
-        return import('@/mdx/search.mjs').then(({ search }) => {
           return [
             {
               sourceId: 'documentation',
               getItems() {
-                return search(query, { limit: 5 })
+                return [] //search(query, { limit: 5 })
               },
               getItemUrl({ item }) {
                 return item.url
@@ -87,7 +86,6 @@ function useAutocomplete({ close }: { close: () => void }) {
               onSelect: navigate,
             },
           ]
-        })
       },
     }),
   )
@@ -238,7 +236,7 @@ function SearchResults({
       <div className="p-6 text-center">
         <NoResultsIcon className="mx-auto h-5 w-5 stroke-zinc-900 dark:stroke-zinc-600" />
         <p className="mt-2 text-xs text-zinc-700 dark:text-zinc-400">
-          Nothing found for{' '}
+          No packages found for{' '}
           <strong className="break-words font-semibold text-zinc-900 dark:text-white">
             &lsquo;{query}&rsquo;
           </strong>
@@ -468,7 +466,7 @@ export function Search() {
         {...buttonProps}
       >
         <SearchIcon className="h-5 w-5 stroke-current" />
-        Find something...
+        Search packages..
         <kbd className="ml-auto text-2xs text-zinc-400 dark:text-zinc-500">
           <kbd className="font-sans">{modifierKey}</kbd>
           <kbd className="font-sans">K</kbd>
@@ -489,7 +487,7 @@ export function MobileSearch() {
       <button
         type="button"
         className="flex h-6 w-6 items-center justify-center rounded-md transition hover:bg-zinc-900/5 ui-not-focus-visible:outline-none dark:hover:bg-white/5 lg:hidden"
-        aria-label="Find something..."
+        aria-label="Search packages.."
         {...buttonProps}
       >
         <SearchIcon className="h-5 w-5 stroke-zinc-900 dark:stroke-white" />

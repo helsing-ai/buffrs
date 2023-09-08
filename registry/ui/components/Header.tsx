@@ -40,7 +40,8 @@ export const Header = forwardRef<
       ref={ref}
       className={clsx(
         className,
-        'fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between gap-12 px-4 transition sm:px-6 lg:z-30 lg:px-8',
+        'fixed inset-x-0 top-0 z-50 h-14 px-4 sm:px-6 lg:px-8',
+        'transition lg:z-30',
         'backdrop-blur-sm dark:backdrop-blur',
         'bg-white/[var(--bg-opacity-light)] dark:bg-zinc-900/[var(--bg-opacity-dark)]',
       )}
@@ -51,35 +52,38 @@ export const Header = forwardRef<
         } as React.CSSProperties
       }
     >
-      <div
-        className={clsx(
-          'absolute inset-x-0 top-full h-px transition',
-        )}
-      />
-      <div className="flex items-center gap-5">
-        <Link href="/" aria-label="Home">
-          <Logo className="h-6" />
-        </Link>
+    <div className="mx-auto h-full w-full max-w-2xl lg:max-w-5xl">
+      <div className="flex h-full w-full items-center justify-between">
+        <div
+          className={clsx(
+            'absolute inset-x-0 top-full h-px transition',
+          )}
+        />
+        <div className="flex items-center gap-5">
+          <Link href="/" aria-label="Home">
+            <Logo className="h-6" />
+          </Link>
+        </div>
+
+        <Search />
+
+        <div className="flex items-center gap-5">
+          <nav className="hidden md:block">
+            <ul role="list" className="flex items-center gap-8">
+              <TopLevelNavItem href="https://github.com/helsing-ai/buffrs/issues">Support</TopLevelNavItem>
+              <TopLevelNavItem href="https://helsing-ai.github.io/buffrs/">Documentation</TopLevelNavItem>
+            </ul>
+          </nav>
+          <div className="hidden md:block md:h-5 md:w-px md:bg-zinc-900/10 md:dark:bg-white/15" />
+          <div className="flex gap-4">
+            <MobileSearch />
+            <ThemeToggle />
+          </div>
+          <div className="hidden min-[416px]:contents">
+            <Button href="#">Sign in</Button>
+          </div>
+        </div>
       </div>
-
-      <Search />
-
-      <div className="flex items-center gap-5">
-        <nav className="hidden md:block">
-          <ul role="list" className="flex items-center gap-8">
-            <TopLevelNavItem href="/">API</TopLevelNavItem>
-            <TopLevelNavItem href="#">Documentation</TopLevelNavItem>
-            <TopLevelNavItem href="#">Support</TopLevelNavItem>
-          </ul>
-        </nav>
-        <div className="hidden md:block md:h-5 md:w-px md:bg-zinc-900/10 md:dark:bg-white/15" />
-        <div className="flex gap-4">
-          <MobileSearch />
-          <ThemeToggle />
-        </div>
-        <div className="hidden min-[416px]:contents">
-          <Button href="#">Sign in</Button>
-        </div>
       </div>
     </motion.div>
   )

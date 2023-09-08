@@ -23,8 +23,12 @@ export function Layout({
       >
         <Header className="lg:pointer-events-auto" />
       </motion.header>
-      <div className="relative flex h-full flex-col px-4 pt-14 sm:px-6 lg:px-8">
-        <main className="flex-auto">{children}</main>
+      <div className="relative flex flex-col px-4 pt-14 sm:px-6 lg:px-8">
+        <main className="flex-auto">
+          <div className="h-full w-full mx-auto h-full w-full max-w-2xl lg:max-w-5xl">
+            {children}
+          </div>
+        </main>
         <Footer />
       </div>
     </div>

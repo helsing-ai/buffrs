@@ -28,7 +28,7 @@ const variantStyles = {
 
 type ButtonProps = {
   variant?: keyof typeof variantStyles
-  arrow?: 'left' | 'right'
+  arrow?: 'left' | 'right' | 'down'
 } & (
   | React.ComponentPropsWithoutRef<typeof Link>
   | (React.ComponentPropsWithoutRef<'button'> & { href?: undefined })
@@ -63,6 +63,7 @@ export function Button({
       {arrow === 'left' && arrowIcon}
       {children}
       {arrow === 'right' && arrowIcon}
+      {arrow === 'down' && <span className="rotate-90 ">{arrowIcon}</span>}
     </>
   )
 
