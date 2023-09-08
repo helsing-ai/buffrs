@@ -87,7 +87,7 @@ impl VirtualFileSystem {
         let exp = get_dir_content(expected.as_ref()).unwrap();
 
         let files = {
-            let filter = |f: &PathBuf| {
+            let filter_vhome = |f: &PathBuf| {
                 if self.virtual_home {
                     true
                 } else {
@@ -95,12 +95,15 @@ impl VirtualFileSystem {
                 }
             };
 
+            let filter_gitkeep = |f: &PathBuf| !f.ends_with(".gitkeep");
+
             let mut actual_files: Vec<PathBuf> = vfs
                 .files
                 .iter()
                 .map(Path::new)
                 .map(|f| f.strip_prefix(self.root()).unwrap().to_path_buf())
-                .filter(filter)
+                .filter(filter_vhome)
+                .filter(filter_gitkeep)
                 .collect();
 
             actual_files.sort();
@@ -110,7 +113,8 @@ impl VirtualFileSystem {
                 .iter()
                 .map(Path::new)
                 .map(|f| f.strip_prefix(expected.as_ref()).unwrap().to_path_buf())
-                .filter(filter)
+                .filter(filter_vhome)
+                .filter(filter_gitkeep)
                 .collect();
 
             expected_files.sort();
