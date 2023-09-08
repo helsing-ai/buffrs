@@ -324,10 +324,7 @@ mod cmd {
     }
 
     /// Logs you in for a registry
-    pub async fn login(
-        mut credentials: Credentials,
-        url: url::Url,
-    ) -> eyre::Result<()> {
+    pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<()> {
         let password = {
             tracing::info!("Please enter your artifactory token:");
 
