@@ -2,7 +2,7 @@ use crate::VirtualFileSystem;
 
 #[test]
 fn fixture() {
-    let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
+    let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in")).with_virtual_home();
 
     crate::cli!()
         .arg("logout")
