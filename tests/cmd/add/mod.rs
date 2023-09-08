@@ -4,7 +4,7 @@ use crate::VirtualFileSystem;
 fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
-    crate::cli()
+    crate::cli!()
         .arg("add")
         .arg("my-repository/my-package@=1.0.0")
         .current_dir(vfs.root())

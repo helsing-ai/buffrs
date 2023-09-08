@@ -3,7 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use assert_cmd::Command;
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
@@ -11,8 +10,14 @@ use pretty_assertions::{assert_eq, assert_str_eq};
 mod cmd;
 
 /// Create a command which runs the cli
-pub fn cli() -> assert_cmd::Command {
-    Command::cargo_bin(assert_cmd::crate_name!()).unwrap()
+#[macro_export]
+macro_rules! cli {
+    () => {
+        assert_cmd::Command::cargo_bin(assert_cmd::crate_name!())
+            .unwrap()
+            .env("BUFFRS_HOME", "./$HOME")
+            .env("BUFFRS_TESTSUITE", "1")
+    };
 }
 
 /// A virtual file system which enables temporary fs operations
