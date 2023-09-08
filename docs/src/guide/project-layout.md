@@ -25,5 +25,5 @@ uses. The `proto` directory, which is the source directory for all your protocol
 buffer definitions and the `proto/vendor` directory, which contains external
 protocol buffers.
 
-**Important:** The vendor directory is managed by buffrs, all manual changes
-will be overridden / cam cause not reproducible behavior.
+**Important:** The vendor directory is managed by Buffrs, all manual changes
+will be overridden / can cause unreproducible behavior.
