@@ -1,5 +1,3 @@
-import glob from 'fast-glob'
-
 import { Providers } from '@/app/providers'
 import { Layout } from '@/components/Layout'
 
@@ -9,7 +7,7 @@ import { type Metadata } from 'next'
 export const metadata: Metadata = {
   title: {
     template: '%s - Reference',
-    default: 'Buffrs',
+    default: 'buff.rs – Protobuf Package Registry',
   },
 }
 
@@ -18,15 +16,6 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  let pages = await glob('**/*.mdx', { cwd: 'src/app' })
-  //let allSectionsEntries = (await Promise.all(
-    //pages.map(async (filename) => [
-      //'/' + filename.replace(/(^|\/)page\.mdx$/, ''),
-      //(await import(`./${filename}`)).sections,
-    //]),
-  //)) as Array<[string, Array<Section>]>
-  //let allSections = Object.fromEntries(allSectionsEntries)
-
   return (
     <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="flex min-h-full bg-white antialiased dark:bg-zinc-900">
