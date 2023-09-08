@@ -164,7 +164,7 @@ mod cmd {
             manifest.package = Some(PackageManifest {
                 r#type,
                 name,
-                version: Version::new(0, 0, 1),
+                version: Version::new(0, 1, 0),
                 description: None,
             });
         }
