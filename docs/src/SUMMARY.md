@@ -18,9 +18,9 @@
     * [Creating a Package](guide/creating-a-new-package.md)
     * [Consuming Packages](guide/consuming-packages.md)
     * [Project Layout](guide/project-layout.md)
-    * [Proto.toml vs Proto.lock](guide/proto-toml-vs-proto-lock.md)
-    * [Continuous Integration](guide/continuous-integration.md)
-    * [Buffrs Home](guide/buffrs-home.md)
+    * [Proto.toml vs Proto.lock]()
+    * [Continuous Integration]()
+    * [Buffrs Home]()
 
 * [Buffrs Integrations](integrations/index.md)
     * [Cargo](integrations/cargo.md)
