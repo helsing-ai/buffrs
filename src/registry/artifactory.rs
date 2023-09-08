@@ -24,7 +24,7 @@ impl Artifactory {
 
         let response = reqwest::Client::new()
             .get(repositories_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
             .send()
             .await?;
 
@@ -87,7 +87,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
             .send()
             .await?;
 
@@ -119,7 +119,7 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .put(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
             .body(package.tgz)
             .send()
             .await
@@ -154,16 +154,38 @@ impl From<ArtifactoryConfig> for Artifactory {
 pub struct ArtifactoryConfig {
     pub url: Url,
     pub username: String,
-    pub password: String,
+    pub password: Option<String>,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url, username: String, password: String) -> Self {
-        Self {
+    pub fn new(url: Url, username: String) -> eyre::Result<Self> {
+        sanity_check_url(&url)?;
+
+        Ok(Self {
             url,
             username,
-            password,
-        }
+            password: None,
+        })
     }
+
+    pub fn set_password(&mut self, password: String) {
+        self.password = Some(password);
+    }
+}
+
+fn sanity_check_url(url: &Url) -> eyre::Result<()> {
+    tracing::debug!("checking that url begins with http or https: {}", url.scheme());
+    ensure!(
+        url.scheme() == "http" ||  url.scheme() == "https",
+        "The url must start with http:// or https://"
+    );
+
+    tracing::debug!("checking that url ends with /artifactory: {}",    url.path());
+    ensure!(
+        url.path().ends_with("/artifactory"),
+        "The url must end with '/artifactory'"
+    );
+
+    Ok(())
 }

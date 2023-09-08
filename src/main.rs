@@ -3,7 +3,6 @@
 use buffrs::package::PackageId;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
-mod sanity_check;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -140,7 +139,6 @@ mod cmd {
         package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
     };
-    use super::sanity_check::SanityCheck;
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;
     use semver::{Version, VersionReq};
@@ -333,8 +331,7 @@ mod cmd {
         url: url::Url,
         username: String,
     ) -> eyre::Result<()> {
-        // Ensure that there's no problem with the URL.
-        url.sanity_check()?;
+        let mut cfg = ArtifactoryConfig::new(url, username)?;
 
         let password = {
             tracing::info!("Please enter your artifactory token:");
@@ -350,7 +347,8 @@ mod cmd {
             raw
         };
 
-        let cfg = ArtifactoryConfig::new(url, username, password);
+        cfg.set_password(password);
+
         let artifactory = Artifactory::from(cfg.clone());
 
         artifactory
