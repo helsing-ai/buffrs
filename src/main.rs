@@ -131,7 +131,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
-    use std::path::Path;
+    use std::{env, path::Path};
 
     use buffrs::{
         credentials::Credentials,
@@ -221,7 +221,7 @@ mod cmd {
         let dependency = manifest
             .dependencies
             .iter()
-            .find(|d| d.package != package)
+            .find(|d| d.package == package)
             .wrap_err(eyre::eyre!(
                 "Unable to remove unknown dependency {package:?}"
             ))?
@@ -229,9 +229,7 @@ mod cmd {
 
         manifest.dependencies.retain(|d| *d != dependency);
 
-        PackageStore::uninstall(&dependency.package)
-            .await
-            .wrap_err("Failed to uninstall dependency")?;
+        PackageStore::uninstall(&dependency.package).await.ok();
 
         manifest.write().await
     }
