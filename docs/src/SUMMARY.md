@@ -34,7 +34,7 @@
     * [Environment Variables]()
     * [Build Configuration]()
     * [Publishing on buff.rs]()
-    * [Package ID Specifications]()
+    * [Package Name Specifications]()
     * [Dependency Resolution]()
     * [SemVer Compatibility]()
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt};
 use tokio::fs;
 
-use crate::package::{PackageId, PackageType};
+use crate::package::{PackageName, PackageType};
 
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
@@ -38,7 +38,7 @@ impl From<Manifest> for RawManifest {
 }
 
 /// Map representation of the dependency list
-pub type DependencyMap = HashMap<PackageId, DependencyManifest>;
+pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 
 /// The `buffrs` manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
@@ -99,7 +99,7 @@ pub struct PackageManifest {
     /// Type of the package
     pub r#type: PackageType,
     /// Name of the package
-    pub name: PackageId,
+    pub name: PackageName,
     /// Version of the package
     pub version: Version,
     /// Description of the api package
@@ -110,14 +110,14 @@ pub struct PackageManifest {
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Dependency {
     /// Package name of this dependency
-    pub package: PackageId,
+    pub package: PackageName,
     /// Version requirement in the buffrs format, currently only supports pinning
     pub manifest: DependencyManifest,
 }
 
 impl Dependency {
     /// Creates a new dependency
-    pub fn new(repository: String, package: PackageId, version: VersionReq) -> Self {
+    pub fn new(repository: String, package: PackageName, version: VersionReq) -> Self {
         Self {
             package,
             manifest: DependencyManifest {

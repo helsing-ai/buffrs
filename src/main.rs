@@ -1,6 +1,6 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::package::PackageId;
+use buffrs::package::PackageName;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
 
@@ -24,9 +24,9 @@ enum Command {
         #[clap(long, conflicts_with = "lib")]
         #[arg(group = "pkg")]
         api: bool,
-        /// The package id used for initialization
+        /// The package name used for initialization
         #[clap(requires = "pkg")]
-        package: Option<PackageId>,
+        package: Option<PackageName>,
     },
 
     /// Adds dependencies to a manifest file
@@ -38,7 +38,7 @@ enum Command {
     #[clap(alias = "rm")]
     Remove {
         /// Package to remove from the dependencies
-        package: PackageId,
+        package: PackageName,
     },
 
     /// Packages and uploads this api to the registry
@@ -137,7 +137,7 @@ mod cmd {
         credentials::Credentials,
         generator::{self, Language},
         manifest::{Dependency, Manifest, PackageManifest},
-        package::{PackageId, PackageStore, PackageType},
+        package::{PackageName, PackageStore, PackageType},
         registry::{Artifactory, ArtifactoryConfig, Registry},
     };
     use eyre::{ensure, Context, ContextCompat};
@@ -145,7 +145,7 @@ mod cmd {
     use semver::{Version, VersionReq};
 
     /// Initializes the project
-    pub async fn init(r#type: Option<(PackageType, Option<PackageId>)>) -> eyre::Result<()> {
+    pub async fn init(r#type: Option<(PackageType, Option<PackageName>)>) -> eyre::Result<()> {
         let mut manifest = Manifest::default();
 
         if let Some((r#type, name)) = r#type {
@@ -198,8 +198,8 @@ mod cmd {
             .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
 
         let package = package
-            .parse::<PackageId>()
-            .wrap_err_with(|| format!("Invalid package id supplied: {package}"))?;
+            .parse::<PackageName>()
+            .wrap_err_with(|| format!("Invalid package name supplied: {package}"))?;
 
         let version = version
             .parse::<VersionReq>()
@@ -215,7 +215,7 @@ mod cmd {
     }
 
     /// Removes a dependency from this project
-    pub async fn remove(package: PackageId) -> eyre::Result<()> {
+    pub async fn remove(package: PackageName) -> eyre::Result<()> {
         let mut manifest = Manifest::read().await?;
 
         let dependency = manifest

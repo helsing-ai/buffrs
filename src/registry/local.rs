@@ -91,7 +91,7 @@ impl Registry for LocalRegistry {
 #[cfg(test)]
 mod tests {
     use crate::manifest::{Dependency, PackageManifest};
-    use crate::package::{Package, PackageId, PackageType};
+    use crate::package::{Package, PackageName, PackageType};
     use crate::registry::local::LocalRegistry;
     use crate::registry::Registry;
     use bytes::Bytes;
@@ -107,7 +107,7 @@ mod tests {
 
         let manifest = PackageManifest {
             r#type: PackageType::Api,
-            name: PackageId::from_str("test-api").unwrap(),
+            name: PackageName::from_str("test-api").unwrap(),
             version: Version {
                 major: 0,
                 minor: 1,
@@ -142,7 +142,7 @@ mod tests {
         let fetched = registry
             .download(Dependency::new(
                 "test-repo".into(),
-                PackageId::from_str("test-api").unwrap(),
+                PackageName::from_str("test-api").unwrap(),
                 VersionReq::from_str("=0.1.0").unwrap(),
             ))
             .await

@@ -137,7 +137,7 @@ impl PackageStore {
     }
 
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
+    pub async fn uninstall(package: &PackageName) -> eyre::Result<()> {
         let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
@@ -146,7 +146,7 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
+    pub async fn resolve(package: &PackageName) -> eyre::Result<Manifest> {
         let manifest = Self::locate(package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
@@ -247,7 +247,7 @@ impl PackageStore {
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(package: &PackageId) -> PathBuf {
+    pub fn locate(package: &PackageName) -> PathBuf {
         PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
     }
 
@@ -353,40 +353,40 @@ impl fmt::Display for PackageType {
     }
 }
 
-/// A `buffrs` package id for parsing and type safety
+/// A `buffrs` package name for parsing and type safety
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]
-pub struct PackageId(String);
+pub struct PackageName(String);
 
-impl TryFrom<String> for PackageId {
+impl TryFrom<String> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: String) -> eyre::Result<Self> {
         ensure!(
             value.len() > 2,
-            "Package ids must be at least three chars long"
+            "Package names must be at least three chars long"
         );
 
         ensure!(
             value
                 .chars()
                 .all(|c| (c.is_ascii_alphanumeric() && c.is_ascii_lowercase()) || c == '-'),
-            "Package ids can only consist of lowercase alphanumeric ascii chars and dashes"
+            "Package names can only consist of lowercase alphanumeric ascii chars and dashes"
         );
         ensure!(
             value
                 .get(0..1)
-                .wrap_err("Expected package id to be non empty")?
+                .wrap_err("Expected package name to be non empty")?
                 .chars()
                 .all(|c| c.is_ascii_alphabetic()),
-            "Package ids must begin with an alphabetic letter"
+            "Package names must begin with an alphabetic letter"
         );
 
         Ok(Self(value))
     }
 }
 
-impl TryFrom<&str> for PackageId {
+impl TryFrom<&str> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: &str) -> eyre::Result<Self> {
@@ -394,7 +394,7 @@ impl TryFrom<&str> for PackageId {
     }
 }
 
-impl TryFrom<&String> for PackageId {
+impl TryFrom<&String> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: &String) -> eyre::Result<Self> {
@@ -402,7 +402,7 @@ impl TryFrom<&String> for PackageId {
     }
 }
 
-impl FromStr for PackageId {
+impl FromStr for PackageName {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -410,13 +410,13 @@ impl FromStr for PackageId {
     }
 }
 
-impl From<PackageId> for String {
-    fn from(s: PackageId) -> Self {
+impl From<PackageName> for String {
+    fn from(s: PackageName) -> Self {
         s.to_string()
     }
 }
 
-impl Deref for PackageId {
+impl Deref for PackageName {
     type Target = String;
 
     fn deref(&self) -> &Self::Target {
@@ -424,15 +424,15 @@ impl Deref for PackageId {
     }
 }
 
-impl fmt::Display for PackageId {
+impl fmt::Display for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl fmt::Debug for PackageId {
+impl fmt::Debug for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PackageId")
+        f.debug_tuple("PackageName")
             .field(&format!("{self}"))
             .finish()
     }
