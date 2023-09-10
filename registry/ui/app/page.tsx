@@ -8,7 +8,10 @@ import { Categories } from '@/components/Categories'
 export default function Index() {
   return (
     <>
-      <Hero />
+      <Hero title="Protobuf Package Registry">
+                  <Button href="https://helsing-ai.github.io/buffrs/getting-started/installation.html" arrow="down">Install Buffrs</Button>
+                  <Button href="https://helsing-ai.github.io/buffrs/guide/index.html" variant="outline">Read The Guide</Button>
+      </Hero>
       <Statistics />
       <Packages />
       <Categories />
