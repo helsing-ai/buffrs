@@ -110,9 +110,9 @@ impl Registry for Artifactory {
             "{}/{}/{}/{}-{}.tgz",
             self.0.url,
             repository,
-            package.manifest.name,
-            package.manifest.name,
-            package.manifest.version,
+            package.name(),
+            package.name(),
+            package.version(),
         )
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
@@ -120,7 +120,7 @@ impl Registry for Artifactory {
         let response = reqwest::Client::new()
             .put(artifact_uri.clone())
             .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
-            .body(package.tgz)
+            .body(package.tgz.clone())
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
@@ -128,15 +128,15 @@ impl Registry for Artifactory {
         ensure!(
             response.status().is_success(),
             "Failed to publish {}: {}",
-            package.manifest.name,
+            package.name(),
             response.status()
         );
 
         tracing::info!(
             ":: published {}/{}@{}",
             repository,
-            package.manifest.name,
-            package.manifest.version
+            package.name(),
+            package.version()
         );
 
         Ok(())

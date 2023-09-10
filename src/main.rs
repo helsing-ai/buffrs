@@ -104,14 +104,15 @@ async fn main() -> eyre::Result<()> {
 
     match cli.command {
         Command::Init { lib, api, package } => {
-            cmd::init(if lib {
-                Some((PackageType::Lib, package))
+            let r#type = if lib {
+                PackageType::Lib
             } else if api {
-                Some((PackageType::Api, package))
+                PackageType::Api
             } else {
-                None
-            })
-            .await?
+                PackageType::Impl
+            };
+
+            cmd::init(r#type, package).await?
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
@@ -145,34 +146,35 @@ mod cmd {
     use semver::{Version, VersionReq};
 
     /// Initializes the project
-    pub async fn init(r#type: Option<(PackageType, Option<PackageName>)>) -> eyre::Result<()> {
-        let mut manifest = Manifest::default();
-
-        if let Some((r#type, name)) = r#type {
-            const DIR_ERR: &str = "Failed to read current directory name";
-
-            let name = match name {
-                Some(name) => name,
-                None => std::env::current_dir()?
-                    .file_name()
-                    .wrap_err(DIR_ERR)?
-                    .to_str()
-                    .wrap_err(DIR_ERR)?
-                    .parse()?,
-            };
-
-            manifest.package = Some(PackageManifest {
-                r#type,
-                name,
-                version: Version::new(0, 1, 0),
-                description: None,
-            });
-        }
-
+    pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
         ensure!(
             !Manifest::exists().await?,
             "Cant initialize existing project"
         );
+
+        const DIR_ERR: &str = "Failed to read current directory name";
+
+        let name = match name {
+            Some(name) => name,
+            None => std::env::current_dir()?
+                .file_name()
+                .wrap_err(DIR_ERR)?
+                .to_str()
+                .wrap_err(DIR_ERR)?
+                .parse()?,
+        };
+
+        const VERSION: Version = Version::new(0, 1, 0);
+
+        let manifest = Manifest {
+            package: PackageManifest {
+                r#type,
+                name,
+                version: VERSION,
+                description: None,
+            },
+            dependencies: vec![],
+        };
 
         manifest.write().await?;
 

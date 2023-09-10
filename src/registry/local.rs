@@ -71,16 +71,21 @@ impl Registry for LocalRegistry {
     async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
-            repository, package.manifest.name, package.manifest.name, package.manifest.version,
+            repository,
+            package.name(),
+            package.name(),
+            package.version(),
         )));
+
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        std::fs::write(&path, package.tgz)?;
+        std::fs::write(&path, &package.tgz)?;
+
         tracing::info!(
             ":: published {}/{}@{} to {:?}",
             repository,
-            package.manifest.name,
-            package.manifest.version,
+            package.name(),
+            package.version(),
             path
         );
 
@@ -90,14 +95,12 @@ impl Registry for LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, PackageManifest};
-    use crate::package::{Package, PackageName, PackageType};
+    use crate::manifest::{Dependency, Manifest, PackageManifest};
+    use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
     use crate::registry::Registry;
     use bytes::Bytes;
-    use semver::{Version, VersionReq};
     use std::path::PathBuf;
-    use std::str::FromStr;
     use std::{env, fs};
 
     #[tokio::test]
@@ -105,17 +108,14 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = PackageManifest {
-            r#type: PackageType::Api,
-            name: PackageName::from_str("test-api").unwrap(),
-            version: Version {
-                major: 0,
-                minor: 1,
-                patch: 0,
-                pre: Default::default(),
-                build: Default::default(),
+        let manifest = Manifest {
+            package: PackageManifest {
+                r#type: PackageType::Api,
+                name: "test-api".parse().unwrap(),
+                version: "0.1.0".parse().unwrap(),
+                description: None,
             },
-            description: None,
+            dependencies: vec![],
         };
 
         let package_bytes =
@@ -142,8 +142,8 @@ mod tests {
         let fetched = registry
             .download(Dependency::new(
                 "test-repo".into(),
-                PackageName::from_str("test-api").unwrap(),
-                VersionReq::from_str("=0.1.0").unwrap(),
+                "test-api".parse().unwrap(),
+                "=0.1.0".parse().unwrap(),
             ))
             .await
             .unwrap();

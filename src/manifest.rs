@@ -16,7 +16,7 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 /// empty fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RawManifest {
-    pub package: Option<PackageManifest>,
+    pub package: PackageManifest,
     pub dependencies: Option<DependencyMap>,
 }
 
@@ -42,9 +42,9 @@ pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 
 /// The `buffrs` manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
-    pub package: Option<PackageManifest>,
+    pub package: PackageManifest,
     pub dependencies: Vec<Dependency>,
 }
 

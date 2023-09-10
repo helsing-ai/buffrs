@@ -9,13 +9,15 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use eyre::{ensure, Context, ContextCompat};
+use eyre::{bail, ensure, Context, ContextCompat};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{self, Dependency, Manifest, PackageManifest, RawManifest, MANIFEST_FILE},
+    lock::LockedPackage,
+    manifest::{self, Dependency, Manifest, RawManifest, MANIFEST_FILE},
     registry::Registry,
 };
 
@@ -61,7 +63,8 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.name.as_str());
+        let pkg_dir =
+            Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.package.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -69,13 +72,15 @@ impl PackageStore {
             .await
             .wrap_err("Failed to install dependencies")?;
 
-        tar.unpack(pkg_dir.clone())
-            .wrap_err(format!("Failed to unpack tar of {}", package.manifest.name))?;
+        tar.unpack(pkg_dir.clone()).wrap_err(format!(
+            "Failed to unpack tar of {}",
+            package.manifest.package.name
+        ))?;
 
         tracing::debug!(
             ":: unpacked {}@{} into {}",
-            package.manifest.name,
-            package.manifest.version,
+            package.manifest.package.name,
+            package.manifest.package.version,
             pkg_dir.display()
         );
 
@@ -90,28 +95,23 @@ impl PackageStore {
 
         let mut tree = format!(
             ":: installed {}@{}",
-            package.manifest.name, package.manifest.version
+            package.manifest.package.name, package.manifest.package.version
         );
 
-        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
+        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.package.name).await?;
 
         let dependency_count = dependencies.len();
 
         for (index, dependency) in dependencies.into_iter().enumerate() {
-            if let Ok(manifest) = Self::resolve(&dependency.package).await {
-                let existing = manifest.package.wrap_err(eyre::eyre!(
-                    "Found installed manifest for {} but it is malformed",
-                    dependency.package,
-                ))?;
-
+            if let Ok(existing) = Self::resolve(&dependency.package).await {
                 eyre::ensure!(
-                    dependency.manifest.version.matches(&existing.version),
+                    dependency.manifest.version.matches(&existing.package.version),
                     "A dependency of your project requires {}@{} which collides with {}@{} required by {}",
-                    existing.name,
-                    existing.version,
+                    existing.package.name,
+                    existing.package.version,
                     dependency.package,
                     dependency.manifest.version,
-                    package.manifest.name,
+                    package.manifest.package.name,
                 );
             }
 
@@ -127,7 +127,8 @@ impl PackageStore {
 
             tree.push_str(&format!(
                 "\n   {tree_char} installed {}@{}",
-                dependency.manifest.name, dependency.manifest.version
+                dependency.name(),
+                dependency.version()
             ));
         }
 
@@ -162,10 +163,11 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        let pkg = manifest
-            .package
-            .to_owned()
-            .wrap_err("Releasing a package requires a package manifest")?;
+        let pkg = &manifest.package;
+
+        if let PackageType::Impl = pkg.r#type {
+            bail!("Implementations can't be published using Buffrs");
+        }
 
         if let PackageType::Lib = pkg.r#type {
             ensure!(
@@ -175,16 +177,12 @@ impl PackageStore {
         }
 
         for dependency in manifest.dependencies.iter() {
-            let resolved = Self::resolve(&dependency.package)
+            let manifest = Self::resolve(&dependency.package)
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
 
-            let package = resolved
-                .package
-                .wrap_err("Local dependencies must contain a package declaration")?;
-
             ensure!(
-                package.r#type == PackageType::Lib,
+                manifest.package.r#type == PackageType::Lib,
                 "Depending on api packages is prohibited"
             );
         }
@@ -198,7 +196,7 @@ impl PackageStore {
                 )
             })?;
 
-        let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
+        let raw_manifest = toml::to_string_pretty(&RawManifest::from(manifest.to_owned()))
             .wrap_err("Failed to encode release manifest")?
             .as_bytes()
             .to_vec();
@@ -220,10 +218,15 @@ impl PackageStore {
 
         let mut header = tar::Header::new_gnu();
 
-        header.set_size(manifest.len().try_into().wrap_err("Failed to pack tar")?);
+        header.set_size(
+            raw_manifest
+                .len()
+                .try_into()
+                .wrap_err("Failed to pack tar")?,
+        );
 
         archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest))
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(raw_manifest))
             .wrap_err("Failed to add manifest to release")?;
 
         archive.finish()?;
@@ -243,7 +246,7 @@ impl PackageStore {
 
         tracing::info!(":: packaged {}@{}", pkg.name, pkg.version);
 
-        Ok(Package::new(pkg, tgz))
+        Ok(Package::new(manifest, tgz))
     }
 
     /// Directory for the vendored installation of a package
@@ -272,19 +275,46 @@ impl PackageStore {
 }
 
 /// An in memory representation of a `buffrs` package
-#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
     /// Manifest of the package
-    pub manifest: PackageManifest,
+    pub manifest: Manifest,
     /// The `tar.gz` archive containing the protocol buffers
-    #[serde(skip)]
     pub tgz: Bytes,
 }
 
 impl Package {
     /// Creates a new package
-    pub fn new(manifest: PackageManifest, tgz: Bytes) -> Self {
+    pub fn new(manifest: Manifest, tgz: Bytes) -> Self {
         Self { manifest, tgz }
+    }
+
+    /// The name of this package
+    #[inline]
+    pub fn name(&self) -> &PackageName {
+        &self.manifest.package.name
+    }
+
+    /// The version of this package
+    #[inline]
+    pub fn version(&self) -> &Version {
+        &self.manifest.package.version
+    }
+
+    /// Lock this package
+    pub fn lock(&self, repository: String) -> LockedPackage {
+        LockedPackage {
+            name: self.name().to_owned(),
+            repository,
+            version: self.version().to_owned(),
+            dependencies: self
+                .manifest
+                .dependencies
+                .iter()
+                .cloned()
+                .map(|d| d.package)
+                .collect(),
+        }
     }
 }
 
@@ -320,10 +350,7 @@ impl TryFrom<Bytes> for Package {
         let manifest: Vec<u8> = manifest.bytes().collect::<io::Result<Vec<u8>>>()?;
         let manifest: RawManifest = toml::from_str(&String::from_utf8(manifest)?)
             .wrap_err("Failed to parse the manifest")?;
-
-        let manifest = manifest
-            .package
-            .wrap_err("The package section is missing the manifest")?;
+        let manifest = Manifest::from(manifest);
 
         Ok(Self { manifest, tgz })
     }
@@ -335,8 +362,24 @@ impl TryFrom<Bytes> for Package {
 pub enum PackageType {
     /// A library package containing primitive type definitions
     Lib,
-    /// A api package containing message and service definition
+    /// An api package containing message and service definition
     Api,
+    /// An implementation package that implements an api or library
+    ///
+    /// Note: Implementation packages can't be published via Buffrs
+    Impl,
+}
+
+impl PackageType {
+    /// Whether this package type is publishable
+    pub fn publishable(&self) -> bool {
+        *self != Self::Impl
+    }
+
+    /// Whether this package type is compilable
+    pub fn compilable(&self) -> bool {
+        *self != Self::Impl
+    }
 }
 
 impl FromStr for PackageType {
