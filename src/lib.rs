@@ -7,6 +7,8 @@ pub mod credentials;
 /// Code generator
 #[cfg(feature = "build")]
 pub mod generator;
+/// Lockfile Implementation
+pub mod lock;
 /// Manifest format and IO
 pub mod manifest;
 /// Packages formats and utilities
@@ -46,14 +48,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
 
         for dependency in manifest.dependencies {
             if let Ok(pkg) = PackageStore::resolve(&dependency.package).await {
-                let pkg = pkg.package.wrap_err_with(|| {
-                    format!(
-                        "required package entry in manifest of {} to be present",
-                        dependency.package
-                    )
-                })?;
-
-                if dependency.manifest.version.matches(&pkg.version) {
+                if dependency.manifest.version.matches(&pkg.package.version) {
                     continue;
                 }
             }

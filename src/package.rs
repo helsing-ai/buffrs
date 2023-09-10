@@ -89,6 +89,10 @@ impl PackageStore {
 
     /// Installs a package and all of its dependency into the local filesystem
     pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
+        if let Ok(lockfile) = Lockfile::read().await {
+            lockfile.update()
+        }
+
         let package = registry.download(dependency).await?;
 
         Self::unpack(&package).await?;
@@ -303,18 +307,7 @@ impl Package {
 
     /// Lock this package
     pub fn lock(&self, repository: String) -> LockedPackage {
-        LockedPackage {
-            name: self.name().to_owned(),
-            repository,
-            version: self.version().to_owned(),
-            dependencies: self
-                .manifest
-                .dependencies
-                .iter()
-                .cloned()
-                .map(|d| d.package)
-                .collect(),
-        }
+        LockedPackage::lock(self, repository)
     }
 }
 
