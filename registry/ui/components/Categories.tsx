@@ -1,4 +1,4 @@
-'use client'
+'use client';
 
 import Link from 'next/link'
 import {
@@ -16,7 +16,7 @@ import { UserIcon } from '@/components/icons/UserIcon'
 import { UsersIcon } from '@/components/icons/UsersIcon'
 
 interface Category {
-  href: string
+  id: string
   name: string
   description: string
   packages: number
@@ -29,7 +29,7 @@ interface Category {
 
 const categories: Array<Category> = [
   {
-    href: '/category/aerospace',
+    id: 'aerospace',
     name: 'Aerospace',
     description:
       'Packages for aeronautics (within the atmosphere) and astronautics (in outer space) implications.',
@@ -44,7 +44,7 @@ const categories: Array<Category> = [
     },
   },
   {
-    href: '/category/computer-vision',
+    id: 'computer-vision',
     name: 'Computer Vision',
     description:
       'Packages for describing the world of videos, codecs, pixels, images and so on.',
@@ -56,7 +56,7 @@ const categories: Array<Category> = [
     },
   },
   {
-    href: '/category/science',
+    id: 'science',
     name: 'Science',
     description:
       'Packages related to solving problems involving physics, chemistry, biology, machine learning, geoscience, and other scientific fields.',
@@ -71,7 +71,7 @@ const categories: Array<Category> = [
     },
   },
   {
-    href: '/category/finance',
+    id: 'finance',
     name: 'Finance',
     description:
       'Packages for dealing with money. Accounting, trading, investments, taxes, banking and payment processing using government-backed currencies.',
@@ -150,7 +150,7 @@ function Category({ category }: { category: Category }) {
 
   return (
     <div
-      key={category.href}
+      key={category.id}
       onMouseMove={onMouseMove}
       className="group relative flex rounded-2xl bg-zinc-50 transition-shadow hover:shadow-md hover:shadow-zinc-900/5 dark:bg-white/2.5 dark:hover:shadow-black/5"
     >
@@ -159,7 +159,7 @@ function Category({ category }: { category: Category }) {
       <div className="relative rounded-2xl px-4 pb-4 pt-16">
         <CategoryIcon icon={category.icon} />
         <h3 className="mt-4 text-sm font-semibold leading-7 text-zinc-900 dark:text-white">
-          <Link href={category.href}>
+          <Link href={`/categories/${category.id}`}>
             <span className="absolute inset-0 rounded-2xl" />
             {category.name}
           </Link>
@@ -178,8 +178,8 @@ function Category({ category }: { category: Category }) {
 export function Categories() {
   return (
     <div className="my-16 xl:max-w-none">
-      <Heading level={2} id="categories">
-        Pupular Categories
+      <Heading level={2} id="categories" anchor={false}>
+        <Link href="/categories">Popular Categories</Link>
       </Heading>
       <div className="not-prose mt-4 grid grid-cols-1 gap-8 border-t border-zinc-900/5 pt-10 dark:border-white/5 sm:grid-cols-2 xl:grid-cols-4">
         {categories.map((category) => (
