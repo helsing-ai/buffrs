@@ -175,13 +175,16 @@ impl ArtifactoryConfig {
 }
 
 fn sanity_check_url(url: &Url) -> eyre::Result<()> {
-    tracing::debug!("checking that url begins with http or https: {}", url.scheme());
+    tracing::debug!(
+        "checking that url begins with http or https: {}",
+        url.scheme()
+    );
     ensure!(
-        url.scheme() == "http" ||  url.scheme() == "https",
+        url.scheme() == "http" || url.scheme() == "https",
         "The url must start with http:// or https://"
     );
 
-    tracing::debug!("checking that url ends with /artifactory: {}",    url.path());
+    tracing::debug!("checking that url ends with /artifactory: {}", url.path());
     ensure!(
         url.path().ends_with("/artifactory"),
         "The url must end with '/artifactory'"
