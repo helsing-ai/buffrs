@@ -347,7 +347,7 @@ mod cmd {
             raw
         };
 
-        cfg.set_password(password);
+        cfg.password = Some(password);
 
         let artifactory = Artifactory::from(cfg.clone());
 

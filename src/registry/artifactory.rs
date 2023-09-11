@@ -168,10 +168,6 @@ impl ArtifactoryConfig {
             password: None,
         })
     }
-
-    pub fn set_password(&mut self, password: String) {
-        self.password = Some(password);
-    }
 }
 
 fn sanity_check_url(url: &Url) -> eyre::Result<()> {
