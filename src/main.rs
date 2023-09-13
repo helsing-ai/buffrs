@@ -250,6 +250,7 @@ mod cmd {
         manifest.write().await
     }
 
+    /// Packages the api and writes it to the filesystem
     pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
         let package = PackageStore::release()
             .await
@@ -267,7 +268,7 @@ mod cmd {
         Ok(())
     }
 
-    /// Publishs the api package to the registry
+    /// Publishes the api package to the registry
     pub async fn publish(
         credentials: Credentials,
         repository: String,
