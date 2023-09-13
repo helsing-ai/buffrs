@@ -206,12 +206,13 @@ impl PackageStore {
         let mut archive = tar::Builder::new(Vec::new());
 
         for entry in Self::collect(&pkg_path).await {
-            let rel_path = entry.strip_prefix(&pkg_path).wrap_err_with(|| {
-                format!("Failed to resolve path for entry {}", entry.display())
-            })?;
-
             archive
-                .append_path_with_name(&entry, rel_path)
+                .append_path_with_name(
+                    &entry,
+                    entry.strip_prefix(&pkg_path).wrap_err_with(|| {
+                        format!("Failed to resolve path for entry {}", entry.display())
+                    })?,
+                )
                 .wrap_err_with(|| {
                     format!("Failed to add proto {} to release tar", entry.display())
                 })?;
