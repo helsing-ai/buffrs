@@ -41,7 +41,7 @@ enum Command {
         package: PackageId,
     },
 
-    /// Packages this api
+    /// Exports the current package into a distributable tgz archive
     #[clap(alias = "pack")]
     Package {
         /// Destination directory for the release
