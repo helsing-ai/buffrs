@@ -1,11 +1,12 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
-use pretty_assertions::assert_eq;
+use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
 
@@ -133,10 +134,17 @@ impl VirtualFileSystem {
 
             println!("\n-- {} –-\n", file.display());
 
-            assert_eq!(
-                &fs::read(&expected).expect("file not found"),
-                &fs::read(&actual).expect("file not found"),
-            );
+            match fs::read_to_string(&expected) {
+                Ok(expected_text) => assert_str_eq!(
+                    expected_text,
+                    fs::read_to_string(&actual).expect("file not found")
+                ),
+                Err(err) if matches!(err.kind(), ErrorKind::InvalidData) => assert_eq!(
+                    fs::read(&expected).expect("file not found"),
+                    fs::read(&actual).expect("file not found")
+                ),
+                Err(_) => panic!("file not found"),
+            };
         }
     }
 }
