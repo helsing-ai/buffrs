@@ -41,6 +41,18 @@ enum Command {
         package: PackageId,
     },
 
+    /// Exports the current package into a distributable tgz archive
+    #[clap(alias = "pack")]
+    Package {
+        /// Target directory for the released package
+        #[clap(long)]
+        #[arg(default_value = ".")]
+        output_directory: String,
+        /// Generate package but do not write it to filesystem
+        #[clap(long)]
+        dry_run: bool,
+    },
+
     /// Packages and uploads this api to the registry
     #[clap(alias = "pub")]
     Publish {
@@ -115,6 +127,10 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
+        Command::Package {
+            output_directory,
+            dry_run,
+        } => cmd::package(output_directory, dry_run).await?,
         Command::Publish {
             repository,
             allow_dirty,
@@ -234,7 +250,25 @@ mod cmd {
         manifest.write().await
     }
 
-    /// Publishs the api package to the registry
+    /// Packages the api and writes it to the filesystem
+    pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
+        let package = PackageStore::release()
+            .await
+            .wrap_err("Failed to create release")?;
+
+        let path = Path::new(&directory).join(format!(
+            "{}-{}.tgz",
+            package.manifest.name, package.manifest.version
+        ));
+
+        if !dry_run {
+            std::fs::write(path, package.tgz).wrap_err("failed to write package to filesystem")?;
+        }
+
+        Ok(())
+    }
+
+    /// Publishes the api package to the registry
     pub async fn publish(
         credentials: Credentials,
         repository: String,
