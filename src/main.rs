@@ -44,10 +44,10 @@ enum Command {
     /// Exports the current package into a distributable tgz archive
     #[clap(alias = "pack")]
     Package {
-        /// Destination directory for the release
+        /// Target directory for the released package
         #[clap(long)]
         #[arg(default_value = ".")]
-        directory: String,
+        output_directory: String,
         /// Generate package but do not write it to filesystem
         #[clap(long)]
         dry_run: bool,
@@ -127,7 +127,10 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
-        Command::Package { directory, dry_run } => cmd::package(directory, dry_run).await?,
+        Command::Package {
+            output_directory,
+            dry_run,
+        } => cmd::package(output_directory, dry_run).await?,
         Command::Publish {
             repository,
             allow_dirty,
