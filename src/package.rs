@@ -2,6 +2,7 @@
 
 use std::{
     fmt::{self, Formatter},
+    fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
@@ -198,33 +199,43 @@ impl PackageStore {
                 )
             })?;
 
-        let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
-            .wrap_err("Failed to encode release manifest")?
-            .as_bytes()
-            .to_vec();
-
         let mut archive = tar::Builder::new(Vec::new());
 
+        let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
+            .wrap_err("Failed to encode release manifest")?
+            .into_bytes();
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(manifest.len().try_into().wrap_err("Failed to pack tar")?);
+        archive
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest))
+            .wrap_err("Failed to add manifest to release")?;
+
         for entry in Self::collect(&pkg_path).await {
+            let file = File::open(&entry)
+                .wrap_err_with(|| format!("Failed to open entry {}", entry.display()))?;
+
+            let mut header = tar::Header::new_gnu();
+            header.set_size(
+                file.metadata()
+                    .wrap_err_with(|| {
+                        format!("Failed to fetch metadata for entry {}", entry.display())
+                    })?
+                    .len(),
+            );
+
             archive
-                .append_path_with_name(
-                    &entry,
+                .append_data(
+                    &mut header,
                     entry.strip_prefix(&pkg_path).wrap_err_with(|| {
                         format!("Failed to resolve path for entry {}", entry.display())
                     })?,
+                    file,
                 )
                 .wrap_err_with(|| {
                     format!("Failed to add proto {} to release tar", entry.display())
                 })?;
         }
-
-        let mut header = tar::Header::new_gnu();
-
-        header.set_size(manifest.len().try_into().wrap_err("Failed to pack tar")?);
-
-        archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest))
-            .wrap_err("Failed to add manifest to release")?;
 
         archive.finish()?;
 

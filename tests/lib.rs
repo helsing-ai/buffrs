@@ -1,11 +1,13 @@
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
+use sha2::{Digest, Sha256};
 
 mod cmd;
 
@@ -133,16 +135,31 @@ impl VirtualFileSystem {
 
             println!("\n-- {} –-\n", file.display());
 
-            if let Some(extension) = file.extension() {
-                if extension == "tgz" {
-                    continue; // TODO(amello): make packaging deterministic so we can validate the files
+            match fs::read_to_string(&expected) {
+                Ok(expected_text) => {
+                    let actual_text = fs::read_to_string(&actual).expect("file not found");
+                    assert_str_eq!(expected_text, actual_text);
                 }
-            }
+                Err(err) if matches!(err.kind(), ErrorKind::InvalidData) => {
+                    // binary file, use checksum comparison
 
-            assert_str_eq!(
-                fs::read_to_string(&expected).expect("file not found"),
-                fs::read_to_string(&actual).expect("file not found")
-            );
+                    fn hash_file(path: impl AsRef<Path>) -> String {
+                        let mut file = fs::File::open(path).expect("failed to open file");
+                        let mut hasher = Sha256::new();
+                        let _ = std::io::copy(&mut file, &mut hasher).expect("failed to read file");
+                        format!("{:x}", hasher.finalize())
+                    }
+
+                    let expected_hash = hash_file(expected);
+                    let actual_hash = hash_file(actual);
+
+                    assert_eq!(
+                        expected_hash, actual_hash,
+                        "expected hash {expected_hash} actual hash {actual_hash}"
+                    );
+                }
+                Err(_) => panic!("could not open file {}", expected.to_str().unwrap()),
+            }
         }
     }
 }
