@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package external;
+
+message Window {
+    int32 height = 1;
+    int32 width = 2;
+}

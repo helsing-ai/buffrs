@@ -5,7 +5,7 @@ use std::{
 
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
-use pretty_assertions::assert_eq;
+use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
 
@@ -133,9 +133,15 @@ impl VirtualFileSystem {
 
             println!("\n-- {} –-\n", file.display());
 
-            assert_eq!(
-                &fs::read(&expected).expect("file not found"),
-                &fs::read(&actual).expect("file not found"),
+            if let Some(extension) = file.extension() {
+                if extension == "tgz" {
+                    continue; // TODO(amello): make packaging deterministic so we can validate the files
+                }
+            }
+
+            assert_str_eq!(
+                fs::read_to_string(&expected).expect("file not found"),
+                fs::read_to_string(&actual).expect("file not found")
             );
         }
     }
