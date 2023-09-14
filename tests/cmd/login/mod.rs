@@ -8,8 +8,6 @@ fn fixture() {
         .arg("login")
         .arg("--url")
         .arg("https://org.jfrog.io/artifactory")
-        .arg("--username")
-        .arg("foo")
         .current_dir(vfs.root())
         .write_stdin("some-token")
         .assert()

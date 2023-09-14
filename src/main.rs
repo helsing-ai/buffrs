@@ -86,9 +86,6 @@ enum Command {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
         url: url::Url,
-        /// Artifactory username
-        #[clap(long)]
-        username: String,
     },
     /// Logs you out from a registry
     Logout,
@@ -138,7 +135,7 @@ async fn main() -> eyre::Result<()> {
         Command::Install => cmd::install(config).await?,
         Command::Uninstall => cmd::uninstall().await?,
         Command::Generate { language } => cmd::generate(language).await?,
-        Command::Login { url, username } => cmd::login(config, url, username).await?,
+        Command::Login { url } => cmd::login(config, url).await?,
         Command::Logout => cmd::logout(config).await?,
     }
 
@@ -358,12 +355,8 @@ mod cmd {
     }
 
     /// Logs you in for a registry
-    pub async fn login(
-        mut credentials: Credentials,
-        url: url::Url,
-        username: String,
-    ) -> eyre::Result<()> {
-        let mut cfg = ArtifactoryConfig::new(url, username)?;
+    pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<()> {
+        let mut cfg = ArtifactoryConfig::new(url)?;
 
         let password = {
             tracing::info!("Please enter your artifactory token:");

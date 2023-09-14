@@ -24,7 +24,10 @@ impl Artifactory {
 
         let response = reqwest::Client::new()
             .get(repositories_uri.clone())
-            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .send()
             .await?;
 
@@ -87,7 +90,10 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .get(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .send()
             .await?;
 
@@ -119,7 +125,10 @@ impl Registry for Artifactory {
 
         let response = reqwest::Client::new()
             .put(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), self.0.password.to_owned())
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .body(package.tgz)
             .send()
             .await
@@ -153,18 +162,16 @@ impl From<ArtifactoryConfig> for Artifactory {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactoryConfig {
     pub url: Url,
-    pub username: String,
     pub password: Option<String>,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url, username: String) -> eyre::Result<Self> {
+    pub fn new(url: Url) -> eyre::Result<Self> {
         sanity_check_url(&url)?;
 
         Ok(Self {
             url,
-            username,
             password: None,
         })
     }
