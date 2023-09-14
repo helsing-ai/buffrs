@@ -1,0 +1,10 @@
+[package]
+name = "buffrs-registry"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+buffrs = { path = "../" }
+
+[build-dependencies]
+buffrs = { path = "../" }

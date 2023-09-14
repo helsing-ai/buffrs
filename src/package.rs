@@ -142,7 +142,7 @@ impl PackageStore {
 
         fs::remove_dir_all(&pkg_dir)
             .await
-            .wrap_err("Failed to uninstall {dependency}")
+            .wrap_err_with(|| format!("Failed to uninstall {package}"))
     }
 
     /// Resolves a package in the local file system
@@ -209,8 +209,8 @@ impl PackageStore {
             archive
                 .append_path_with_name(
                     &entry,
-                    entry.file_name().wrap_err_with(|| {
-                        format!("Failed to get filename of entry {}", entry.display())
+                    entry.strip_prefix(&pkg_path).wrap_err_with(|| {
+                        format!("Failed to resolve path for entry {}", entry.display())
                     })?,
                 )
                 .wrap_err_with(|| {

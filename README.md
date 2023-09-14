@@ -6,7 +6,7 @@
 
 # Buffrs
 
-**An opinionated protobuf package manager**
+**Modern protobuf package management**
 
 [![Helsing](https://img.shields.io/badge/helsing-open%20source-black.svg)](https://helsing.ai)
 [![Buffrs Crate](https://img.shields.io/crates/v/buffrs.svg)](https://crates.io/crates/buffrs)
@@ -34,7 +34,7 @@ Useful resources:
 ## Synopsis
 
 ```text,ignore
-An opinionated protobuf package manager
+Modern protobuf package management
 
 Usage: buffrs <COMMAND>
 

@@ -41,6 +41,18 @@ enum Command {
         package: PackageId,
     },
 
+    /// Exports the current package into a distributable tgz archive
+    #[clap(alias = "pack")]
+    Package {
+        /// Target directory for the released package
+        #[clap(long)]
+        #[arg(default_value = ".")]
+        output_directory: String,
+        /// Generate package but do not write it to filesystem
+        #[clap(long)]
+        dry_run: bool,
+    },
+
     /// Packages and uploads this api to the registry
     #[clap(alias = "pub")]
     Publish {
@@ -96,7 +108,6 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-
     let config = Credentials::load().await?;
 
     match cli.command {
@@ -112,6 +123,10 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => cmd::add(dependency).await?,
         Command::Remove { package } => cmd::remove(package).await?,
+        Command::Package {
+            output_directory,
+            dry_run,
+        } => cmd::package(output_directory, dry_run).await?,
         Command::Publish {
             repository,
             allow_dirty,
@@ -128,7 +143,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
-    use std::path::Path;
+    use std::{env, path::Path};
 
     use buffrs::{
         credentials::Credentials,
@@ -161,7 +176,7 @@ mod cmd {
             manifest.package = Some(PackageManifest {
                 r#type,
                 name,
-                version: Version::new(0, 0, 1),
+                version: Version::new(0, 1, 0),
                 description: None,
             });
         }
@@ -218,7 +233,7 @@ mod cmd {
         let dependency = manifest
             .dependencies
             .iter()
-            .find(|d| d.package != package)
+            .find(|d| d.package == package)
             .wrap_err(eyre::eyre!(
                 "Unable to remove unknown dependency {package:?}"
             ))?
@@ -226,14 +241,30 @@ mod cmd {
 
         manifest.dependencies.retain(|d| *d != dependency);
 
-        PackageStore::uninstall(&dependency.package)
-            .await
-            .wrap_err("Failed to uninstall dependency")?;
+        PackageStore::uninstall(&dependency.package).await.ok();
 
         manifest.write().await
     }
 
-    /// Publishs the api package to the registry
+    /// Packages the api and writes it to the filesystem
+    pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
+        let package = PackageStore::release()
+            .await
+            .wrap_err("Failed to create release")?;
+
+        let path = Path::new(&directory).join(format!(
+            "{}-{}.tgz",
+            package.manifest.name, package.manifest.version
+        ));
+
+        if !dry_run {
+            std::fs::write(path, package.tgz).wrap_err("failed to write package to filesystem")?;
+        }
+
+        Ok(())
+    }
+
+    /// Publishes the api package to the registry
     pub async fn publish(
         credentials: Credentials,
         repository: String,
@@ -325,6 +356,8 @@ mod cmd {
 
     /// Logs you in for a registry
     pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<()> {
+        let mut cfg = ArtifactoryConfig::new(url)?;
+
         let password = {
             tracing::info!("Please enter your artifactory token:");
 
@@ -339,13 +372,16 @@ mod cmd {
             raw
         };
 
-        let cfg = ArtifactoryConfig::new(url, password);
+        cfg.password = Some(password);
+
         let artifactory = Artifactory::from(cfg.clone());
 
-        artifactory
-            .ping()
-            .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        if env::var("BUFFRS_TESTSUITE").is_err() {
+            artifactory
+                .ping()
+                .await
+                .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+        }
 
         credentials.artifactory = Some(cfg);
         credentials.write().await

@@ -2,7 +2,7 @@
 name = "buffrs"
 version = "0.5.0"
 edition = "2021"
-description = "An opinionated protobuf package manager"
+description = "Modern protobuf package management"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
 repository = "https://github.com/helsing-ai/buffrs"
 documentation = "https://docs.rs/buffrs"

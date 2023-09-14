@@ -2,7 +2,7 @@
 
 use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 use tokio::fs;
 
 use crate::registry::ArtifactoryConfig;
@@ -23,6 +23,8 @@ impl Credentials {
     fn location() -> eyre::Result<PathBuf> {
         let home = home::home_dir().wrap_err("Failed to locate home directory")?;
 
+        let home = env::var("BUFFRS_HOME").map(PathBuf::from).unwrap_or(home);
+
         Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
     }
 
@@ -37,7 +39,7 @@ impl Credentials {
     pub async fn read() -> eyre::Result<Self> {
         let toml = fs::read_to_string(Self::location()?)
             .await
-            .wrap_err("Failed to read manifest")?;
+            .wrap_err("Failed to read credentials")?;
 
         toml::from_str(&toml).wrap_err("Failed to parse credentials")
     }
