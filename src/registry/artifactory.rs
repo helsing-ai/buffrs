@@ -24,7 +24,8 @@ impl Artifactory {
 
         let response = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .build()?
+            .build()
+            .wrap_err("client error")?
             .get(repositories_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -90,7 +91,10 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .get(artifact_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -98,6 +102,11 @@ impl Registry for Artifactory {
             )
             .send()
             .await?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+        );
 
         ensure!(
             response.status().is_success(),
@@ -125,7 +134,10 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .put(artifact_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -135,6 +147,11 @@ impl Registry for Artifactory {
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect publish request - is the Artifactory URL valid?"
+        );
 
         ensure!(
             response.status().is_success(),
