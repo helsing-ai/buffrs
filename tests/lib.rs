@@ -6,6 +6,7 @@ use std::{
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
+use ring::digest;
 
 mod cmd;
 
@@ -134,15 +135,33 @@ impl VirtualFileSystem {
             println!("\n-- {} –-\n", file.display());
 
             if let Some(extension) = file.extension() {
-                if extension == "tgz" {
-                    continue; // TODO(amello): make packaging deterministic so we can validate the files
-                }
-            }
+                match FileType::from_extension(extension.to_str().unwrap()) {
+                    FileType::Text => {
+                        assert_str_eq!(
+                            fs::read_to_string(&expected).expect("file cannot be read"),
+                            fs::read_to_string(&actual).expect("file cannot be read")
+                        );
+                    }
+                    FileType::Binary => {
+                        let hash_file = |path| {
+                            hex::encode(digest::digest(
+                                &digest::SHA256,
+                                fs::read(path).expect("file cannot be read").as_slice(),
+                            ))
+                        };
 
-            assert_str_eq!(
-                fs::read_to_string(&expected).expect("file not found"),
-                fs::read_to_string(&actual).expect("file not found")
-            );
+                        let expected_hash = hash_file(expected);
+                        let actual_hash = hash_file(actual);
+
+                        assert_eq!(
+                            expected_hash, actual_hash,
+                            "expected hash {expected_hash} actual hash {actual_hash}"
+                        );
+                    }
+                }
+            } else {
+                panic!("missing file extension");
+            }
         }
     }
 }
@@ -158,4 +177,19 @@ macro_rules! parent_directory {
     () => {{
         std::path::Path::new(file!()).parent().unwrap()
     }};
+}
+
+enum FileType {
+    Binary,
+    Text,
+}
+
+impl FileType {
+    pub fn from_extension(ext: impl AsRef<str>) -> Self {
+        match ext.as_ref() {
+            "tgz" => Self::Binary,
+            "proto" | "toml" => Self::Text,
+            other => panic!("unrecognized extension type: {other}"),
+        }
+    }
 }
