@@ -111,7 +111,6 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-
     let config = Credentials::load().await?;
 
     match cli.command {
@@ -364,6 +363,8 @@ mod cmd {
         url: url::Url,
         username: String,
     ) -> eyre::Result<()> {
+        let mut cfg = ArtifactoryConfig::new(url, username)?;
+
         let password = {
             tracing::info!("Please enter your artifactory token:");
 
@@ -378,7 +379,7 @@ mod cmd {
             raw
         };
 
-        let cfg = ArtifactoryConfig::new(url, username, password);
+        cfg.password = Some(password);
 
         let artifactory = Artifactory::from(cfg.clone());
 
