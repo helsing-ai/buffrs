@@ -207,6 +207,7 @@ impl PackageStore {
 
         let mut header = tar::Header::new_gnu();
         header.set_size(manifest.len().try_into().wrap_err("Failed to pack tar")?);
+        header.set_mode(0o444);
         archive
             .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest))
             .wrap_err("Failed to add manifest to release")?;
@@ -216,6 +217,7 @@ impl PackageStore {
                 .wrap_err_with(|| format!("Failed to open entry {}", entry.display()))?;
 
             let mut header = tar::Header::new_gnu();
+            header.set_mode(0o444);
             header.set_size(
                 file.metadata()
                     .wrap_err_with(|| {
