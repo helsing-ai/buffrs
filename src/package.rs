@@ -270,7 +270,7 @@ impl PackageStore {
             .await
             .unwrap_or(Self::PROTO_VENDOR_PATH.into());
 
-        WalkDir::new(path)
+        let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
@@ -280,7 +280,11 @@ impl PackageStore {
 
                 matches!(ext, Some(Some("proto")))
             })
-            .collect()
+            .collect();
+
+        paths.sort(); // to ensure determinism
+
+        paths
     }
 }
 
