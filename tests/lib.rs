@@ -7,7 +7,7 @@ use std::{
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
-use sha2::{Digest, Sha256};
+use ring::digest;
 
 mod cmd;
 
@@ -143,15 +143,17 @@ impl VirtualFileSystem {
                 Err(err) if matches!(err.kind(), ErrorKind::InvalidData) => {
                     // binary file, use checksum comparison
 
-                    fn hash_file(path: impl AsRef<Path>) -> String {
-                        let mut file = fs::File::open(path).expect("failed to open file");
-                        let mut hasher = Sha256::new();
-                        let _ = std::io::copy(&mut file, &mut hasher).expect("failed to read file");
-                        format!("{:x}", hasher.finalize())
-                    }
+                    let hash_file = |path| {
+                        hex::encode(digest::digest(
+                            &digest::SHA256,
+                            fs::read(path)
+                                .expect("could not read expected file")
+                                .as_slice(),
+                        ))
+                    };
 
                     let expected_hash = hash_file(expected);
-                    let actual_hash = hash_file(&actual);
+                    let actual_hash = hash_file(actual);
 
                     assert_eq!(
                         expected_hash, actual_hash,
