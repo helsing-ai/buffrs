@@ -188,8 +188,7 @@ impl FileType {
     pub fn from_extension(ext: impl AsRef<str>) -> Self {
         match ext.as_ref() {
             "tgz" => Self::Binary,
-            "proto" => Self::Text,
-            "toml" => Self::Text,
+            "proto" | "toml" => Self::Text,
             other => panic!("unrecognized extension type: {other}"),
         }
     }
