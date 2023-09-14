@@ -153,10 +153,6 @@ impl VirtualFileSystem {
                     let expected_hash = hash_file(expected);
                     let actual_hash = hash_file(&actual);
 
-                    if expected_hash == actual_hash {
-                        panic!("actual content: {:?}", fs::read(actual).unwrap());
-                    }
-
                     assert_eq!(
                         expected_hash, actual_hash,
                         "expected hash {expected_hash} actual hash {actual_hash}"
