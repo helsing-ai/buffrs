@@ -22,7 +22,9 @@ impl Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?
             .get(repositories_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
