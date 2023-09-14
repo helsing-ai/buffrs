@@ -108,6 +108,16 @@ impl Registry for Artifactory {
             "Remote server attempted to redirect request - is the Artifactory URL valid?"
         );
 
+        let headers = response.headers();
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .wrap_err("missing header in response")?;
+
+        ensure!(
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            "Server response has incorrect mime type: {content_type:?}"
+        );
+
         ensure!(
             response.status().is_success(),
             "Failed to fetch {dependency}: {}",
