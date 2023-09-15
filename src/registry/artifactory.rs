@@ -22,7 +22,10 @@ impl Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .get(repositories_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -88,7 +91,10 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .get(artifact_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -96,6 +102,21 @@ impl Registry for Artifactory {
             )
             .send()
             .await?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+        );
+
+        let headers = response.headers();
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .wrap_err("missing header in response")?;
+
+        ensure!(
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            "Server response has incorrect mime type: {content_type:?}"
+        );
 
         ensure!(
             response.status().is_success(),
@@ -123,7 +144,10 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .put(artifact_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
@@ -133,6 +157,11 @@ impl Registry for Artifactory {
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect publish request - is the Artifactory URL valid?"
+        );
 
         ensure!(
             response.status().is_success(),
