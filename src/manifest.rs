@@ -3,7 +3,10 @@
 use eyre::Context;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 use tokio::fs;
 
 use crate::package::{PackageId, PackageType};
@@ -117,18 +120,24 @@ pub struct Dependency {
 
 impl Dependency {
     /// Creates a new dependency
-    pub fn new(repository: String, package: PackageId, version: VersionReq) -> Self {
+    pub fn new(
+        registry: Registry,
+        repository: Repository,
+        package: PackageId,
+        version: VersionReq,
+    ) -> Self {
         Self {
             package,
             manifest: DependencyManifest {
                 repository,
                 version,
+                registry,
             },
         }
     }
 }
 
-impl fmt::Display for Dependency {
+impl Display for Dependency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -144,5 +153,41 @@ pub struct DependencyManifest {
     /// Version requirement in the buffrs format, currently only supports pinning
     pub version: VersionReq,
     /// Artifactory repository to pull dependency from
-    pub repository: String,
+    pub repository: Repository,
+    /// Artifactory registry to pull from
+    pub registry: Registry,
+}
+
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Registry(pub String);
+
+impl std::ops::Deref for Registry {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for Registry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Repository(pub String);
+
+impl std::ops::Deref for Repository {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for Repository {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
