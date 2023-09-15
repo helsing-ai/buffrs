@@ -7,34 +7,47 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::Registry;
-use crate::{manifest::Dependency, package::Package};
+use crate::{
+    manifest::{Dependency, RegistryUrl, Repository},
+    package::Package,
+};
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
-pub struct Artifactory(Arc<ArtifactoryConfig>);
+pub struct Artifactory {
+    config: Arc<ArtifactoryConfig>,
+    registry: RegistryUrl,
+}
 
 impl Artifactory {
+    pub fn new(config: Arc<ArtifactoryConfig>, registry: RegistryUrl) -> Self {
+        Self { config, registry }
+    }
+
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let repositories_uri: Url = {
-            let mut url = self.0.url.clone();
-            url.set_path(&format!("{}/api/repositories", url.path()));
-            url
-        };
+        // TODO: kihehs - does this make sense anymore?
+        return Ok(());
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .get(repositories_uri.clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
-            )
-            .send()
-            .await?;
+        // let repositories_uri: Url = {
+        //     let mut url = self.0.url.clone();
+        //     url.set_path(&format!("{}/api/repositories", url.path()));
+        //     url
+        // };
 
-        ensure!(response.status().is_success(), "Failed to ping artifactory");
+        // let response = reqwest::Client::builder()
+        //     .redirect(reqwest::redirect::Policy::none())
+        //     .build()
+        //     .wrap_err("client error")?
+        //     .get(repositories_uri.clone())
+        //     .header(
+        //         "X-JFrog-Art-Api",
+        //         self.0.password.clone().unwrap_or_default(),
+        //     )
+        //     .send()
+        //     .await?;
+
+        // ensure!(response.status().is_success(), "Failed to ping artifactory");
 
         tracing::debug!("pinging artifactory succeeded");
 
@@ -76,12 +89,13 @@ impl Registry for Artifactory {
             }
         );
 
-        let artifact_uri: Url = {
-            let mut url = self.0.url.clone();
+        let artifact_uri = {
+            let path = dependency.manifest.registry.path().to_owned();
 
+            let mut url = dependency.manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
-                url.path(),
+                path,
                 dependency.manifest.repository,
                 dependency.package,
                 dependency.package,
@@ -95,10 +109,10 @@ impl Registry for Artifactory {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .wrap_err("client error")?
-            .get(artifact_uri.clone())
+            .get((*artifact_uri).clone())
             .header(
                 "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
+                self.config.password.clone().unwrap_or_default(),
             )
             .send()
             .await?;
@@ -132,10 +146,10 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.0.url,
+            self.registry,
             repository,
             package.manifest.name,
             package.manifest.name,
@@ -151,7 +165,7 @@ impl Registry for Artifactory {
             .put(artifact_uri.clone())
             .header(
                 "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
+                self.config.password.clone().unwrap_or_default(),
             )
             .body(package.tgz)
             .send()
@@ -181,46 +195,15 @@ impl Registry for Artifactory {
     }
 }
 
-impl From<ArtifactoryConfig> for Artifactory {
-    fn from(cfg: ArtifactoryConfig) -> Self {
-        Self(cfg.into())
-    }
-}
-
 /// Authentication data and settings for the artifactory registry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactoryConfig {
-    pub url: Url,
     pub password: Option<String>,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url) -> eyre::Result<Self> {
-        sanity_check_url(&url)?;
-
-        Ok(Self {
-            url,
-            password: None,
-        })
+    pub fn new() -> Self {
+        Default::default()
     }
-}
-
-fn sanity_check_url(url: &Url) -> eyre::Result<()> {
-    tracing::debug!(
-        "checking that url begins with http or https: {}",
-        url.scheme()
-    );
-    ensure!(
-        url.scheme() == "http" || url.scheme() == "https",
-        "The url must start with http:// or https://"
-    );
-
-    tracing::debug!("checking that url ends with /artifactory: {}", url.path());
-    ensure!(
-        url.path().ends_with("/artifactory"),
-        "The url must end with '/artifactory'"
-    );
-
-    Ok(())
 }

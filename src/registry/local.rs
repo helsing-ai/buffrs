@@ -5,7 +5,10 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use eyre::{ensure, ContextCompat};
 
-use crate::{manifest::Dependency, package::Package};
+use crate::{
+    manifest::{Dependency, Repository},
+    package::Package,
+};
 
 use super::Registry;
 
@@ -68,7 +71,7 @@ impl Registry for LocalRegistry {
         Package::try_from(bytes)
     }
 
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository, package.manifest.name, package.manifest.name, package.manifest.version,
@@ -90,7 +93,7 @@ impl Registry for LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, PackageManifest};
+    use crate::manifest::{Dependency, PackageManifest, RegistryUrl};
     use crate::package::{Package, PackageId, PackageType};
     use crate::registry::local::LocalRegistry;
     use crate::registry::Registry;
@@ -137,10 +140,14 @@ mod tests {
             package_bytes
         );
 
+        let registry_url = RegistryUrl::from_str("http://some-registry/artifactory")
+            .expect("Failed to parse registry URL");
+
         // Download package from local registry and assert the tgz bytes and the metadata match what we
         // had published.
         let fetched = registry
             .download(Dependency::new(
+                registry_url,
                 "test-repo".into(),
                 PackageId::from_str("test-api").unwrap(),
                 VersionReq::from_str("=0.1.0").unwrap(),

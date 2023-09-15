@@ -34,7 +34,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
     async fn install() -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
 
-        let artifactory = Artifactory::from(
+        let artifactory = Artifactory::new(
             credentials
                 .artifactory
                 .wrap_err("Artifactory configuration is required")?,

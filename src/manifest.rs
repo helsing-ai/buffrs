@@ -1,13 +1,16 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use eyre::Context;
+use eyre::{ensure, Context};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    ops::DerefMut,
+    str::FromStr,
 };
 use tokio::fs;
+use url::Url;
 
 use crate::package::{PackageId, PackageType};
 
@@ -121,7 +124,7 @@ pub struct Dependency {
 impl Dependency {
     /// Creates a new dependency
     pub fn new(
-        registry: Registry,
+        registry: RegistryUrl,
         repository: Repository,
         package: PackageId,
         version: VersionReq,
@@ -155,23 +158,63 @@ pub struct DependencyManifest {
     /// Artifactory repository to pull dependency from
     pub repository: Repository,
     /// Artifactory registry to pull from
-    pub registry: Registry,
+    pub registry: RegistryUrl,
 }
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Registry(pub String);
+pub struct RegistryUrl(Url);
 
-impl std::ops::Deref for Registry {
-    type Target = str;
+impl std::ops::Deref for RegistryUrl {
+    type Target = Url;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl Display for Registry {
+impl DerefMut for RegistryUrl {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Display for RegistryUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for RegistryUrl {
+    type Err = eyre::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let slf = Self(Url::from_str(value)?);
+        slf.sanity_check_url()?;
+        Ok(slf)
+    }
+}
+
+impl RegistryUrl {
+    pub fn sanity_check_url(&self) -> eyre::Result<()> {
+        tracing::debug!(
+            "checking that url begins with http or https: {}",
+            self.0.scheme()
+        );
+        ensure!(
+            self.0.scheme() == "http" || self.0.scheme() == "https",
+            "The self.0 must start with http:// or https://"
+        );
+
+        tracing::debug!(
+            "checking that self.0 ends with /artifactory: {}",
+            self.0.path()
+        );
+        ensure!(
+            self.0.path().ends_with("/artifactory"),
+            "The url must end with '/artifactory'"
+        );
+
+        Ok(())
     }
 }
 
@@ -189,5 +232,11 @@ impl std::ops::Deref for Repository {
 impl Display for Repository {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for Repository {
+    fn from(value: &str) -> Self {
+        Self(value.into())
     }
 }

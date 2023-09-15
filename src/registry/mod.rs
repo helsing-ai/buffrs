@@ -1,6 +1,9 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use crate::{manifest::Dependency, package::Package};
+use crate::{
+    manifest::{Dependency, Repository},
+    package::Package,
+};
 
 mod artifactory;
 #[cfg(test)]
@@ -14,7 +17,7 @@ pub trait Registry {
     /// Downloads a package from the registry
     async fn download(&self, dependency: Dependency) -> eyre::Result<Package>;
     /// Publishes a package to the registry
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()>;
+    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()>;
 }
 
 /// An enum containing all supported registries
