@@ -21,7 +21,7 @@ pub use generator::Language;
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
-pub fn build(language: Language) -> eyre::Result<()> {
+pub fn build() -> eyre::Result<()> {
     use credentials::Credentials;
     use eyre::ContextCompat;
     use eyre::WrapErr;
@@ -71,7 +71,7 @@ pub fn build(language: Language) -> eyre::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(language))?;
+    rt.block_on(generator::generate(Language::Rust))?;
 
     Ok(())
 }
