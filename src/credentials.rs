@@ -2,10 +2,15 @@
 
 use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
-use std::{env, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    ops::{Deref, DerefMut},
+    path::PathBuf,
+};
 use tokio::fs;
 
-use crate::registry::ArtifactoryConfig;
+use crate::manifest::{RegistryToken, RegistryUri};
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
@@ -13,10 +18,23 @@ pub const BUFFRS_HOME: &str = ".buffrs";
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
 /// Credential store for storing authentication data
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    /// Artifactory credentials
-    pub artifactory: Option<ArtifactoryConfig>,
+    credentials: HashMap<RegistryUri, RegistryToken>,
+}
+
+impl Deref for Credentials {
+    type Target = HashMap<RegistryUri, RegistryToken>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.credentials
+    }
+}
+
+impl DerefMut for Credentials {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.credentials
+    }
 }
 
 impl Credentials {
@@ -41,7 +59,10 @@ impl Credentials {
             .await
             .wrap_err("Failed to read credentials")?;
 
-        toml::from_str(&toml).wrap_err("Failed to parse credentials")
+        let raw: RawCredentialCollection =
+            toml::from_str(&toml).wrap_err("Failed to parse credentials")?;
+
+        Ok(raw.into())
     }
 
     /// Writes the credentials to the file system
@@ -54,7 +75,9 @@ impl Credentials {
         .await
         .ok();
 
-        fs::write(Self::location()?, toml::to_string(&self)?.into_bytes())
+        let data: RawCredentialCollection = self.clone().into();
+
+        fs::write(Self::location()?, toml::to_string(&data)?.into_bytes())
             .await
             .wrap_err("Failed to write credentials")
     }
@@ -70,5 +93,41 @@ impl Credentials {
         };
 
         Ok(credentials)
+    }
+}
+
+/// Credential store for storing authentication data. Serialization type.
+#[derive(Serialize, Deserialize)]
+pub struct RawCredentialCollection {
+    credentials: Vec<RawRegistryCredentials>,
+}
+
+/// Credentials for a single registry. Serialization type.
+#[derive(Serialize, Deserialize)]
+struct RawRegistryCredentials {
+    uri: RegistryUri,
+    token: RegistryToken,
+}
+
+impl From<RawCredentialCollection> for Credentials {
+    fn from(value: RawCredentialCollection) -> Self {
+        let credentials = value
+            .credentials
+            .into_iter()
+            .map(|it| (it.uri, it.token))
+            .collect();
+        Self { credentials }
+    }
+}
+
+impl From<Credentials> for RawCredentialCollection {
+    fn from(value: Credentials) -> Self {
+        let credentials = value
+            .credentials
+            .into_iter()
+            .map(|(uri, token)| RawRegistryCredentials { uri, token })
+            .collect();
+
+        Self { credentials }
     }
 }

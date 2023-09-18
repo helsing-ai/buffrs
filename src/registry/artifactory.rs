@@ -3,51 +3,54 @@
 use std::sync::Arc;
 
 use eyre::{ensure, Context, ContextCompat};
-use serde::{Deserialize, Serialize};
 use url::Url;
 
 use super::Registry;
 use crate::{
-    manifest::{Dependency, RegistryUrl, Repository},
+    credentials::Credentials,
+    manifest::{Dependency, Manifest, RegistryUri, Repository},
     package::Package,
 };
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    config: Arc<ArtifactoryConfig>,
-    registry: RegistryUrl,
+    credentials: Arc<Credentials>,
+    manifest: Arc<Manifest>, // TODO kihehs: Can I remove this?
 }
 
 impl Artifactory {
-    pub fn new(config: Arc<ArtifactoryConfig>, registry: RegistryUrl) -> Self {
-        Self { config, registry }
+    pub fn new(manifest: Manifest, credentials: Credentials) -> Self {
+        Self {
+            credentials: Arc::new(credentials),
+            manifest: Arc::new(manifest),
+        }
     }
 
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self) -> eyre::Result<()> {
-        // TODO: kihehs - does this make sense anymore?
-        return Ok(());
+    pub async fn ping(&self, registry: RegistryUri) -> eyre::Result<()> {
+        let token = self
+            .credentials
+            .get(&registry)
+            .wrap_err("no token found for the given registry")?;
 
-        // let repositories_uri: Url = {
-        //     let mut url = self.0.url.clone();
-        //     url.set_path(&format!("{}/api/repositories", url.path()));
-        //     url
-        // };
+        let repositories_uri = {
+            let mut uri = registry.to_owned();
+            let path = &format!("{}/api/repositories", uri.path());
+            uri.set_path(path);
+            uri
+        };
 
-        // let response = reqwest::Client::builder()
-        //     .redirect(reqwest::redirect::Policy::none())
-        //     .build()
-        //     .wrap_err("client error")?
-        //     .get(repositories_uri.clone())
-        //     .header(
-        //         "X-JFrog-Art-Api",
-        //         self.0.password.clone().unwrap_or_default(),
-        //     )
-        //     .send()
-        //     .await?;
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
+            .get(repositories_uri.as_str())
+            .header("X-JFrog-Art-Api", &**token)
+            .send()
+            .await?;
 
-        // ensure!(response.status().is_success(), "Failed to ping artifactory");
+        ensure!(response.status().is_success(), "Failed to ping artifactory");
 
         tracing::debug!("pinging artifactory succeeded");
 
@@ -105,17 +108,29 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .get((*artifact_uri).clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.config.password.clone().unwrap_or_default(),
-            )
-            .send()
-            .await?;
+        let response = match self.credentials.get(&dependency.manifest.registry) {
+            Some(token) => {
+                // Go on with auth.
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .get((*artifact_uri).clone())
+                    .header("X-JFrog-Art-Api", &**token)
+                    .send()
+                    .await?
+            }
+            None => {
+                // Go on without auth.
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .get((*artifact_uri).clone())
+                    .send()
+                    .await?
+            }
+        };
 
         ensure!(
             response.status() != 302,
@@ -146,10 +161,15 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
+    async fn publish(
+        &self,
+        registry: RegistryUri,
+        package: Package,
+        repository: Repository,
+    ) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.registry,
+            registry,
             repository,
             package.manifest.name,
             package.manifest.name,
@@ -158,19 +178,33 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .put(artifact_uri.clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.config.password.clone().unwrap_or_default(),
-            )
-            .body(package.tgz)
-            .send()
-            .await
-            .wrap_err("Failed to upload release to artifactory")?;
+        let response = match self.credentials.get(&registry) {
+            Some(token) => {
+                // Go on with auth.
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .put(artifact_uri.clone())
+                    .header("X-JFrog-Art-Api", &**token)
+                    .body(package.tgz)
+                    .send()
+                    .await
+                    .wrap_err("Failed to upload release to artifactory")?
+            }
+            None => {
+                // Go on without auth.
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .put(artifact_uri.clone())
+                    .body(package.tgz)
+                    .send()
+                    .await
+                    .wrap_err("Failed to upload release to artifactory")?
+            }
+        };
 
         ensure!(
             response.status() != 302,
@@ -192,18 +226,5 @@ impl Registry for Artifactory {
         );
 
         Ok(())
-    }
-}
-
-/// Authentication data and settings for the artifactory registry
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ArtifactoryConfig {
-    pub password: Option<String>,
-}
-
-impl ArtifactoryConfig {
-    /// Creates a new artifactory config in the system keyring
-    pub fn new() -> Self {
-        Default::default()
     }
 }

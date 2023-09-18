@@ -30,8 +30,8 @@ impl From<Manifest> for RawManifest {
     fn from(manifest: Manifest) -> Self {
         let dependencies: DependencyMap = manifest
             .dependencies
-            .iter()
-            .map(|dep| (dep.package.to_owned(), dep.manifest.to_owned()))
+            .into_iter()
+            .map(|dep| (dep.package, dep.manifest))
             .collect();
 
         let dependencies = (!dependencies.is_empty()).then_some(dependencies);
@@ -124,7 +124,7 @@ pub struct Dependency {
 impl Dependency {
     /// Creates a new dependency
     pub fn new(
-        registry: RegistryUrl,
+        registry: RegistryUri,
         repository: Repository,
         package: PackageId,
         version: VersionReq,
@@ -158,13 +158,13 @@ pub struct DependencyManifest {
     /// Artifactory repository to pull dependency from
     pub repository: Repository,
     /// Artifactory registry to pull from
-    pub registry: RegistryUrl,
+    pub registry: RegistryUri,
 }
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RegistryUrl(Url);
+pub struct RegistryUri(Url);
 
-impl std::ops::Deref for RegistryUrl {
+impl std::ops::Deref for RegistryUri {
     type Target = Url;
 
     fn deref(&self) -> &Self::Target {
@@ -172,19 +172,19 @@ impl std::ops::Deref for RegistryUrl {
     }
 }
 
-impl DerefMut for RegistryUrl {
+impl DerefMut for RegistryUri {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl Display for RegistryUrl {
+impl Display for RegistryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl FromStr for RegistryUrl {
+impl FromStr for RegistryUri {
     type Err = eyre::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -194,7 +194,7 @@ impl FromStr for RegistryUrl {
     }
 }
 
-impl RegistryUrl {
+impl RegistryUri {
     pub fn sanity_check_url(&self) -> eyre::Result<()> {
         tracing::debug!(
             "checking that url begins with http or https: {}",
@@ -215,6 +215,31 @@ impl RegistryUrl {
         );
 
         Ok(())
+    }
+}
+
+#[derive(Debug, Default, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryToken(pub String);
+
+impl std::ops::Deref for RegistryToken {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RegistryToken {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl FromStr for RegistryToken {
+    type Err = eyre::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(Self(value.to_owned()))
     }
 }
 
@@ -239,4 +264,11 @@ impl From<&str> for Repository {
     fn from(value: &str) -> Self {
         Self(value.into())
     }
+}
+
+/// Authentication data and settings for an artifactory registry
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct RawRegistryCredentials {
+    pub uri: RegistryUri,
+    pub token: RegistryToken,
 }

@@ -1,6 +1,6 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::manifest::{RegistryUrl, Repository};
+use buffrs::manifest::{RegistryUri, Repository};
 use buffrs::package::PackageId;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
@@ -34,7 +34,7 @@ enum Command {
     Add {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUrl,
+        registry: RegistryUri,
         /// Dependency to add (Format <repository>/<package>@<version>
         dependency: String,
     },
@@ -62,7 +62,7 @@ enum Command {
     Publish {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUrl,
+        registry: RegistryUri,
         /// Destination repository for the release
         #[clap(long)]
         repository: Repository,
@@ -92,13 +92,13 @@ enum Command {
     Login {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUrl,
+        registry: RegistryUri,
     },
     /// Logs you out from a registry
     Logout {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUrl,
+        registry: RegistryUri,
     },
 }
 
@@ -119,7 +119,7 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let config = Credentials::load().await?;
+    let credentials = Credentials::load().await?;
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -146,26 +146,26 @@ async fn main() -> eyre::Result<()> {
             repository,
             allow_dirty,
             dry_run,
-        } => cmd::publish(registry, config, repository, allow_dirty, dry_run).await?,
-        Command::Install => cmd::install(config).await?,
+        } => cmd::publish(credentials, registry, repository, allow_dirty, dry_run).await?,
+        Command::Install {} => cmd::install(credentials).await?,
         Command::Uninstall => cmd::uninstall().await?,
         Command::Generate { language } => cmd::generate(language).await?,
-        Command::Login { registry } => cmd::login(registry, config).await?,
-        Command::Logout { registry } => cmd::logout(registry, config).await?,
+        Command::Login { registry } => cmd::login(credentials, registry).await?,
+        Command::Logout { registry } => cmd::logout(credentials, registry).await?,
     }
 
     Ok(())
 }
 
 mod cmd {
-    use std::{env, path::Path};
+    use std::{env, path::Path, str::FromStr};
 
     use buffrs::{
         credentials::Credentials,
         generator::{self, Language},
-        manifest::{Dependency, Manifest, PackageManifest, RegistryUrl, Repository},
+        manifest::{Dependency, Manifest, PackageManifest, RegistryToken, RegistryUri, Repository},
         package::{PackageId, PackageStore, PackageType},
-        registry::{Artifactory, ArtifactoryConfig, Registry},
+        registry::{Artifactory, Registry},
     };
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;
@@ -207,7 +207,7 @@ mod cmd {
     }
 
     /// Adds a dependency to this project
-    pub async fn add(registry: RegistryUrl, dependency: String) -> eyre::Result<()> {
+    pub async fn add(registry: RegistryUri, dependency: String) -> eyre::Result<()> {
         let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
         let (repository, dependency) = dependency
@@ -283,8 +283,8 @@ mod cmd {
 
     /// Publishes the api package to the registry
     pub async fn publish(
-        registry: RegistryUrl,
         credentials: Credentials,
+        registry: RegistryUri,
         repository: Repository,
         allow_dirty: bool,
         dry_run: bool,
@@ -307,15 +307,8 @@ mod cmd {
             }
         }
 
-        let artifactory = {
-            let Some(artifactory) = credentials.artifactory else {
-                eyre::bail!(
-                    "Unable to publish package to artifactory, please login using `buffrs login`"
-                );
-            };
-
-            Artifactory::from(artifactory)
-        };
+        let manifest = Manifest::read().await?;
+        let artifactory = Artifactory::new(manifest, credentials);
 
         let package = PackageStore::release()
             .await
@@ -326,24 +319,15 @@ mod cmd {
             return Ok(());
         }
 
-        artifactory.publish(package, repository).await?;
+        artifactory.publish(registry, package, repository).await?;
 
         Ok(())
     }
 
     /// Installs dependencies
     pub async fn install(credentials: Credentials) -> eyre::Result<()> {
-        let artifactory = {
-            let Some(artifactory) = credentials.artifactory else {
-                eyre::bail!(
-                    "Unable to install artifactory dependencies, please login using `buffrs login`"
-                );
-            };
-
-            Artifactory::from(artifactory)
-        };
-
         let manifest = Manifest::read().await?;
+        let artifactory = Artifactory::new(manifest.clone(), credentials);
 
         let mut install = Vec::new();
 
@@ -373,11 +357,9 @@ mod cmd {
     }
 
     /// Logs you in for a registry
-    pub async fn login(registry: RegistryUrl, mut credentials: Credentials) -> eyre::Result<()> {
-        let mut cfg = ArtifactoryConfig::new();
-
-        let password = {
-            tracing::info!("Please enter your artifactory token:");
+    pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+        let token = {
+            tracing::info!("Please enter your artifactory token: ");
 
             let mut raw = String::new();
 
@@ -385,32 +367,27 @@ mod cmd {
                 .read_line(&mut raw)
                 .wrap_err("Failed to read token")?;
 
-            raw = raw.trim().to_owned();
-
-            raw
+            RegistryToken::from_str(raw.trim())?
         };
 
-        cfg.password = Some(password);
+        credentials.insert(registry.clone(), token);
 
-        let artifactory = Artifactory::from(cfg.clone());
+        let manifest = Manifest::read().await?;
+        let artifactory = Artifactory::new(manifest, credentials.clone());
 
         if env::var("BUFFRS_TESTSUITE").is_err() {
             artifactory
-                .ping()
+                .ping(registry)
                 .await
                 .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
         }
 
-        credentials.artifactory = Some(cfg);
         credentials.write().await
     }
 
     /// Logs you out from a registry
-    pub async fn logout(
-        registry: RegistryUrl, // TODO: @kihehs - use this
-        mut credentials: Credentials,
-    ) -> eyre::Result<()> {
-        credentials.artifactory = None;
+    pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+        credentials.remove(&registry);
         credentials.write().await
     }
 }
