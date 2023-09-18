@@ -115,7 +115,7 @@ pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
 
     let path = Path::new(&directory).join(format!(
         "{}-{}.tgz",
-        package.manifest.package.name, package.manifest.package.name
+        package.manifest.package.name, package.manifest.package.version
     ));
 
     if !dry_run {
