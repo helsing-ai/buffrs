@@ -25,32 +25,38 @@ macro_rules! cli {
 
 /// A virtual file system which enables temporary fs operations
 pub struct VirtualFileSystem {
-    root: TempDir,
+    tmp_dir: TempDir,
     virtual_home: bool,
 }
 
 impl VirtualFileSystem {
     const VIRTUAL_HOME: &str = "$HOME";
+    const ROOT_NAME: &str = "root";
 
     /// Init an empty virtual file system
     pub fn empty() -> Self {
-        let root = TempDir::new().unwrap();
+        let tmp_dir = TempDir::new().unwrap();
+        let root = tmp_dir.join(Self::ROOT_NAME);
 
+        fs_extra::dir::create(&root, false).ok();
         fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
 
         Self {
-            root,
+            tmp_dir,
             virtual_home: false,
         }
     }
 
     /// Init a virtual file system from a local directory
     pub fn copy(template: impl AsRef<Path>) -> Self {
-        let root = TempDir::new().unwrap();
+        let tmp_dir = TempDir::new().unwrap();
+        let root = tmp_dir.join(Self::ROOT_NAME);
+
+        fs_extra::dir::create(&root, false).ok();
 
         fs_extra::dir::copy(
             template.as_ref(),
-            root.path(),
+            &root,
             &CopyOptions {
                 overwrite: true,
                 skip_exist: false,
@@ -65,14 +71,14 @@ impl VirtualFileSystem {
         fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
 
         Self {
-            root,
+            tmp_dir,
             virtual_home: false,
         }
     }
 
     /// Root path to run operations in
-    pub fn root(&self) -> &Path {
-        self.root.path()
+    pub fn root(&self) -> PathBuf {
+        self.tmp_dir.join(Self::ROOT_NAME)
     }
 
     /// Enable verification of the virtual home

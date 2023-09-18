@@ -2,3 +2,5 @@
 type = "lib"
 name = "some-lib"
 version = "0.1.0"
+
+[dependencies]

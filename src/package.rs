@@ -1,6 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
 use std::{
+    collections::HashMap,
     fmt::{self, Formatter},
     io::{self, Cursor, Read, Write},
     ops::Deref,
@@ -8,15 +9,16 @@ use std::{
     str::FromStr,
 };
 
+use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
 use eyre::{bail, ensure, Context, ContextCompat};
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    lock::LockedPackage,
+    lock::{LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, RawManifest, MANIFEST_FILE},
     registry::Registry,
 };
@@ -83,60 +85,6 @@ impl PackageStore {
             package.manifest.package.version,
             pkg_dir.display()
         );
-
-        Ok(())
-    }
-
-    /// Installs a package and all of its dependency into the local filesystem
-    pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
-        if let Ok(lockfile) = Lockfile::read().await {
-            lockfile.update()
-        }
-
-        let package = registry.download(dependency).await?;
-
-        Self::unpack(&package).await?;
-
-        let mut tree = format!(
-            ":: installed {}@{}",
-            package.manifest.package.name, package.manifest.package.version
-        );
-
-        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.package.name).await?;
-
-        let dependency_count = dependencies.len();
-
-        for (index, dependency) in dependencies.into_iter().enumerate() {
-            if let Ok(existing) = Self::resolve(&dependency.package).await {
-                eyre::ensure!(
-                    dependency.manifest.version.matches(&existing.package.version),
-                    "A dependency of your project requires {}@{} which collides with {}@{} required by {}",
-                    existing.package.name,
-                    existing.package.version,
-                    dependency.package,
-                    dependency.manifest.version,
-                    package.manifest.package.name,
-                );
-            }
-
-            let dependency = registry.download(dependency).await?;
-
-            Self::unpack(&dependency).await?;
-
-            let tree_char = if index + 1 == dependency_count {
-                '┗'
-            } else {
-                '┣'
-            };
-
-            tree.push_str(&format!(
-                "\n   {tree_char} installed {}@{}",
-                dependency.name(),
-                dependency.version()
-            ));
-        }
-
-        tracing::info!("{tree}");
 
         Ok(())
     }
@@ -407,7 +355,7 @@ impl TryFrom<String> for PackageName {
             value
                 .chars()
                 .all(|c| (c.is_ascii_alphanumeric() && c.is_ascii_lowercase()) || c == '-'),
-            "Package names can only consist of lowercase alphanumeric ascii chars and dashes"
+            "Invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted",
         );
         ensure!(
             value
@@ -471,5 +419,125 @@ impl fmt::Debug for PackageName {
         f.debug_tuple("PackageName")
             .field(&format!("{self}"))
             .finish()
+    }
+}
+
+pub struct ResolvedDependency {
+    pub package: Package,
+    pub repository: String,
+    pub dependants: Vec<Dependant>,
+    pub depends_on: Vec<PackageName>,
+}
+
+pub struct Dependant {
+    pub name: PackageName,
+    pub version_req: VersionReq,
+}
+
+pub struct DependencyTree {
+    entries: HashMap<PackageName, ResolvedDependency>,
+}
+
+impl DependencyTree {
+    pub async fn from_manifest<R: Registry + Sync>(
+        manifest: &Manifest,
+        lockfile: &Lockfile,
+        registry: &R,
+    ) -> eyre::Result<Self> {
+        let name = manifest.package.name.clone();
+
+        let mut entries = HashMap::new();
+
+        for dependency in &manifest.dependencies {
+            Self::process_dependency(
+                name.clone(),
+                dependency.clone(),
+                lockfile,
+                registry,
+                &mut entries,
+            )
+            .await?;
+        }
+
+        Ok(Self { entries })
+    }
+
+    #[async_recursion]
+    async fn process_dependency<R: Registry + Sync>(
+        name: PackageName,
+        dependency: Dependency,
+        lockfile: &Lockfile,
+        registry: &R,
+        entries: &mut HashMap<PackageName, ResolvedDependency>,
+    ) -> eyre::Result<()> {
+        let version_req = dependency.manifest.version.clone();
+
+        if let Some(entry) = entries.get_mut(&dependency.package) {
+            ensure!(version_req.matches(entry.package.version()), "A dependency of your project requires {}@{} which collides with {}@{} required by {}", dependency.package, dependency.manifest.version, entry.package.name(), entry.package.version(), entry.dependants[0].name);
+
+            entry.dependants.push(Dependant { name, version_req });
+        } else {
+            let dependency_repo = dependency.manifest.repository.clone();
+            let dependency_pkg = Self::resolve(dependency, registry, lockfile).await?;
+            let dependency_name = dependency_pkg.name().clone();
+
+            let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
+            let sub_dependency_names: Vec<_> = sub_dependencies
+                .iter()
+                .map(|sub_dependency| sub_dependency.package.clone())
+                .collect();
+
+            entries.insert(
+                dependency_name.clone(),
+                ResolvedDependency {
+                    package: dependency_pkg,
+                    repository: dependency_repo,
+                    dependants: vec![Dependant { name, version_req }],
+                    depends_on: sub_dependency_names,
+                },
+            );
+
+            for sub_dependency in sub_dependencies {
+                Self::process_dependency(
+                    dependency_name.clone(),
+                    sub_dependency,
+                    lockfile,
+                    registry,
+                    entries,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn resolve<R: Registry>(
+        dependency: Dependency,
+        registry: &R,
+        lockfile: &Lockfile,
+    ) -> eyre::Result<Package> {
+        if let Some(local_locked) = lockfile.get(&dependency.package) {
+            let remote_package = registry.download(local_locked.as_dependency()).await?;
+            let remote_locked = remote_package.lock(dependency.manifest.repository);
+            local_locked
+                .validate(&remote_locked)
+                .wrap_err("Lockfile validation failed")?;
+            Ok(remote_package)
+        } else {
+            registry.download(dependency).await
+        }
+    }
+
+    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
+        self.entries.get(name)
+    }
+}
+
+impl IntoIterator for DependencyTree {
+    type Item = ResolvedDependency;
+    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_values()
     }
 }

@@ -1,12 +1,17 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use eyre::Context;
+use std::{collections::HashMap, sync::Arc};
+
+use eyre::{ensure, Context};
 use ring::digest;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::package::{Package, PackageName};
+use crate::{
+    manifest::Dependency,
+    package::{Package, PackageName},
+};
 
 pub const LOCKFILE: &str = "Proto.lock";
 
@@ -37,11 +42,52 @@ impl LockedPackage {
                 .collect(),
         }
     }
+
+    pub fn validate(&self, other: &Self) -> eyre::Result<()> {
+        ensure!(
+            self.name == other.name,
+            "Package name mismatch: {} and {}",
+            self.name,
+            other.name
+        );
+        ensure!(
+            self.checksum == other.checksum,
+            "Checksum mismatch: {} and {}",
+            self.checksum,
+            other.checksum
+        );
+        ensure!(
+            self.repository == other.repository,
+            "Repository mismatch: {} and {}",
+            self.repository,
+            other.repository
+        );
+        ensure!(
+            self.version == other.version,
+            "Version mismatch: {} and {}",
+            self.version,
+            other.version
+        );
+        ensure!(
+            self.dependencies == other.dependencies,
+            "Dependencies mismatch"
+        );
+        Ok(())
+    }
+
+    pub fn as_dependency(&self) -> Dependency {
+        todo!()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct Lockfile {
+struct RawLockfile {
     packages: Vec<LockedPackage>,
+}
+
+#[derive(Default)]
+pub struct Lockfile {
+    packages: HashMap<PackageName, Arc<LockedPackage>>,
 }
 
 impl Lockfile {
@@ -56,14 +102,45 @@ impl Lockfile {
             .await
             .wrap_err("Failed to read lockfile")?;
 
-        let lock: Self = toml::from_str(&toml).wrap_err("Failed to parse lockfile")?;
+        let raw: RawLockfile = toml::from_str(&toml).wrap_err("Failed to parse lockfile")?;
 
-        Ok(lock)
+        Ok(Self {
+            packages: raw
+                .packages
+                .into_iter()
+                .map(|locked| (locked.name.clone(), Arc::new(locked)))
+                .collect(),
+        })
+    }
+
+    pub async fn read_or_default() -> eyre::Result<Self> {
+        if Lockfile::exists().await? {
+            Lockfile::read().await
+        } else {
+            Ok(Lockfile::default())
+        }
     }
 
     pub async fn write(&self) -> eyre::Result<()> {
-        fs::write(LOCKFILE, toml::to_string(&self)?.into_bytes())
+        let raw: Vec<_> = self.packages.values().cloned().collect();
+
+        fs::write(LOCKFILE, toml::to_string(&raw)?.into_bytes())
             .await
             .wrap_err("Failed to write lockfile")
+    }
+
+    pub fn get(&self, name: &PackageName) -> Option<Arc<LockedPackage>> {
+        self.packages.get(name).cloned()
+    }
+}
+
+impl FromIterator<LockedPackage> for Lockfile {
+    fn from_iter<I: IntoIterator<Item = LockedPackage>>(iter: I) -> Self {
+        Self {
+            packages: iter
+                .into_iter()
+                .map(|locked| (locked.name.clone(), Arc::new(locked)))
+                .collect(),
+        }
     }
 }
