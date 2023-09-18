@@ -358,7 +358,7 @@ mod cmd {
     /// Logs you in for a registry
     pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
         let token = {
-            tracing::info!("Please enter your artifactory token: ");
+            tracing::info!("Please enter your artifactory token:");
 
             let mut raw = String::new();
 
