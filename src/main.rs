@@ -307,8 +307,7 @@ mod cmd {
             }
         }
 
-        let manifest = Manifest::read().await?;
-        let artifactory = Artifactory::new(manifest, credentials);
+        let artifactory = Artifactory::new(credentials);
 
         let package = PackageStore::release()
             .await
@@ -327,7 +326,7 @@ mod cmd {
     /// Installs dependencies
     pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         let manifest = Manifest::read().await?;
-        let artifactory = Artifactory::new(manifest.clone(), credentials);
+        let artifactory = Artifactory::new(credentials);
 
         let mut install = Vec::new();
 
@@ -372,8 +371,7 @@ mod cmd {
 
         credentials.insert(registry.clone(), token);
 
-        let manifest = Manifest::read().await?;
-        let artifactory = Artifactory::new(manifest, credentials.clone());
+        let artifactory = Artifactory::new(credentials.clone());
 
         if env::var("BUFFRS_TESTSUITE").is_err() {
             artifactory

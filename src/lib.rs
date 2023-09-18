@@ -42,7 +42,7 @@ async fn install() -> eyre::Result<()> {
     let credentials = Credentials::read().await?;
     let manifest = Manifest::read().await?;
 
-    let artifactory = Artifactory::new(manifest.clone(), credentials);
+    let artifactory = Artifactory::new(credentials);
 
     let mut install = Vec::new();
 

@@ -8,7 +8,7 @@ use url::Url;
 use super::Registry;
 use crate::{
     credentials::Credentials,
-    manifest::{Dependency, Manifest, RegistryUri, Repository},
+    manifest::{Dependency, RegistryUri, Repository},
     package::Package,
 };
 
@@ -16,14 +16,12 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Artifactory {
     credentials: Arc<Credentials>,
-    manifest: Arc<Manifest>, // TODO kihehs: Can I remove this?
 }
 
 impl Artifactory {
-    pub fn new(manifest: Manifest, credentials: Credentials) -> Self {
+    pub fn new(credentials: Credentials) -> Self {
         Self {
             credentials: Arc::new(credentials),
-            manifest: Arc::new(manifest),
         }
     }
 
