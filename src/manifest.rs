@@ -267,7 +267,7 @@ impl From<&str> for Repository {
 }
 
 /// Authentication data and settings for an artifactory registry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RawRegistryCredentials {
     pub uri: RegistryUri,
     pub token: RegistryToken,
