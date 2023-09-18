@@ -3,6 +3,7 @@
 use std::{
     collections::HashMap,
     fmt::{self, Formatter},
+    fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
@@ -11,7 +12,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use eyre::{bail, ensure, Context, ContextCompat};
+use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -115,13 +116,9 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        let pkg = &manifest.package;
+        let pkg_manifest = manifest.package.clone();
 
-        if let PackageType::Impl = pkg.r#type {
-            bail!("Implementations can't be published using Buffrs");
-        }
-
-        if let PackageType::Lib = pkg.r#type {
+        if let PackageType::Lib = pkg_manifest.r#type {
             ensure!(
                 manifest.dependencies.is_empty(),
                 "Libraries can not have any dependencies"
@@ -129,12 +126,14 @@ impl PackageStore {
         }
 
         for dependency in manifest.dependencies.iter() {
-            let manifest = Self::resolve(&dependency.package)
+            let resolved = Self::resolve(&dependency.package)
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
 
+            let package = resolved.package;
+
             ensure!(
-                manifest.package.r#type == PackageType::Lib,
+                package.r#type == PackageType::Lib,
                 "Depending on api packages is prohibited"
             );
         }
@@ -148,38 +147,50 @@ impl PackageStore {
                 )
             })?;
 
-        let raw_manifest = toml::to_string_pretty(&RawManifest::from(manifest.to_owned()))
-            .wrap_err("Failed to encode release manifest")?
-            .as_bytes()
-            .to_vec();
-
         let mut archive = tar::Builder::new(Vec::new());
 
+        let manifest_bytes = toml::to_string_pretty(&RawManifest::from(manifest.clone()))
+            .wrap_err("Failed to encode release manifest")?
+            .into_bytes();
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(
+            manifest_bytes
+                .len()
+                .try_into()
+                .wrap_err("Failed to pack tar")?,
+        );
+        header.set_mode(0o444);
+        archive
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
+            .wrap_err("Failed to add manifest to release")?;
+
         for entry in Self::collect(&pkg_path).await {
+            let file = File::open(&entry)
+                .wrap_err_with(|| format!("Failed to open entry {}", entry.display()))?;
+
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o444);
+            header.set_size(
+                file.metadata()
+                    .wrap_err_with(|| {
+                        format!("Failed to fetch metadata for entry {}", entry.display())
+                    })?
+                    .len(),
+            );
+
             archive
-                .append_path_with_name(
-                    &entry,
-                    entry.file_name().wrap_err_with(|| {
-                        format!("Failed to get filename of entry {}", entry.display())
+                .append_data(
+                    &mut header,
+                    entry.strip_prefix(&pkg_path).wrap_err_with(|| {
+                        format!("Failed to resolve path for entry {}", entry.display())
                     })?,
+                    file,
                 )
                 .wrap_err_with(|| {
                     format!("Failed to add proto {} to release tar", entry.display())
                 })?;
         }
-
-        let mut header = tar::Header::new_gnu();
-
-        header.set_size(
-            raw_manifest
-                .len()
-                .try_into()
-                .wrap_err("Failed to pack tar")?,
-        );
-
-        archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(raw_manifest))
-            .wrap_err("Failed to add manifest to release")?;
 
         archive.finish()?;
 
@@ -196,7 +207,7 @@ impl PackageStore {
             .wrap_err("Failed to release package")?
             .into();
 
-        tracing::info!(":: packaged {}@{}", pkg.name, pkg.version);
+        tracing::info!(":: packaged {}@{}", pkg_manifest.name, pkg_manifest.version);
 
         Ok(Package::new(manifest, tgz))
     }
@@ -212,7 +223,7 @@ impl PackageStore {
             .await
             .unwrap_or(Self::PROTO_VENDOR_PATH.into());
 
-        WalkDir::new(path)
+        let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
@@ -222,7 +233,11 @@ impl PackageStore {
 
                 matches!(ext, Some(Some("proto")))
             })
-            .collect()
+            .collect();
+
+        paths.sort(); // to ensure determinism
+
+        paths
     }
 }
 

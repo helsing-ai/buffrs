@@ -22,9 +22,15 @@ impl Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .get(repositories_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .send()
             .await?;
 
@@ -85,11 +91,32 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .get(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .send()
             .await?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+        );
+
+        let headers = response.headers();
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .wrap_err("missing header in response")?;
+
+        ensure!(
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            "Server response has incorrect mime type: {content_type:?}"
+        );
 
         ensure!(
             response.status().is_success(),
@@ -117,13 +144,24 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .wrap_err("client error")?
             .put(artifact_uri.clone())
-            .basic_auth(self.0.username.to_owned(), Some(&self.0.password))
+            .header(
+                "X-JFrog-Art-Api",
+                self.0.password.clone().unwrap_or_default(),
+            )
             .body(package.tgz.clone())
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
+
+        ensure!(
+            response.status() != 302,
+            "Remote server attempted to redirect publish request - is the Artifactory URL valid?"
+        );
 
         ensure!(
             response.status().is_success(),
@@ -153,17 +191,36 @@ impl From<ArtifactoryConfig> for Artifactory {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ArtifactoryConfig {
     pub url: Url,
-    pub username: String,
-    pub password: String,
+    pub password: Option<String>,
 }
 
 impl ArtifactoryConfig {
     /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url, username: String, password: String) -> Self {
-        Self {
+    pub fn new(url: Url) -> eyre::Result<Self> {
+        sanity_check_url(&url)?;
+
+        Ok(Self {
             url,
-            username,
-            password,
-        }
+            password: None,
+        })
     }
+}
+
+fn sanity_check_url(url: &Url) -> eyre::Result<()> {
+    tracing::debug!(
+        "checking that url begins with http or https: {}",
+        url.scheme()
+    );
+    ensure!(
+        url.scheme() == "http" || url.scheme() == "https",
+        "The url must start with http:// or https://"
+    );
+
+    tracing::debug!("checking that url ends with /artifactory: {}", url.path());
+    ensure!(
+        url.path().ends_with("/artifactory"),
+        "The url must end with '/artifactory'"
+    );
+
+    Ok(())
 }

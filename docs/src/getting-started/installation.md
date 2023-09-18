@@ -16,9 +16,7 @@ artifactory instance (which will be replaced by the Buffrs Registry in Q4
 Logging in to your instance is done using the following `buffrs` command:
 
 ```bash
-buffrs login
-    --url https://<organization>.jfrog.io/artifactory
-    --username your.name@organization.com
+buffrs login --url https://<organization>.jfrog.io/artifactory
 ```
 
 You will be prompted for an artifactory identity token which you can create

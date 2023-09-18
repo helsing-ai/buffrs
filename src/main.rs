@@ -42,6 +42,18 @@ enum Command {
         package: PackageName,
     },
 
+    /// Exports the current package into a distributable tgz archive
+    #[clap(alias = "pack")]
+    Package {
+        /// Target directory for the released package
+        #[clap(long)]
+        #[arg(default_value = ".")]
+        output_directory: String,
+        /// Generate package but do not write it to filesystem
+        #[clap(long)]
+        dry_run: bool,
+    },
+
     /// Packages and uploads this api to the registry
     #[clap(alias = "pub")]
     Publish {
@@ -75,9 +87,6 @@ enum Command {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
         url: url::Url,
-        /// Artifactory username
-        #[clap(long)]
-        username: String,
     },
     /// Logs you out from a registry
     Logout,
@@ -100,7 +109,6 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-
     let config = Credentials::load().await?;
 
     match cli.command {
@@ -117,6 +125,10 @@ async fn main() -> eyre::Result<()> {
         }
         Command::Add { dependency } => command::add(dependency).await,
         Command::Remove { package } => command::remove(package).await,
+        Command::Package {
+            output_directory,
+            dry_run,
+        } => command::package(output_directory, dry_run).await,
         Command::Publish {
             repository,
             allow_dirty,
@@ -125,7 +137,7 @@ async fn main() -> eyre::Result<()> {
         Command::Install => command::install(config).await,
         Command::Uninstall => command::uninstall().await,
         Command::Generate { language } => command::generate(language).await,
-        Command::Login { url, username } => command::login(config, url, username).await,
+        Command::Login { url } => command::login(config, url).await,
         Command::Logout => command::logout(config).await,
     }
 }

@@ -34,7 +34,7 @@ Useful resources:
 ## Synopsis
 
 ```text,ignore
-An opinionated protobuf package manager
+Modern protobuf package management
 
 Usage: buffrs <COMMAND>
 

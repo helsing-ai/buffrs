@@ -107,6 +107,24 @@ pub async fn remove(package: PackageName) -> eyre::Result<()> {
     manifest.write().await
 }
 
+/// Packages the api and writes it to the filesystem
+pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
+    let package = PackageStore::release()
+        .await
+        .wrap_err("Failed to create release")?;
+
+    let path = Path::new(&directory).join(format!(
+        "{}-{}.tgz",
+        package.manifest.package.name, package.manifest.package.name
+    ));
+
+    if !dry_run {
+        std::fs::write(path, package.tgz).wrap_err("failed to write package to filesystem")?;
+    }
+
+    Ok(())
+}
+
 /// Publishs the api package to the registry
 pub async fn publish(
     credentials: Credentials,
@@ -238,11 +256,9 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(
-    mut credentials: Credentials,
-    url: url::Url,
-    username: String,
-) -> eyre::Result<()> {
+pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<()> {
+    let mut cfg = ArtifactoryConfig::new(url)?;
+
     let password = {
         tracing::info!("Please enter your artifactory token:");
 
@@ -257,15 +273,15 @@ pub async fn login(
         raw
     };
 
-    let cfg = ArtifactoryConfig::new(url, username, password);
+    cfg.password = Some(password);
 
     let artifactory = Artifactory::from(cfg.clone());
 
     if env::var("BUFFRS_TESTSUITE").is_err() {
         artifactory
-                .ping()
-                .await
-                .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+            .ping()
+            .await
+            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
     }
 
     credentials.artifactory = Some(cfg);

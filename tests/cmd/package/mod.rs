@@ -2,14 +2,11 @@ use crate::VirtualFileSystem;
 
 #[test]
 fn fixture() {
-    let vfs = VirtualFileSystem::empty().with_virtual_home();
+    let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
     crate::cli!()
-        .arg("login")
-        .arg("--url")
-        .arg("https://org.jfrog.io/artifactory")
+        .arg("package")
         .current_dir(vfs.root())
-        .write_stdin("some-token")
         .assert()
         .success()
         .stdout(include_str!("stdout.log"))
