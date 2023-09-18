@@ -352,6 +352,12 @@ impl fmt::Display for PackageType {
     }
 }
 
+impl Default for PackageType {
+    fn default() -> Self {
+        Self::Impl
+    }
+}
+
 /// A `buffrs` package name for parsing and type safety
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]

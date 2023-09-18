@@ -128,7 +128,12 @@ impl Registry for Artifactory {
 
         let tgz = response.bytes().await.wrap_err("Failed to download tar")?;
 
-        Package::try_from(tgz)
+        Package::try_from(tgz).wrap_err_with(|| {
+            format!(
+                "Failed to process dependency {}@{}",
+                dependency.package, version
+            )
+        })
     }
 
     /// Publishes a package to artifactory

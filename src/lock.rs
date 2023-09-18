@@ -4,18 +4,18 @@ use std::{collections::HashMap, sync::Arc};
 
 use eyre::{ensure, Context};
 use ring::digest;
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::{
-    manifest::Dependency,
+    manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
 };
 
 pub const LOCKFILE: &str = "Proto.lock";
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LockedPackage {
     pub name: PackageName,
     pub checksum: String,
@@ -76,7 +76,21 @@ impl LockedPackage {
     }
 
     pub fn as_dependency(&self) -> Dependency {
-        todo!()
+        Dependency {
+            package: self.name.clone(),
+            manifest: DependencyManifest {
+                version: VersionReq {
+                    comparators: vec![semver::Comparator {
+                        op: semver::Op::Exact,
+                        major: self.version.major,
+                        minor: Some(self.version.minor),
+                        patch: Some(self.version.patch),
+                        pre: self.version.pre.clone(),
+                    }],
+                },
+                repository: self.repository.clone(),
+            },
+        }
     }
 }
 
@@ -122,7 +136,13 @@ impl Lockfile {
     }
 
     pub async fn write(&self) -> eyre::Result<()> {
-        let raw: Vec<_> = self.packages.values().cloned().collect();
+        let raw = RawLockfile {
+            packages: self
+                .packages
+                .values()
+                .map(|pkg| LockedPackage::clone(pkg))
+                .collect(),
+        };
 
         fs::write(LOCKFILE, toml::to_string(&raw)?.into_bytes())
             .await
