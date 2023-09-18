@@ -27,13 +27,13 @@ use registry::Artifactory;
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
-pub fn build(language: Language) -> eyre::Result<()> {
+pub fn build() -> eyre::Result<()> {
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
 
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(language))?;
+    rt.block_on(generator::generate(Language::Rust))?;
 
     Ok(())
 }
