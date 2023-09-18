@@ -1,7 +1,5 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use std::sync::Arc;
-
 use eyre::{ensure, Context, ContextCompat};
 use url::Url;
 
@@ -15,25 +13,27 @@ use crate::{
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    credentials: Arc<Credentials>,
+    credentials: Credentials,
+    registry: RegistryUri,
 }
 
 impl Artifactory {
-    pub fn new(credentials: Credentials) -> Self {
+    pub fn new(credentials: Credentials, registry: RegistryUri) -> Self {
         Self {
-            credentials: Arc::new(credentials),
+            credentials,
+            registry,
         }
     }
 
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self, registry: RegistryUri) -> eyre::Result<()> {
+    pub async fn ping(&self) -> eyre::Result<()> {
         let token = self
             .credentials
-            .get(&registry)
+            .get(&self.registry)
             .wrap_err("no token found for the given registry")?;
 
         let repositories_uri = {
-            let mut uri = registry.to_owned();
+            let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
             uri
@@ -159,15 +159,10 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(
-        &self,
-        registry: RegistryUri,
-        package: Package,
-        repository: Repository,
-    ) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            registry,
+            self.registry,
             repository,
             package.manifest.name,
             package.manifest.name,
@@ -176,7 +171,7 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = match self.credentials.get(&registry) {
+        let response = match self.credentials.get(&self.registry) {
             Some(token) => {
                 // Go on with auth.
                 reqwest::Client::builder()

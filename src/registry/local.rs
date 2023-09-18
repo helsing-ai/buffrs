@@ -6,7 +6,7 @@ use bytes::Bytes;
 use eyre::{ensure, ContextCompat};
 
 use crate::{
-    manifest::{Dependency, RegistryUri, Repository},
+    manifest::{Dependency, Repository},
     package::Package,
 };
 
@@ -71,12 +71,7 @@ impl Registry for LocalRegistry {
         Package::try_from(bytes)
     }
 
-    async fn publish(
-        &self,
-        registry: RegistryUri, // TODO @kihehs: When to use it?
-        package: Package,
-        repository: Repository,
-    ) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository, package.manifest.name, package.manifest.name, package.manifest.version,
@@ -129,13 +124,9 @@ mod tests {
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
 
-        let registry_uri = RegistryUri::from_str("http://some-registry/artifactory")
-            .expect("Failed to parse registry URL");
-
         // Publish to local registry and assert the tgz exists in the file system
         registry
             .publish(
-                registry_uri.clone(),
                 Package::new(manifest.clone(), package_bytes.clone()),
                 "test-repo".into(),
             )
@@ -148,6 +139,9 @@ mod tests {
             ),
             package_bytes
         );
+
+        let registry_uri = RegistryUri::from_str("http://some-registry/artifactory")
+            .expect("Failed to parse registry URL");
 
         // Download package from local registry and assert the tgz bytes and the metadata match what we
         // had published.

@@ -42,8 +42,6 @@ async fn install() -> eyre::Result<()> {
     let credentials = Credentials::read().await?;
     let manifest = Manifest::read().await?;
 
-    let artifactory = Artifactory::new(credentials);
-
     let mut install = Vec::new();
 
     for dependency in manifest.dependencies {
@@ -60,7 +58,13 @@ async fn install() -> eyre::Result<()> {
             }
         }
 
-        install.push(PackageStore::install(dependency, artifactory.clone()));
+        let artifactory =
+            Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
+
+        install.push(PackageStore::install(
+            dependency.clone(),
+            artifactory.clone(),
+        ));
     }
 
     futures::future::try_join_all(install)

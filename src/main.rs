@@ -307,7 +307,7 @@ mod cmd {
             }
         }
 
-        let artifactory = Artifactory::new(credentials);
+        let artifactory = Artifactory::new(credentials, registry);
 
         let package = PackageStore::release()
             .await
@@ -318,7 +318,7 @@ mod cmd {
             return Ok(());
         }
 
-        artifactory.publish(registry, package, repository).await?;
+        artifactory.publish(package, repository).await?;
 
         Ok(())
     }
@@ -326,12 +326,13 @@ mod cmd {
     /// Installs dependencies
     pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         let manifest = Manifest::read().await?;
-        let artifactory = Artifactory::new(credentials);
 
         let mut install = Vec::new();
 
         for dependency in manifest.dependencies {
-            install.push(PackageStore::install(dependency, artifactory.clone()));
+            let artifactory =
+                Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
+            install.push(PackageStore::install(dependency, artifactory));
         }
 
         try_join_all(install)
@@ -371,11 +372,11 @@ mod cmd {
 
         credentials.insert(registry.clone(), token);
 
-        let artifactory = Artifactory::new(credentials.clone());
+        let artifactory = Artifactory::new(credentials.clone(), registry.clone());
 
         if env::var("BUFFRS_TESTSUITE").is_err() {
             artifactory
-                .ping(registry)
+                .ping()
                 .await
                 .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
         }
