@@ -37,7 +37,7 @@ impl Artifactory {
             uri
         };
 
-        let response = match self.credentials.get(&self.registry) {
+        let response = match self.credentials.credentials.get(&self.registry) {
             Some(token) => {
                 reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
@@ -117,7 +117,11 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = match self.credentials.get(&dependency.manifest.registry) {
+        let response = match self
+            .credentials
+            .credentials
+            .get(&dependency.manifest.registry)
+        {
             Some(token) => {
                 // Go on with auth.
                 reqwest::Client::builder()
@@ -182,7 +186,7 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = match self.credentials.get(&self.registry) {
+        let response = match self.credentials.credentials.get(&self.registry) {
             Some(token) => {
                 // Go on with auth.
                 reqwest::Client::builder()

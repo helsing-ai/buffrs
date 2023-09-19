@@ -372,7 +372,7 @@ mod cmd {
             raw.trim().into()
         };
 
-        credentials.insert(registry.clone(), token);
+        credentials.credentials.insert(registry.clone(), token);
 
         let artifactory = Artifactory::new(Arc::new(credentials.clone()), registry.clone());
 
@@ -388,7 +388,7 @@ mod cmd {
 
     /// Logs you out from a registry
     pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
-        credentials.remove(&registry);
+        credentials.credentials.remove(&registry);
         credentials.write().await
     }
 }

@@ -2,12 +2,7 @@
 
 use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    env,
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-};
+use std::{collections::HashMap, env, path::PathBuf};
 use tokio::fs;
 
 use crate::manifest::RegistryUri;
@@ -20,21 +15,7 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 /// Credential store for storing authentication data
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    credentials: HashMap<RegistryUri, String>,
-}
-
-impl Deref for Credentials {
-    type Target = HashMap<RegistryUri, String>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.credentials
-    }
-}
-
-impl DerefMut for Credentials {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.credentials
-    }
+    pub credentials: HashMap<RegistryUri, String>,
 }
 
 impl Credentials {
