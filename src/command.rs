@@ -127,7 +127,7 @@ pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Publishs the api package to the registry
+/// Publishes the api package to the registry
 pub async fn publish(
     credentials: Credentials,
     repository: String,
