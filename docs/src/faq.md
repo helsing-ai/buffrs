@@ -1,32 +1,36 @@
 # FAQ
 
+## Why doesn't `buffrs add`, `buffrs publish`, or `buffrs login` work anymore?
 
-## Breaking Changes
+We recently expanded the capabilities of Buffrs a bit and made it so it can handle being connected to multiple registries.
+For this reason, you'll now likely have to add `--registry http://my-registry.jfrog.io/artifactory` to all three.
 
-### v?.?.? - UNRELEASED
+Note that `buffrs login` had a `--url` flag previously. It was renamed to `--registry` for the sake of consistency.
 
-Buffrs can not be logged into multiple repositories. To facilitate this, a few command line switches have been added (and renamed)
+## Why is my `credentials.toml` file broken?
 
-- `buffrs add` and `buffrs publish` have a new, required `--registry` flag, which accepts a URL, for example `http://my.jfrog.io/artifactory`
-- `buffrs login` has renamed `--url` to `--registry` for consistency
-- The credentials.toml file is different. When it only supported a single registry, it looked like this:
+Because we expanded Buffrs and made it capable of connecting to multiple registries, we had to make some changes to how we store our credentials.
 
-    ```toml
-    [artifactory]
-    url = "https://org.jfrog.io/artifactory"
-    password = "some-token"
-    ```
+When it only supported a single registry, it looked like this:
 
-    And now it looks like this, supporting multiple regisitries:
-    
-    ```toml
-    [[credentials]]
-    uri = "https://org1.jfrog.io/artifactory"
-    token = "some-token"
-    
-    [[credentials]]
-    uri = "https://org2.jfrog.io/artifactory"
-    token = "some-other-token"
-    ```
+```toml
+[artifactory]
+url = "https://org.jfrog.io/artifactory"
+password = "some-token"
+```
 
-- `buffrs login` no longer supports the `--username` flag, as we no longer use BasicAuth. Instead we set the `X-JFrog-Art-Api` header.
+And now it looks like this, supporting multiple regisitries:
+
+```toml
+[[credentials]]
+uri = "https://org1.jfrog.io/artifactory"
+token = "some-token"
+
+[[credentials]]
+uri = "https://org2.jfrog.io/artifactory"
+token = "some-other-token"
+```
+
+## Why can't I log in with a username?
+
+`buffrs login` no longer supports the `--username` flag, as we no longer use BasicAuth. Instead we set the `X-JFrog-Art-Api` header.
