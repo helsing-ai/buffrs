@@ -30,11 +30,6 @@ impl Artifactory {
 
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let token = self
-            .credentials
-            .get(&self.registry)
-            .wrap_err("no token found for the given registry")?;
-
         let repositories_uri = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
@@ -42,14 +37,27 @@ impl Artifactory {
             uri
         };
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .get(repositories_uri.as_str())
-            .header(JFROG_AUTH_HEADER, &**token)
-            .send()
-            .await?;
+        let response = match self.credentials.get(&self.registry) {
+            Some(token) => {
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .get(repositories_uri.as_str())
+                    .header(JFROG_AUTH_HEADER, &**token)
+                    .send()
+                    .await?
+            }
+            None => {
+                reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .wrap_err("client error")?
+                    .get(repositories_uri.as_str())
+                    .send()
+                    .await?
+            }
+        };
 
         ensure!(response.status().is_success(), "Failed to ping artifactory");
 
