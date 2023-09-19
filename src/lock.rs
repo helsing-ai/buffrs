@@ -46,25 +46,25 @@ impl LockedPackage {
     pub fn validate(&self, other: &Self) -> eyre::Result<()> {
         ensure!(
             self.name == other.name,
-            "Package name mismatch: {} and {}",
+            "Package name mismatch - expected {}, actual {}",
             self.name,
             other.name
         );
         ensure!(
             self.checksum == other.checksum,
-            "Checksum mismatch: {} and {}",
+            "Checksum mismatch - expected {}, actual {}",
             self.checksum,
             other.checksum
         );
         ensure!(
             self.repository == other.repository,
-            "Repository mismatch: {} and {}",
+            "Repository mismatch - expected {}, actual {}",
             self.repository,
             other.repository
         );
         ensure!(
             self.version == other.version,
-            "Version mismatch: {} and {}",
+            "Version mismatch - expected {}, actual {}",
             self.version,
             other.version
         );

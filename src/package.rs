@@ -539,11 +539,23 @@ impl DependencyTree {
         lockfile: &Lockfile,
     ) -> eyre::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
+            ensure!(
+                dependency.manifest.version.matches(&local_locked.version),
+                "Dependency {} cannot be satisfied - requested {}, but version {} is locked.",
+                &dependency.package,
+                &dependency.manifest.version,
+                &local_locked.version
+            );
+
             let remote_package = registry.download(local_locked.as_dependency()).await?;
             let remote_locked = remote_package.lock(dependency.manifest.repository);
-            local_locked
-                .validate(&remote_locked)
-                .wrap_err("Lockfile validation failed")?;
+            local_locked.validate(&remote_locked).wrap_err_with(|| {
+                format!(
+                    "Lockfile validation failed for dependency {}@{}",
+                    local_locked.name, local_locked.version
+                )
+            })?;
+
             Ok(remote_package)
         } else {
             registry.download(dependency).await
