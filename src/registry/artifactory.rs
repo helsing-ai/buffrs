@@ -44,7 +44,8 @@ impl Artifactory {
                 .wrap_err("client error")?
                 .get(repositories_uri.as_str());
 
-            let builder = if let Some(token) = self.credentials.credentials.get(&self.registry) {
+            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
+            {
                 builder.header(JFROG_AUTH_HEADER, token)
             } else {
                 builder
@@ -120,7 +121,7 @@ impl Registry for Artifactory {
 
             let builder = if let Some(token) = self
                 .credentials
-                .credentials
+                .registry_tokens
                 .get(&dependency.manifest.registry)
             {
                 builder.header(JFROG_AUTH_HEADER, token)
@@ -180,7 +181,8 @@ impl Registry for Artifactory {
                 .put(artifact_uri.clone())
                 .body(package.tgz);
 
-            let builder = if let Some(token) = self.credentials.credentials.get(&self.registry) {
+            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
+            {
                 builder.header(JFROG_AUTH_HEADER, token)
             } else {
                 builder

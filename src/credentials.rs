@@ -15,7 +15,7 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 /// Credential store for storing authentication data
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    pub credentials: HashMap<RegistryUri, String>,
+    pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
 impl Credentials {
@@ -97,14 +97,16 @@ impl From<RawCredentialCollection> for Credentials {
             .into_iter()
             .map(|it| (it.uri, it.token))
             .collect();
-        Self { credentials }
+        Self {
+            registry_tokens: credentials,
+        }
     }
 }
 
 impl From<Credentials> for RawCredentialCollection {
     fn from(value: Credentials) -> Self {
         let credentials = value
-            .credentials
+            .registry_tokens
             .into_iter()
             .map(|(uri, token)| RawRegistryCredentials { uri, token })
             .collect();
