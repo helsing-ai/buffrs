@@ -10,7 +10,6 @@ use crate::{
     credentials::Credentials,
     manifest::{Dependency, RegistryUri},
     package::Package,
-    JFROG_AUTH_HEADER,
 };
 
 /// The registry implementation for artifactory
@@ -21,6 +20,8 @@ pub struct Artifactory {
 }
 
 impl Artifactory {
+    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
+
     pub fn new(credentials: Arc<Credentials>, registry: RegistryUri) -> Self {
         Self {
             credentials,
@@ -46,7 +47,7 @@ impl Artifactory {
 
             let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
             {
-                builder.header(JFROG_AUTH_HEADER, token)
+                builder.header(Self::JFROG_AUTH_HEADER, token)
             } else {
                 builder
             };
@@ -124,7 +125,7 @@ impl Registry for Artifactory {
                 .registry_tokens
                 .get(&dependency.manifest.registry)
             {
-                builder.header(JFROG_AUTH_HEADER, token)
+                builder.header(Self::JFROG_AUTH_HEADER, token)
             } else {
                 builder
             };
@@ -183,7 +184,7 @@ impl Registry for Artifactory {
 
             let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
             {
-                builder.header(JFROG_AUTH_HEADER, token)
+                builder.header(Self::JFROG_AUTH_HEADER, token)
             } else {
                 builder
             };

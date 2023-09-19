@@ -25,8 +25,6 @@ use manifest::Manifest;
 use package::PackageStore;
 use registry::Artifactory;
 
-pub const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
-
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
