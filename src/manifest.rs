@@ -15,9 +15,9 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 /// This contains the exact structure of the `Proto.toml` and skips
 /// empty fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RawManifest {
-    pub package: PackageManifest,
-    pub dependencies: DependencyMap,
+struct RawManifest {
+    package: PackageManifest,
+    dependencies: DependencyMap,
 }
 
 impl From<Manifest> for RawManifest {
@@ -32,6 +32,14 @@ impl From<Manifest> for RawManifest {
             package: manifest.package,
             dependencies,
         }
+    }
+}
+
+impl TryFrom<String> for RawManifest {
+    type Error = toml::de::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        toml::from_str::<RawManifest>(&value)
     }
 }
 
@@ -70,6 +78,11 @@ impl Manifest {
             .await
             .wrap_err("Failed to write manifest")
     }
+
+    pub fn as_toml(&self) -> eyre::Result<String> {
+        toml::to_string_pretty(&RawManifest::from(self.clone()))
+            .wrap_err("failed to render manifest as TOML")
+    }
 }
 
 impl From<RawManifest> for Manifest {
@@ -87,6 +100,14 @@ impl From<RawManifest> for Manifest {
             package: raw.package,
             dependencies,
         }
+    }
+}
+
+impl TryFrom<String> for Manifest {
+    type Error = toml::de::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Ok(RawManifest::try_from(value)?.into())
     }
 }
 

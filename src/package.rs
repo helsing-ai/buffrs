@@ -20,7 +20,7 @@ use walkdir::WalkDir;
 
 use crate::{
     lock::{LockedPackage, Lockfile},
-    manifest::{self, Dependency, Manifest, RawManifest, MANIFEST_FILE},
+    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
     registry::Registry,
 };
 
@@ -107,7 +107,7 @@ impl PackageStore {
             "Failed to locate local manifest for package: {package}"
         ))?;
 
-        toml::from_str::<RawManifest>(&manifest)
+        Manifest::try_from(manifest)
             .wrap_err(format!("Malformed manifest of package {package}"))
             .map(Manifest::from)
     }
@@ -149,7 +149,8 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        let manifest_bytes = toml::to_string_pretty(&RawManifest::from(manifest.clone()))
+        let manifest_bytes = manifest
+            .as_toml()
             .wrap_err("Failed to encode release manifest")?
             .into_bytes();
 
@@ -303,10 +304,9 @@ impl TryFrom<Bytes> for Package {
             })
             .wrap_err("Failed to find manifest in package")?;
 
-        let manifest: Vec<u8> = manifest.bytes().collect::<io::Result<Vec<u8>>>()?;
-        let manifest: RawManifest = toml::from_str(&String::from_utf8(manifest)?)
-            .wrap_err("Failed to parse the manifest")?;
-        let manifest = Manifest::from(manifest);
+        let manifest = manifest.bytes().collect::<io::Result<Vec<_>>>()?;
+        let manifest = Manifest::try_from(String::from_utf8(manifest)?)
+            .wrap_err("Failed to parse manifest")?;
 
         Ok(Self { manifest, tgz })
     }
