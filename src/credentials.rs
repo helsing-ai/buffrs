@@ -15,6 +15,7 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 /// Credential store for storing authentication data
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
+    /// A mapping from registry URIs to their corresponding tokens
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
@@ -79,7 +80,7 @@ impl Credentials {
 
 /// Credential store for storing authentication data. Serialization type.
 #[derive(Serialize, Deserialize)]
-pub struct RawCredentialCollection {
+struct RawCredentialCollection {
     credentials: Vec<RawRegistryCredentials>,
 }
 
