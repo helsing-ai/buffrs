@@ -1,3 +1,5 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
 use std::{fmt, path::Path};
 
 use eyre::Context;
@@ -67,7 +69,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 
     eyre::ensure!(
         manifest.package.r#type.compilable() || !manifest.dependencies.is_empty(),
-        "Either a compliable package (library or api) or at least one dependency is needed to generate code bindings."
+        "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
     );
 
     // Only tonic is supported right now

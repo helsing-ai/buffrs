@@ -1,3 +1,5 @@
+// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+
 use async_recursion::async_recursion;
 use eyre::ContextCompat;
 

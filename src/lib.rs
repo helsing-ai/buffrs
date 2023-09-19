@@ -2,6 +2,8 @@
 
 #![doc = include_str!("../README.md")]
 
+/// CLI command implementations
+pub mod command;
 /// Credential management
 pub mod credentials;
 /// Code generator
@@ -15,8 +17,6 @@ pub mod manifest;
 pub mod package;
 /// Supported registries
 pub mod registry;
-
-pub mod command;
 
 #[cfg(feature = "build")]
 pub use generator::Language;
