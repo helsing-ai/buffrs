@@ -1,7 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::manifest::RegistryUri;
 use buffrs::package::PackageId;
+use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
 
@@ -163,9 +163,9 @@ mod cmd {
     use buffrs::{
         credentials::Credentials,
         generator::{self, Language},
-        manifest::{Dependency, Manifest, PackageManifest, RegistryUri},
+        manifest::{Dependency, Manifest, PackageManifest},
         package::{PackageId, PackageStore, PackageType},
-        registry::{Artifactory, Registry},
+        registry::{Artifactory, Registry, RegistryUri},
     };
     use eyre::{ensure, Context, ContextCompat};
     use futures::future::try_join_all;

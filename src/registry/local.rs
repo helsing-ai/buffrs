@@ -90,10 +90,10 @@ impl Registry for LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, PackageManifest, RegistryUri};
+    use crate::manifest::{Dependency, PackageManifest};
     use crate::package::{Package, PackageId, PackageType};
     use crate::registry::local::LocalRegistry;
-    use crate::registry::Registry;
+    use crate::registry::{Registry, RegistryUri};
     use bytes::Bytes;
     use semver::{Version, VersionReq};
     use std::path::PathBuf;

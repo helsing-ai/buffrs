@@ -5,12 +5,8 @@ use std::sync::Arc;
 use eyre::{ensure, Context, ContextCompat};
 use url::Url;
 
-use super::Registry;
-use crate::{
-    credentials::Credentials,
-    manifest::{Dependency, RegistryUri},
-    package::Package,
-};
+use super::{Registry, RegistryUri};
+use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]

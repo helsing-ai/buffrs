@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
 use tokio::fs;
 
-use crate::manifest::RegistryUri;
+use crate::registry::RegistryUri;
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
