@@ -37,26 +37,20 @@ impl Artifactory {
             uri
         };
 
-        let response = match self.credentials.credentials.get(&self.registry) {
-            Some(token) => {
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .get(repositories_uri.as_str())
-                    .header(JFROG_AUTH_HEADER, &**token)
-                    .send()
-                    .await?
-            }
-            None => {
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .get(repositories_uri.as_str())
-                    .send()
-                    .await?
-            }
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .get(repositories_uri.as_str());
+
+            let builder = if let Some(token) = self.credentials.credentials.get(&self.registry) {
+                builder.header(JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder.send().await?
         };
 
         ensure!(response.status().is_success(), "Failed to ping artifactory");
@@ -117,32 +111,24 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = match self
-            .credentials
-            .credentials
-            .get(&dependency.manifest.registry)
-        {
-            Some(token) => {
-                // Go on with auth.
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .get((*artifact_uri).clone())
-                    .header(JFROG_AUTH_HEADER, &**token)
-                    .send()
-                    .await?
-            }
-            None => {
-                // Go on without auth.
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .get((*artifact_uri).clone())
-                    .send()
-                    .await?
-            }
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .get((*artifact_uri).clone());
+
+            let builder = if let Some(token) = self
+                .credentials
+                .credentials
+                .get(&dependency.manifest.registry)
+            {
+                builder.header(JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder.send().await?
         };
 
         ensure!(
@@ -186,32 +172,24 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = match self.credentials.credentials.get(&self.registry) {
-            Some(token) => {
-                // Go on with auth.
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .put(artifact_uri.clone())
-                    .header(JFROG_AUTH_HEADER, &**token)
-                    .body(package.tgz)
-                    .send()
-                    .await
-                    .wrap_err("Failed to upload release to artifactory")?
-            }
-            None => {
-                // Go on without auth.
-                reqwest::Client::builder()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .wrap_err("client error")?
-                    .put(artifact_uri.clone())
-                    .body(package.tgz)
-                    .send()
-                    .await
-                    .wrap_err("Failed to upload release to artifactory")?
-            }
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .put(artifact_uri.clone())
+                .body(package.tgz);
+
+            let builder = if let Some(token) = self.credentials.credentials.get(&self.registry) {
+                builder.header(JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder
+                .send()
+                .await
+                .wrap_err("Failed to upload release to artifactory")?
         };
 
         ensure!(
