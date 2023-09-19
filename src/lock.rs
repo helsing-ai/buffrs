@@ -15,6 +15,9 @@ use crate::{
 
 pub const LOCKFILE: &str = "Proto.lock";
 
+/// Captures immutable metadata about a given package
+///
+/// It is used to ensure that future installations will use the exact same dependencies.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct LockedPackage {
     pub name: PackageName,
@@ -25,6 +28,7 @@ pub struct LockedPackage {
 }
 
 impl LockedPackage {
+    /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(package: &Package, repository: String) -> Self {
         let checksum = digest::digest(&digest::SHA256, &package.tgz);
 
@@ -43,6 +47,7 @@ impl LockedPackage {
         }
     }
 
+    /// Validates if another LockedPackage matches this one
     pub fn validate(&self, other: &Self) -> eyre::Result<()> {
         ensure!(
             self.name == other.name,
@@ -75,6 +80,7 @@ impl LockedPackage {
         Ok(())
     }
 
+    /// Constructs a Dependency instance with matching metadata
     pub fn as_dependency(&self) -> Dependency {
         Dependency {
             package: self.name.clone(),
@@ -99,18 +105,23 @@ struct RawLockfile {
     packages: Vec<LockedPackage>,
 }
 
+/// Captures metadata about currently installed Packages
+///
+/// Used to ensure future installations will deterministically select the exact same packages.
 #[derive(Default)]
 pub struct Lockfile {
     packages: HashMap<PackageName, Arc<LockedPackage>>,
 }
 
 impl Lockfile {
+    /// Checks if the Lockfile currently exists in the filesystem
     pub async fn exists() -> eyre::Result<bool> {
         fs::try_exists(LOCKFILE)
             .await
             .wrap_err("Failed to detect lockfile")
     }
 
+    /// Loads the Lockfile from the current directory
     pub async fn read() -> eyre::Result<Self> {
         let toml = fs::read_to_string(LOCKFILE)
             .await
@@ -118,15 +129,10 @@ impl Lockfile {
 
         let raw: RawLockfile = toml::from_str(&toml).wrap_err("Failed to parse lockfile")?;
 
-        Ok(Self {
-            packages: raw
-                .packages
-                .into_iter()
-                .map(|locked| (locked.name.clone(), Arc::new(locked)))
-                .collect(),
-        })
+        Ok(Self::from_iter(raw.packages.into_iter()))
     }
 
+    /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
     pub async fn read_or_default() -> eyre::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
@@ -135,6 +141,7 @@ impl Lockfile {
         }
     }
 
+    /// Persists a Lockfile to the filesystem
     pub async fn write(&self) -> eyre::Result<()> {
         let raw = RawLockfile {
             packages: self
@@ -149,6 +156,7 @@ impl Lockfile {
             .wrap_err("Failed to write lockfile")
     }
 
+    /// Locates a given package in the Lockfile
     pub fn get(&self, name: &PackageName) -> Option<Arc<LockedPackage>> {
         self.packages.get(name).cloned()
     }

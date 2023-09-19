@@ -50,17 +50,21 @@ pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
+    /// Metadata about the root package
     pub package: PackageManifest,
+    /// List of packages the root package depends on
     pub dependencies: Vec<Dependency>,
 }
 
 impl Manifest {
+    /// Checks if the manifest file exists in the filesystem
     pub async fn exists() -> eyre::Result<bool> {
         fs::try_exists(MANIFEST_FILE)
             .await
             .wrap_err("Failed to detect manifest")
     }
 
+    /// Loads the manifest from the current directory
     pub async fn read() -> eyre::Result<Self> {
         let toml = fs::read_to_string(MANIFEST_FILE)
             .await
@@ -71,6 +75,7 @@ impl Manifest {
         Ok(raw.into())
     }
 
+    /// Persists the manifest into the current directory
     pub async fn write(&self) -> eyre::Result<()> {
         let raw = RawManifest::from(self.to_owned());
 

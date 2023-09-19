@@ -8,7 +8,7 @@ use crate::{
     generator,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
-    package::{DependencyTree, PackageName, PackageStore, PackageType},
+    package::{DependencyGraph, PackageName, PackageStore, PackageType},
     registry::{Artifactory, ArtifactoryConfig, Registry},
     Language,
 };
@@ -192,14 +192,15 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
 
     let lockfile = Lockfile::read_or_default().await?;
 
-    let dependency_tree = DependencyTree::from_manifest(&manifest, &lockfile, &artifactory).await?;
+    let dependency_tree =
+        DependencyGraph::from_manifest(&manifest, &lockfile, &artifactory).await?;
 
     let mut locked = Vec::new();
 
     #[async_recursion]
     async fn process_recursively(
         name: &PackageName,
-        tree: &DependencyTree,
+        tree: &DependencyGraph,
         locked: &mut Vec<LockedPackage>,
         prefix: String,
     ) -> eyre::Result<()> {

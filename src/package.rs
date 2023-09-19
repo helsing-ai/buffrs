@@ -446,6 +446,7 @@ impl fmt::Debug for PackageName {
     }
 }
 
+/// Represents a dependency contextualized by the current dependency graph
 pub struct ResolvedDependency {
     pub package: Package,
     pub repository: String,
@@ -453,16 +454,19 @@ pub struct ResolvedDependency {
     pub depends_on: Vec<PackageName>,
 }
 
+/// Represents a package that requested the associated dependency
 pub struct Dependant {
     pub name: PackageName,
     pub version_req: VersionReq,
 }
 
-pub struct DependencyTree {
+/// Represents direct and transitive dependencies of the root package
+pub struct DependencyGraph {
     entries: HashMap<PackageName, ResolvedDependency>,
 }
 
-impl DependencyTree {
+impl DependencyGraph {
+    /// Recursively resolves dependencies from the manifest to build a dependency graph
     pub async fn from_manifest<R: Registry + Sync>(
         manifest: &Manifest,
         lockfile: &Lockfile,
@@ -570,7 +574,7 @@ impl DependencyTree {
     }
 }
 
-impl IntoIterator for DependencyTree {
+impl IntoIterator for DependencyGraph {
     type Item = ResolvedDependency;
     type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
     fn into_iter(self) -> Self::IntoIter {
