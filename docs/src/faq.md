@@ -3,7 +3,7 @@
 ## Why doesn't `buffrs add`, `buffrs publish`, or `buffrs login` work anymore?
 
 We recently expanded the capabilities of Buffrs a bit and made it so it can handle being connected to multiple registries.
-For this reason, you'll now likely have to add `--registry http://my-registry.jfrog.io/artifactory` to all three.
+For this reason, you'll have to add `--registry http://my-registry.jfrog.io/artifactory` to all three.
 
 Note that `buffrs login` had a `--url` flag previously. It was renamed to `--registry` for the sake of consistency.
 
