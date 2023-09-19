@@ -97,6 +97,7 @@ impl From<RawCredentialCollection> for Credentials {
             .into_iter()
             .map(|it| (it.uri, it.token))
             .collect();
+
         Self {
             registry_tokens: credentials,
         }
