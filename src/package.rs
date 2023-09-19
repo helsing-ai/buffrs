@@ -448,15 +448,21 @@ impl fmt::Debug for PackageName {
 
 /// Represents a dependency contextualized by the current dependency graph
 pub struct ResolvedDependency {
+    /// The materialized package as downloaded from the registry
     pub package: Package,
+    /// The repository the package was downloaded from
     pub repository: String,
+    /// Packages that requested this dependency (and what versions they accept)
     pub dependants: Vec<Dependant>,
+    /// Transitive dependencies
     pub depends_on: Vec<PackageName>,
 }
 
-/// Represents a package that requested the associated dependency
+/// Represents a requestor of the associated dependency
 pub struct Dependant {
+    /// Package that requested the dependency
     pub name: PackageName,
+    /// Version requirement
     pub version_req: VersionReq,
 }
 
