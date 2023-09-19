@@ -217,10 +217,3 @@ impl RegistryUri {
         Ok(())
     }
 }
-
-/// Authentication data and settings for an artifactory registry
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct RawRegistryCredentials {
-    pub uri: RegistryUri,
-    pub token: String,
-}
