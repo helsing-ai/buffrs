@@ -207,7 +207,12 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
 
         PackageStore::unpack(&resolved.package).await?;
 
-        tracing::info!("{prefix} installed {}@{}", name, resolved.package.version());
+        tracing::info!(
+            "{} installed {}@{}",
+            if prefix.is_empty() { "::" } else { &prefix },
+            name,
+            resolved.package.version()
+        );
 
         locked.push(resolved.package.lock(resolved.repository.clone()));
 
@@ -218,7 +223,10 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
                 '┣'
             };
 
-            let new_prefix = format!("{prefix}   {tree_char}");
+            let new_prefix = format!(
+                "{} {tree_char}",
+                if prefix.is_empty() { "  " } else { &prefix }
+            );
             process_recursively(dependency, tree, locked, new_prefix).await?;
         }
 
@@ -230,7 +238,7 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
             &dependency.package,
             &dependency_tree,
             &mut locked,
-            "::".into(),
+            String::new(),
         )
         .await?;
     }
