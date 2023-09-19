@@ -1,6 +1,6 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
-use buffrs::manifest::{RegistryUri, Repository};
+use buffrs::manifest::RegistryUri;
 use buffrs::package::PackageId;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
@@ -65,7 +65,7 @@ enum Command {
         registry: RegistryUri,
         /// Destination repository for the release
         #[clap(long)]
-        repository: Repository,
+        repository: String,
         /// Allow a dirty git working tree while publishing
         #[clap(long)]
         allow_dirty: bool,
@@ -158,12 +158,12 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
-    use std::{env, path::Path, str::FromStr};
+    use std::{env, path::Path};
 
     use buffrs::{
         credentials::Credentials,
         generator::{self, Language},
-        manifest::{Dependency, Manifest, PackageManifest, RegistryToken, RegistryUri, Repository},
+        manifest::{Dependency, Manifest, PackageManifest, RegistryUri},
         package::{PackageId, PackageStore, PackageType},
         registry::{Artifactory, Registry},
     };
@@ -285,7 +285,7 @@ mod cmd {
     pub async fn publish(
         credentials: Credentials,
         registry: RegistryUri,
-        repository: Repository,
+        repository: String,
         allow_dirty: bool,
         dry_run: bool,
     ) -> eyre::Result<()> {
@@ -367,7 +367,7 @@ mod cmd {
                 .read_line(&mut raw)
                 .wrap_err("Failed to read token")?;
 
-            RegistryToken::from_str(raw.trim())?
+            raw.trim().into()
         };
 
         credentials.insert(registry.clone(), token);

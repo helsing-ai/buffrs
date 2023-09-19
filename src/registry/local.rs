@@ -5,10 +5,7 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use eyre::{ensure, ContextCompat};
 
-use crate::{
-    manifest::{Dependency, Repository},
-    package::Package,
-};
+use crate::{manifest::Dependency, package::Package};
 
 use super::Registry;
 
@@ -71,7 +68,7 @@ impl Registry for LocalRegistry {
         Package::try_from(bytes)
     }
 
-    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository, package.manifest.name, package.manifest.name, package.manifest.version,

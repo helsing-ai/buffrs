@@ -10,7 +10,7 @@ use std::{
 };
 use tokio::fs;
 
-use crate::manifest::{RegistryToken, RegistryUri};
+use crate::manifest::RegistryUri;
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
@@ -20,11 +20,11 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 /// Credential store for storing authentication data
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    credentials: HashMap<RegistryUri, RegistryToken>,
+    credentials: HashMap<RegistryUri, String>,
 }
 
 impl Deref for Credentials {
-    type Target = HashMap<RegistryUri, RegistryToken>;
+    type Target = HashMap<RegistryUri, String>;
 
     fn deref(&self) -> &Self::Target {
         &self.credentials
@@ -106,7 +106,7 @@ pub struct RawCredentialCollection {
 #[derive(Serialize, Deserialize)]
 struct RawRegistryCredentials {
     uri: RegistryUri,
-    token: RegistryToken,
+    token: String,
 }
 
 impl From<RawCredentialCollection> for Credentials {

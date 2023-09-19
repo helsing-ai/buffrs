@@ -125,7 +125,7 @@ impl Dependency {
     /// Creates a new dependency
     pub fn new(
         registry: RegistryUri,
-        repository: Repository,
+        repository: String,
         package: PackageId,
         version: VersionReq,
     ) -> Self {
@@ -156,7 +156,7 @@ pub struct DependencyManifest {
     /// Version requirement in the buffrs format, currently only supports pinning
     pub version: VersionReq,
     /// Artifactory repository to pull dependency from
-    pub repository: Repository,
+    pub repository: String,
     /// Artifactory registry to pull from
     pub registry: RegistryUri,
 }
@@ -218,57 +218,9 @@ impl RegistryUri {
     }
 }
 
-#[derive(Debug, Default, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RegistryToken(pub String);
-
-impl std::ops::Deref for RegistryToken {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for RegistryToken {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl FromStr for RegistryToken {
-    type Err = eyre::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Ok(Self(value.to_owned()))
-    }
-}
-
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Repository(pub String);
-
-impl std::ops::Deref for Repository {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for Repository {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for Repository {
-    fn from(value: &str) -> Self {
-        Self(value.into())
-    }
-}
-
 /// Authentication data and settings for an artifactory registry
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RawRegistryCredentials {
     pub uri: RegistryUri,
-    pub token: RegistryToken,
+    pub token: String,
 }

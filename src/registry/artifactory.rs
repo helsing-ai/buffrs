@@ -6,7 +6,7 @@ use url::Url;
 use super::Registry;
 use crate::{
     credentials::Credentials,
-    manifest::{Dependency, RegistryUri, Repository},
+    manifest::{Dependency, RegistryUri},
     package::Package,
 };
 
@@ -159,7 +159,7 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(&self, package: Package, repository: Repository) -> eyre::Result<()> {
+    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
