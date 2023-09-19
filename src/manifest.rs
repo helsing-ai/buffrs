@@ -205,14 +205,18 @@ impl RegistryUri {
             "The self.0 must start with http:// or https://"
         );
 
-        tracing::debug!(
-            "checking that self.0 ends with /artifactory: {}",
-            self.0.path()
-        );
-        ensure!(
-            self.0.path().ends_with("/artifactory"),
-            "The url must end with '/artifactory'"
-        );
+        if let Some(host) = self.0.host_str() {
+            if host.ends_with(".jfrog.io") {
+                tracing::debug!(
+                    "checking that jfrog.io url ends with /artifactory: {}",
+                    self.0.path()
+                );
+                ensure!(
+                    self.0.path().ends_with("/artifactory"),
+                    "The url must end with '/artifactory'"
+                );
+            }
+        }
 
         Ok(())
     }
