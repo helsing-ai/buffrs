@@ -213,7 +213,7 @@ impl RegistryUri {
                 );
                 ensure!(
                     self.0.path().ends_with("/artifactory"),
-                    "The url must end with '/artifactory'"
+                    "The url must end with '/artifactory' when using a *.jfrog.io host"
                 );
             }
         }
