@@ -1,5 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
+use std::sync::Arc;
+
 use eyre::{ensure, Context, ContextCompat};
 use url::Url;
 
@@ -8,17 +10,18 @@ use crate::{
     credentials::Credentials,
     manifest::{Dependency, RegistryUri},
     package::Package,
+    JFROG_AUTH_HEADER,
 };
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    credentials: Credentials,
+    credentials: Arc<Credentials>,
     registry: RegistryUri,
 }
 
 impl Artifactory {
-    pub fn new(credentials: Credentials, registry: RegistryUri) -> Self {
+    pub fn new(credentials: Arc<Credentials>, registry: RegistryUri) -> Self {
         Self {
             credentials,
             registry,
@@ -44,7 +47,7 @@ impl Artifactory {
             .build()
             .wrap_err("client error")?
             .get(repositories_uri.as_str())
-            .header("X-JFrog-Art-Api", &**token)
+            .header(JFROG_AUTH_HEADER, &**token)
             .send()
             .await?;
 
@@ -114,7 +117,7 @@ impl Registry for Artifactory {
                     .build()
                     .wrap_err("client error")?
                     .get((*artifact_uri).clone())
-                    .header("X-JFrog-Art-Api", &**token)
+                    .header(JFROG_AUTH_HEADER, &**token)
                     .send()
                     .await?
             }
@@ -179,7 +182,7 @@ impl Registry for Artifactory {
                     .build()
                     .wrap_err("client error")?
                     .put(artifact_uri.clone())
-                    .header("X-JFrog-Art-Api", &**token)
+                    .header(JFROG_AUTH_HEADER, &**token)
                     .body(package.tgz)
                     .send()
                     .await

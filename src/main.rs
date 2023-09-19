@@ -158,7 +158,7 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
-    use std::{env, path::Path};
+    use std::{env, path::Path, sync::Arc};
 
     use buffrs::{
         credentials::Credentials,
@@ -307,7 +307,7 @@ mod cmd {
             }
         }
 
-        let artifactory = Artifactory::new(credentials, registry);
+        let artifactory = Artifactory::new(Arc::new(credentials), registry);
 
         let package = PackageStore::release()
             .await
@@ -328,6 +328,8 @@ mod cmd {
         let manifest = Manifest::read().await?;
 
         let mut install = Vec::new();
+
+        let credentials = Arc::new(credentials);
 
         for dependency in manifest.dependencies {
             let artifactory =
@@ -372,7 +374,7 @@ mod cmd {
 
         credentials.insert(registry.clone(), token);
 
-        let artifactory = Artifactory::new(credentials.clone(), registry.clone());
+        let artifactory = Artifactory::new(Arc::new(credentials.clone()), registry.clone());
 
         if env::var("BUFFRS_TESTSUITE").is_err() {
             artifactory

@@ -14,6 +14,8 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
+use std::sync::Arc;
+
 #[cfg(feature = "build")]
 pub use generator::Language;
 
@@ -22,6 +24,8 @@ use eyre::{ContextCompat, WrapErr};
 use manifest::Manifest;
 use package::PackageStore;
 use registry::Artifactory;
+
+pub const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
 
 /// Cargo build integration for buffrs
 ///
@@ -39,7 +43,7 @@ pub fn build() -> eyre::Result<()> {
 }
 
 async fn install() -> eyre::Result<()> {
-    let credentials = Credentials::read().await?;
+    let credentials = Arc::new(Credentials::read().await?);
     let manifest = Manifest::read().await?;
 
     let mut install = Vec::new();
