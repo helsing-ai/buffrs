@@ -24,8 +24,8 @@ impl From<Manifest> for RawManifest {
     fn from(manifest: Manifest) -> Self {
         let dependencies: DependencyMap = manifest
             .dependencies
-            .iter()
-            .map(|dep| (dep.package.to_owned(), dep.manifest.to_owned()))
+            .into_iter()
+            .map(|dep| (dep.package, dep.manifest))
             .collect();
 
         Self {
@@ -78,11 +78,6 @@ impl Manifest {
             .await
             .wrap_err("Failed to write manifest")
     }
-
-    pub fn as_toml(&self) -> eyre::Result<String> {
-        toml::to_string_pretty(&RawManifest::from(self.clone()))
-            .wrap_err("failed to render manifest as TOML")
-    }
 }
 
 impl From<RawManifest> for Manifest {
@@ -108,6 +103,14 @@ impl TryFrom<String> for Manifest {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(RawManifest::try_from(value)?.into())
+    }
+}
+
+impl TryInto<String> for Manifest {
+    type Error = toml::ser::Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        toml::to_string_pretty(&RawManifest::from(self))
     }
 }
 

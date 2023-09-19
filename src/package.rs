@@ -149,10 +149,13 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        let manifest_bytes = manifest
-            .as_toml()
-            .wrap_err("Failed to encode release manifest")?
-            .into_bytes();
+        let manifest_bytes = {
+            let as_str: String = manifest
+                .clone()
+                .try_into()
+                .wrap_err("failed to render manifest as TOML")?;
+            as_str.into_bytes()
+        };
 
         let mut header = tar::Header::new_gnu();
         header.set_size(
