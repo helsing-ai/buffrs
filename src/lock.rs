@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use eyre::{ensure, Context};
 use ring::digest;
@@ -122,7 +122,7 @@ struct RawLockfile {
 /// Used to ensure future installations will deterministically select the exact same packages.
 #[derive(Default)]
 pub struct Lockfile {
-    packages: HashMap<PackageName, Arc<LockedPackage>>,
+    packages: HashMap<PackageName, LockedPackage>,
 }
 
 impl Lockfile {
@@ -159,7 +159,7 @@ impl Lockfile {
             .packages
             .values()
             .map(|pkg| {
-                let mut locked = LockedPackage::clone(pkg);
+                let mut locked = pkg.clone();
                 locked.dependencies.sort();
                 locked
             })
@@ -175,8 +175,8 @@ impl Lockfile {
     }
 
     /// Locates a given package in the Lockfile
-    pub fn get(&self, name: &PackageName) -> Option<Arc<LockedPackage>> {
-        self.packages.get(name).cloned()
+    pub fn get(&self, name: &PackageName) -> Option<&LockedPackage> {
+        self.packages.get(name)
     }
 }
 
@@ -185,7 +185,7 @@ impl FromIterator<LockedPackage> for Lockfile {
         Self {
             packages: iter
                 .into_iter()
-                .map(|locked| (locked.name.clone(), Arc::new(locked)))
+                .map(|locked| (locked.name.clone(), locked))
                 .collect(),
         }
     }
