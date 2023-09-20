@@ -14,64 +14,64 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
+use std::sync::Arc;
+
 #[cfg(feature = "build")]
 pub use generator::Language;
+
+use credentials::Credentials;
+use eyre::{ContextCompat, WrapErr};
+use manifest::Manifest;
+use package::PackageStore;
+use registry::Artifactory;
 
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
-    use credentials::Credentials;
-    use eyre::ContextCompat;
-    use eyre::WrapErr;
-    use manifest::Manifest;
-    use package::PackageStore;
-    use registry::Artifactory;
-
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
-
-    async fn install() -> eyre::Result<()> {
-        let credentials = Credentials::read().await?;
-
-        let artifactory = Artifactory::from(
-            credentials
-                .artifactory
-                .wrap_err("Artifactory configuration is required")?,
-        );
-
-        let manifest = Manifest::read().await?;
-
-        let mut install = Vec::new();
-
-        for dependency in manifest.dependencies {
-            if let Ok(pkg) = PackageStore::resolve(&dependency.package).await {
-                let pkg = pkg.package.wrap_err_with(|| {
-                    format!(
-                        "required package entry in manifest of {} to be present",
-                        dependency.package
-                    )
-                })?;
-
-                if dependency.manifest.version.matches(&pkg.version) {
-                    continue;
-                }
-            }
-
-            install.push(PackageStore::install(dependency, artifactory.clone()));
-        }
-
-        futures::future::try_join_all(install)
-            .await
-            .wrap_err("Failed to install missing dependencies")?;
-
-        Ok(())
-    }
 
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
     rt.block_on(generator::generate(Language::Rust))?;
+
+    Ok(())
+}
+
+async fn install() -> eyre::Result<()> {
+    let credentials = Arc::new(Credentials::read().await?);
+    let manifest = Manifest::read().await?;
+
+    let mut install = Vec::new();
+
+    for dependency in manifest.dependencies {
+        if let Ok(pkg) = PackageStore::resolve(&dependency.package).await {
+            let pkg = pkg.package.wrap_err_with(|| {
+                format!(
+                    "required package entry in manifest of {} to be present",
+                    dependency.package
+                )
+            })?;
+
+            if dependency.manifest.version.matches(&pkg.version) {
+                continue;
+            }
+        }
+
+        let artifactory =
+            Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
+
+        install.push(PackageStore::install(
+            dependency.clone(),
+            artifactory.clone(),
+        ));
+    }
+
+    futures::future::try_join_all(install)
+        .await
+        .wrap_err("Failed to install missing dependencies")?;
 
     Ok(())
 }

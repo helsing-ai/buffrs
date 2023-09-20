@@ -6,3 +6,4 @@ version = "0.0.1"
 [dependencies.my-package]
 version = "=1.0.0"
 repository = "my-repository"
+registry = "http://my-reg.jfrog.io/artifactory"

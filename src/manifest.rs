@@ -3,10 +3,16 @@
 use eyre::Context;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+};
 use tokio::fs;
 
-use crate::package::{PackageId, PackageType};
+use crate::{
+    package::{PackageId, PackageType},
+    registry::RegistryUri,
+};
 
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
@@ -24,8 +30,8 @@ impl From<Manifest> for RawManifest {
     fn from(manifest: Manifest) -> Self {
         let dependencies: DependencyMap = manifest
             .dependencies
-            .iter()
-            .map(|dep| (dep.package.to_owned(), dep.manifest.to_owned()))
+            .into_iter()
+            .map(|dep| (dep.package, dep.manifest))
             .collect();
 
         let dependencies = (!dependencies.is_empty()).then_some(dependencies);
@@ -117,18 +123,24 @@ pub struct Dependency {
 
 impl Dependency {
     /// Creates a new dependency
-    pub fn new(repository: String, package: PackageId, version: VersionReq) -> Self {
+    pub fn new(
+        registry: RegistryUri,
+        repository: String,
+        package: PackageId,
+        version: VersionReq,
+    ) -> Self {
         Self {
             package,
             manifest: DependencyManifest {
                 repository,
                 version,
+                registry,
             },
         }
     }
 }
 
-impl fmt::Display for Dependency {
+impl Display for Dependency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -145,4 +157,6 @@ pub struct DependencyManifest {
     pub version: VersionReq,
     /// Artifactory repository to pull dependency from
     pub repository: String,
+    /// Artifactory registry to pull from
+    pub registry: RegistryUri,
 }

@@ -93,7 +93,7 @@ mod tests {
     use crate::manifest::{Dependency, PackageManifest};
     use crate::package::{Package, PackageId, PackageType};
     use crate::registry::local::LocalRegistry;
-    use crate::registry::Registry;
+    use crate::registry::{Registry, RegistryUri};
     use bytes::Bytes;
     use semver::{Version, VersionReq};
     use std::path::PathBuf;
@@ -137,10 +137,14 @@ mod tests {
             package_bytes
         );
 
+        let registry_uri = RegistryUri::from_str("http://some-registry/artifactory")
+            .expect("Failed to parse registry URL");
+
         // Download package from local registry and assert the tgz bytes and the metadata match what we
         // had published.
         let fetched = registry
             .download(Dependency::new(
+                registry_uri,
                 "test-repo".into(),
                 PackageId::from_str("test-api").unwrap(),
                 VersionReq::from_str("=0.1.0").unwrap(),
