@@ -72,7 +72,7 @@ impl Generator {
 
                 tracing::info!(":: running {protoc_cmd:?}");
 
-                let result = protoc_cmd.output()?; // TODO (alex.spencer) - this isn't raising an error/passing on exit code 1?
+                let result = protoc_cmd.output()?;
                 match result.status.code() {
                     Some(0) => tracing::info!("{language} code generated successfully"),
                     Some(_) => {
