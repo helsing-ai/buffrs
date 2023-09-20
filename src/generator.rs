@@ -46,7 +46,7 @@ impl Generator {
         match self {
             Generator::Tonic => {
                 tonic_build::configure()
-                    .out_dir(output_directory) // If OUT_DIR is not set, Tonic throws a rather unhelpful error
+                    .out_dir(output_directory) // If env var OUT_DIR is not set, Tonic throws a rather unhelpful error
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
