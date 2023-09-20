@@ -577,6 +577,13 @@ impl DependencyGraph {
                 &dependency.manifest.version,
                 &local_locked.version
             );
+            ensure!(
+                dependency.manifest.registry == local_locked.registry,
+                "Mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
+                &dependency.package,
+                &dependency.manifest.registry,
+                &local_locked.registry
+            );
 
             let registry = Artifactory::new(credentials.clone(), local_locked.registry.clone());
             let remote_package = registry.download(local_locked.as_dependency()).await?;

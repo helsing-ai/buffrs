@@ -201,6 +201,12 @@ impl LockedPackage {
             other.digest
         );
         ensure!(
+            self.registry == other.registry,
+            "Registry mismatch - expected {}, actual {}",
+            self.registry,
+            other.registry
+        );
+        ensure!(
             self.repository == other.repository,
             "Repository mismatch - expected {}, actual {}",
             self.repository,
