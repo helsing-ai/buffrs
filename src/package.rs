@@ -392,7 +392,8 @@ impl TryFrom<String> for PackageName {
         ensure!(
             value
                 .chars()
-                .all(|c| (c.is_ascii_alphanumeric() && c.is_ascii_lowercase()) || c == '-'),
+                .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-')
+                ,
             "Invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted",
         );
         ensure!(
