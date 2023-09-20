@@ -30,7 +30,7 @@ pub const LOCKFILE: &str = "Proto.lock";
 /// Captures immutable metadata about a given package
 ///
 /// It is used to ensure that future installations will use the exact same dependencies.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockedPackage {
     pub name: PackageName,
     pub checksum: String,
@@ -155,13 +155,19 @@ impl Lockfile {
 
     /// Persists a Lockfile to the filesystem
     pub async fn write(&self) -> eyre::Result<()> {
-        let raw = RawLockfile {
-            packages: self
-                .packages
-                .values()
-                .map(|pkg| LockedPackage::clone(pkg))
-                .collect(),
-        };
+        let mut packages: Vec<_> = self
+            .packages
+            .values()
+            .map(|pkg| {
+                let mut locked = LockedPackage::clone(pkg);
+                locked.dependencies.sort();
+                locked
+            })
+            .collect();
+
+        packages.sort();
+
+        let raw = RawLockfile { packages };
 
         fs::write(LOCKFILE, toml::to_string(&raw)?.into_bytes())
             .await
