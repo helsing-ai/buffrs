@@ -163,18 +163,26 @@ pub struct LockedPackage {
     pub repository: String,
     pub version: Version,
     pub dependencies: Vec<PackageName>,
+    pub dependants: usize,
 }
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
-    pub fn lock(package: &Package, registry: RegistryUri, repository: String) -> Self {
-        let digest = digest::digest(&digest::SHA256, &package.tgz);
+    pub fn lock(
+        package: &Package,
+        registry: RegistryUri,
+        repository: String,
+        dependants: usize,
+    ) -> Self {
+        let digest = digest::digest(&digest::SHA256, &package.tgz)
+            .try_into()
+            .unwrap(); // won't fail as SHA256 is sure to be supported
 
         Self {
             name: package.name().to_owned(),
             registry,
             repository,
-            digest: digest.try_into().unwrap(), // won't fail as we SHA256 is sure to be supported
+            digest,
             version: package.version().to_owned(),
             dependencies: package
                 .manifest
@@ -183,45 +191,35 @@ impl LockedPackage {
                 .cloned()
                 .map(|d| d.package)
                 .collect(),
+            dependants,
         }
     }
 
     /// Validates if another LockedPackage matches this one
-    pub fn validate(&self, other: &Self) -> eyre::Result<()> {
+    pub fn validate(&self, package: &Package) -> eyre::Result<()> {
+        let digest: Digest = digest::digest(&digest::SHA256, &package.tgz)
+            .try_into()
+            .unwrap();
+
         ensure!(
-            self.name == other.name,
+            &self.name == package.name(),
             "Package name mismatch - expected {}, actual {}",
             self.name,
-            other.name
+            package.name()
         );
         ensure!(
-            self.digest == other.digest,
+            self.digest == digest,
             "Digest mismatch - expected {}, actual {}",
             self.digest,
-            other.digest
+            digest
         );
         ensure!(
-            self.registry == other.registry,
-            "Registry mismatch - expected {}, actual {}",
-            self.registry,
-            other.registry
-        );
-        ensure!(
-            self.repository == other.repository,
-            "Repository mismatch - expected {}, actual {}",
-            self.repository,
-            other.repository
-        );
-        ensure!(
-            self.version == other.version,
+            &self.version == package.version(),
             "Version mismatch - expected {}, actual {}",
             self.version,
-            other.version
+            package.version()
         );
-        ensure!(
-            self.dependencies == other.dependencies,
-            "Dependencies mismatch"
-        );
+
         Ok(())
     }
 
@@ -248,6 +246,7 @@ impl LockedPackage {
 
 #[derive(Serialize, Deserialize)]
 struct RawLockfile {
+    version: u16,
     packages: Vec<LockedPackage>,
 }
 
@@ -301,7 +300,10 @@ impl Lockfile {
 
         packages.sort();
 
-        let raw = RawLockfile { packages };
+        let raw = RawLockfile {
+            version: 1,
+            packages,
+        };
 
         fs::write(LOCKFILE, toml::to_string(&raw)?.into_bytes())
             .await

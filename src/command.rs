@@ -216,11 +216,11 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
             resolved.package.version()
         );
 
-        locked.push(
-            resolved
-                .package
-                .lock(resolved.registry.clone(), resolved.repository.clone()),
-        );
+        locked.push(resolved.package.lock(
+            resolved.registry.clone(),
+            resolved.repository.clone(),
+            resolved.dependants.len(),
+        ));
 
         for (index, dependency) in resolved.depends_on.iter().enumerate() {
             let tree_char = if index + 1 == resolved.depends_on.len() {

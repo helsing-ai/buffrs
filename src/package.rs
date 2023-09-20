@@ -287,8 +287,13 @@ impl Package {
     }
 
     /// Lock this package
-    pub fn lock(&self, registry: RegistryUri, repository: String) -> LockedPackage {
-        LockedPackage::lock(self, registry, repository)
+    pub fn lock(
+        &self,
+        registry: RegistryUri,
+        repository: String,
+        dependants: usize,
+    ) -> LockedPackage {
+        LockedPackage::lock(self, registry, repository, dependants)
     }
 }
 
@@ -587,17 +592,15 @@ impl DependencyGraph {
             );
 
             let registry = Artifactory::new(credentials.clone(), local_locked.registry.clone());
-            let remote_package = registry.download(local_locked.as_dependency()).await?;
-            let remote_locked =
-                remote_package.lock(dependency.manifest.registry, dependency.manifest.repository);
-            local_locked.validate(&remote_locked).wrap_err_with(|| {
+            let package = registry.download(local_locked.as_dependency()).await?;
+            local_locked.validate(&package).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",
                     local_locked.name, local_locked.version
                 )
             })?;
 
-            Ok(remote_package)
+            Ok(package)
         } else {
             let registry =
                 Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
