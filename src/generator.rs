@@ -34,7 +34,7 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, output_directory: String) -> eyre::Result<()> {
+    pub async fn run(&self, output_directory: String, language: Language) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -55,13 +55,36 @@ impl Generator {
             }
             Generator::Protoc => {
                 let mut protoc_cmd = std::process::Command::new(protoc);
-                protoc_cmd.arg("--python_out").arg(output_directory);
+
+                match language {
+                    Language::Python => {
+                        protoc_cmd.arg("--python_out").arg(output_directory);
+                    }
+                    Language::Rust => {
+                        panic!("Protoc cannot output Rust, use Generator::Tonic instead")
+                        // TODO (alex.spencer) is panic really the right thing to do? This shouldn't ever happen as we control Generator type below
+                    }
+                }
 
                 for input_proto in &protos {
                     protoc_cmd.arg(input_proto);
                 }
 
-                protoc_cmd.output()?;
+                tracing::info!(":: running {protoc_cmd:?}");
+
+                let result = protoc_cmd.output()?; // TODO (alex.spencer) - this isn't raising an error/passing on exit code 1?
+                match result.status.code() {
+                    Some(0) => tracing::info!("{language} code generated successfully"),
+                    Some(_) => {
+                        tracing::error!("Error generating {language} code:");
+                        if !result.stderr.is_empty() {
+                            let stderr_str = String::from_utf8(result.stderr)?;
+                            tracing::error!(stderr_str);
+                        }
+                        // TODO (alex.spencer) - return not OK here
+                    }
+                    None => tracing::error!("Failed to retrieve exit code"),
+                }
             }
         }
 
@@ -87,7 +110,7 @@ pub async fn generate(language: Language, output_directory: String) -> eyre::Res
     };
 
     generator
-        .run(output_directory)
+        .run(output_directory, language)
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
