@@ -27,7 +27,7 @@ impl fmt::Display for Language {
 pub enum Generator {
     /// The tonic + prost stack
     Tonic,
-    // Protoc,
+    Protoc,
 }
 
 impl Generator {
@@ -53,6 +53,16 @@ impl Generator {
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
+            Generator::Protoc => {
+                let mut protoc_cmd = std::process::Command::new(protoc);
+                protoc_cmd.arg("--python_out").arg(output_directory);
+
+                for input_proto in &protos {
+                    protoc_cmd.arg(input_proto);
+                }
+
+                protoc_cmd.output()?;
+            }
         }
 
         Ok(())
@@ -70,17 +80,11 @@ pub async fn generate(language: Language, output_directory: String) -> eyre::Res
         "Either a local package or at least one dependency is needed to generate code bindings."
     );
 
-    // Which directory should we use - prefer the one set in env var OUT_DIR, but allow a fall backk
-    // let output_directory: String = match std::env::var("OUT_DIR") {
-    //     Ok(dir) => dir,
-    //     Err(_) => {
-    //         tracing::warn!(":: outputting to default location: {BUILD_DIRECTORY}");
-    //         BUILD_DIRECTORY.to_string()
-    //     }
-    // };
-
     // Only tonic is supported right now
-    let generator = Generator::Tonic;
+    let generator = match language {
+        Language::Rust => Generator::Tonic,
+        Language::Python => Generator::Protoc,
+    };
 
     generator
         .run(output_directory)
