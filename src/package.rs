@@ -470,7 +470,7 @@ pub struct ResolvedDependency {
     pub depends_on: Vec<PackageName>,
 }
 
-/// Represents a requestor of the associated dependency
+/// Represents a requester of the associated dependency
 pub struct Dependant {
     /// Package that requested the dependency
     pub name: PackageName,
