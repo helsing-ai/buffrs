@@ -20,6 +20,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 
 use async_recursion::async_recursion;
@@ -31,9 +32,10 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
+    credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, MANIFEST_FILE},
-    registry::Registry,
+    registry::{Artifactory, Registry, RegistryUri},
 };
 
 /// IO abstraction layer over local `buffrs` package store
@@ -285,8 +287,8 @@ impl Package {
     }
 
     /// Lock this package
-    pub fn lock(&self, repository: String) -> LockedPackage {
-        LockedPackage::lock(self, repository)
+    pub fn lock(&self, registry: RegistryUri, repository: String) -> LockedPackage {
+        LockedPackage::lock(self, registry, repository)
     }
 }
 
@@ -462,7 +464,9 @@ impl fmt::Debug for PackageName {
 pub struct ResolvedDependency {
     /// The materialized package as downloaded from the registry
     pub package: Package,
-    /// The repository the package was downloaded from
+    /// The registry the package was downloaded from
+    pub registry: RegistryUri,
+    /// The repository in the registry where the package can be found
     pub repository: String,
     /// Packages that requested this dependency (and what versions they accept)
     pub dependants: Vec<Dependant>,
@@ -485,10 +489,10 @@ pub struct DependencyGraph {
 
 impl DependencyGraph {
     /// Recursively resolves dependencies from the manifest to build a dependency graph
-    pub async fn from_manifest<R: Registry + Sync>(
+    pub async fn from_manifest(
         manifest: &Manifest,
         lockfile: &Lockfile,
-        registry: &R,
+        credentials: &Arc<Credentials>,
     ) -> eyre::Result<Self> {
         let name = manifest.package.name.clone();
 
@@ -499,7 +503,7 @@ impl DependencyGraph {
                 name.clone(),
                 dependency.clone(),
                 lockfile,
-                registry,
+                credentials,
                 &mut entries,
             )
             .await?;
@@ -509,11 +513,11 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
-    async fn process_dependency<R: Registry + Sync>(
+    async fn process_dependency(
         name: PackageName,
         dependency: Dependency,
         lockfile: &Lockfile,
-        registry: &R,
+        credentials: &Arc<Credentials>,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -523,8 +527,9 @@ impl DependencyGraph {
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
+            let dependency_reg = dependency.manifest.registry.clone();
             let dependency_repo = dependency.manifest.repository.clone();
-            let dependency_pkg = Self::resolve(dependency, registry, lockfile).await?;
+            let dependency_pkg = Self::resolve(dependency, lockfile, credentials).await?;
             let dependency_name = dependency_pkg.name().clone();
 
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -537,6 +542,7 @@ impl DependencyGraph {
                 dependency_name.clone(),
                 ResolvedDependency {
                     package: dependency_pkg,
+                    registry: dependency_reg,
                     repository: dependency_repo,
                     dependants: vec![Dependant { name, version_req }],
                     depends_on: sub_dependency_names,
@@ -548,7 +554,7 @@ impl DependencyGraph {
                     dependency_name.clone(),
                     sub_dependency,
                     lockfile,
-                    registry,
+                    credentials,
                     entries,
                 )
                 .await?;
@@ -558,10 +564,10 @@ impl DependencyGraph {
         Ok(())
     }
 
-    async fn resolve<R: Registry>(
+    async fn resolve(
         dependency: Dependency,
-        registry: &R,
         lockfile: &Lockfile,
+        credentials: &Arc<Credentials>,
     ) -> eyre::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
@@ -572,8 +578,10 @@ impl DependencyGraph {
                 &local_locked.version
             );
 
+            let registry = Artifactory::new(credentials.clone(), local_locked.registry.clone());
             let remote_package = registry.download(local_locked.as_dependency()).await?;
-            let remote_locked = remote_package.lock(dependency.manifest.repository);
+            let remote_locked =
+                remote_package.lock(dependency.manifest.registry, dependency.manifest.repository);
             local_locked.validate(&remote_locked).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",
@@ -583,6 +591,8 @@ impl DependencyGraph {
 
             Ok(remote_package)
         } else {
+            let registry =
+                Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
             registry.download(dependency).await
         }
     }

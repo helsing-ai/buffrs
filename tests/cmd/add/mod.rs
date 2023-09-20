@@ -6,6 +6,8 @@ fn fixture() {
 
     crate::cli!()
         .arg("add")
+        .arg("--registry")
+        .arg("http://my-reg.jfrog.io/artifactory")
         .arg("my-repository/my-package@=1.0.0")
         .current_dir(vfs.root())
         .assert()

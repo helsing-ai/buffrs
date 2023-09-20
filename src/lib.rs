@@ -33,23 +33,15 @@ pub mod registry;
 #[cfg(feature = "build")]
 pub use generator::Language;
 
+use credentials::Credentials;
+use package::PackageStore;
+
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
-    use credentials::Credentials;
-    use package::PackageStore;
-
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
-
-    async fn install() -> eyre::Result<()> {
-        let credentials = Credentials::read().await?;
-
-        command::install(credentials).await?;
-
-        Ok(())
-    }
 
     let rt = tokio::runtime::Runtime::new()?;
 
@@ -57,6 +49,11 @@ pub fn build() -> eyre::Result<()> {
     rt.block_on(generator::generate(Language::Rust))?;
 
     Ok(())
+}
+
+async fn install() -> eyre::Result<()> {
+    let credentials = Credentials::read().await?;
+    command::install(credentials).await
 }
 
 /// Include generated rust language bindings for buffrs.

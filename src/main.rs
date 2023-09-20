@@ -14,6 +14,7 @@
 
 use buffrs::command;
 use buffrs::package::PackageName;
+use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
 
@@ -44,6 +45,9 @@ enum Command {
 
     /// Adds dependencies to a manifest file
     Add {
+        /// Artifactory url (e.g. https://<domain>/artifactory)
+        #[clap(long)]
+        registry: RegistryUri,
         /// Dependency to add (Format <repository>/<package>@<version>
         dependency: String,
     },
@@ -69,6 +73,9 @@ enum Command {
     /// Packages and uploads this api to the registry
     #[clap(alias = "pub")]
     Publish {
+        /// Artifactory url (e.g. https://<domain>/artifactory)
+        #[clap(long)]
+        registry: RegistryUri,
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
@@ -98,10 +105,14 @@ enum Command {
     Login {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        url: url::Url,
+        registry: RegistryUri,
     },
     /// Logs you out from a registry
-    Logout,
+    Logout {
+        /// Artifactory url (e.g. https://<domain>/artifactory)
+        #[clap(long)]
+        registry: RegistryUri,
+    },
 }
 
 #[tokio::main]
@@ -121,7 +132,7 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let config = Credentials::load().await?;
+    let credentials = Credentials::load().await?;
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -135,21 +146,25 @@ async fn main() -> eyre::Result<()> {
 
             command::init(r#type, package).await
         }
-        Command::Add { dependency } => command::add(dependency).await,
+        Command::Add {
+            registry,
+            dependency,
+        } => command::add(registry, dependency).await,
         Command::Remove { package } => command::remove(package).await,
         Command::Package {
             output_directory,
             dry_run,
         } => command::package(output_directory, dry_run).await,
         Command::Publish {
+            registry,
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(config, repository, allow_dirty, dry_run).await,
-        Command::Install => command::install(config).await,
+        } => command::publish(credentials, registry, repository, allow_dirty, dry_run).await,
+        Command::Install => command::install(credentials).await,
         Command::Uninstall => command::uninstall().await,
         Command::Generate { language } => command::generate(language).await,
-        Command::Login { url } => command::login(config, url).await,
-        Command::Logout => command::logout(config).await,
+        Command::Login { registry } => command::login(credentials, registry).await,
+        Command::Logout { registry } => command::logout(credentials, registry).await,
     }
 }

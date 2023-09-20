@@ -21,11 +21,11 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
-    registry::{Artifactory, ArtifactoryConfig, Registry},
+    registry::{Artifactory, Registry, RegistryUri},
     Language,
 };
 
-use std::{env, path::Path};
+use std::{env, path::Path, sync::Arc};
 
 use eyre::{ensure, Context};
 use semver::{Version, VersionReq};
@@ -67,7 +67,7 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
 }
 
 /// Adds a dependency to this project
-pub async fn add(dependency: String) -> eyre::Result<()> {
+pub async fn add(registry: RegistryUri, dependency: String) -> eyre::Result<()> {
     let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
     let (repository, dependency) = dependency
@@ -79,6 +79,8 @@ pub async fn add(dependency: String) -> eyre::Result<()> {
         repository.chars().all(lower_kebab),
         "Repositories must be in lower kebab case"
     );
+
+    let repository = repository.into();
 
     let (package, version) = dependency
         .split_once('@')
@@ -96,7 +98,7 @@ pub async fn add(dependency: String) -> eyre::Result<()> {
 
     manifest
         .dependencies
-        .push(Dependency::new(repository.to_owned(), package, version));
+        .push(Dependency::new(registry, repository, package, version));
 
     manifest.write().await
 }
@@ -142,6 +144,7 @@ pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
 /// Publishes the api package to the registry
 pub async fn publish(
     credentials: Credentials,
+    registry: RegistryUri,
     repository: String,
     allow_dirty: bool,
     dry_run: bool,
@@ -164,15 +167,7 @@ pub async fn publish(
         }
     }
 
-    let artifactory = {
-        let Some(artifactory) = credentials.artifactory else {
-            eyre::bail!(
-                "Unable to publish package to artifactory, please login using `buffrs login`"
-            );
-        };
-
-        Artifactory::from(artifactory)
-    };
+    let artifactory = Artifactory::new(Arc::new(credentials), registry);
 
     let package = PackageStore::release()
         .await
@@ -190,22 +185,14 @@ pub async fn publish(
 
 /// Installs dependencies
 pub async fn install(credentials: Credentials) -> eyre::Result<()> {
-    let artifactory = {
-        let Some(artifactory) = credentials.artifactory else {
-            eyre::bail!(
-                "Unable to install artifactory dependencies, please login using `buffrs login`"
-            );
-        };
-
-        Artifactory::from(artifactory)
-    };
+    let credentials = Arc::new(credentials);
 
     let manifest = Manifest::read().await?;
 
     let lockfile = Lockfile::read_or_default().await?;
 
     let dependency_tree =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &artifactory).await?;
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
 
     let mut locked = Vec::new();
 
@@ -229,7 +216,11 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
             resolved.package.version()
         );
 
-        locked.push(resolved.package.lock(resolved.repository.clone()));
+        locked.push(
+            resolved
+                .package
+                .lock(resolved.registry.clone(), resolved.repository.clone()),
+        );
 
         for (index, dependency) in resolved.depends_on.iter().enumerate() {
             let tree_char = if index + 1 == resolved.depends_on.len() {
@@ -279,10 +270,8 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<()> {
-    let mut cfg = ArtifactoryConfig::new(url)?;
-
-    let password = {
+pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+    let token = {
         tracing::info!("Please enter your artifactory token:");
 
         let mut raw = String::new();
@@ -291,14 +280,12 @@ pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<
             .read_line(&mut raw)
             .wrap_err("Failed to read token")?;
 
-        raw = raw.trim().to_owned();
-
-        raw
+        raw.trim().into()
     };
 
-    cfg.password = Some(password);
+    credentials.registry_tokens.insert(registry.clone(), token);
 
-    let artifactory = Artifactory::from(cfg.clone());
+    let artifactory = Artifactory::new(Arc::new(credentials.clone()), registry.clone());
 
     if env::var("BUFFRS_TESTSUITE").is_err() {
         artifactory
@@ -307,12 +294,11 @@ pub async fn login(mut credentials: Credentials, url: url::Url) -> eyre::Result<
             .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
     }
 
-    credentials.artifactory = Some(cfg);
     credentials.write().await
 }
 
 /// Logs you out from a registry
-pub async fn logout(mut credentials: Credentials) -> eyre::Result<()> {
-    credentials.artifactory = None;
+pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+    credentials.registry_tokens.remove(&registry);
     credentials.write().await
 }

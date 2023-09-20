@@ -6,7 +6,7 @@ fn fixture() {
 
     crate::cli!()
         .arg("login")
-        .arg("--url")
+        .arg("--registry")
         .arg("https://org.jfrog.io/artifactory")
         .current_dir(vfs.root())
         .write_stdin("some-token")

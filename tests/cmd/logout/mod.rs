@@ -6,6 +6,8 @@ fn fixture() {
 
     crate::cli!()
         .arg("logout")
+        .arg("--registry")
+        .arg("https://org.jfrog.io/artifactory")
         .current_dir(vfs.root())
         .assert()
         .success()

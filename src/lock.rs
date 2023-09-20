@@ -23,6 +23,7 @@ use tokio::fs;
 use crate::{
     manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
+    registry::RegistryUri,
 };
 
 pub const LOCKFILE: &str = "Proto.lock";
@@ -158,6 +159,7 @@ impl PartialOrd for Digest {
 pub struct LockedPackage {
     pub name: PackageName,
     pub digest: Digest,
+    pub registry: RegistryUri,
     pub repository: String,
     pub version: Version,
     pub dependencies: Vec<PackageName>,
@@ -165,11 +167,12 @@ pub struct LockedPackage {
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
-    pub fn lock(package: &Package, repository: String) -> Self {
+    pub fn lock(package: &Package, registry: RegistryUri, repository: String) -> Self {
         let digest = digest::digest(&digest::SHA256, &package.tgz);
 
         Self {
             name: package.name().to_owned(),
+            registry,
             repository,
             digest: digest.try_into().unwrap(), // won't fail as we SHA256 is sure to be supported
             version: package.version().to_owned(),
@@ -230,6 +233,7 @@ impl LockedPackage {
                         pre: self.version.pre.clone(),
                     }],
                 },
+                registry: self.registry.clone(),
                 repository: self.repository.clone(),
             },
         }

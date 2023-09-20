@@ -15,36 +15,53 @@
 use std::sync::Arc;
 
 use eyre::{ensure, Context, ContextCompat};
-use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::Registry;
-use crate::{manifest::Dependency, package::Package};
+use super::{Registry, RegistryUri};
+use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
-pub struct Artifactory(Arc<ArtifactoryConfig>);
+pub struct Artifactory {
+    credentials: Arc<Credentials>,
+    registry: RegistryUri,
+}
 
 impl Artifactory {
+    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
+
+    pub fn new(credentials: Arc<Credentials>, registry: RegistryUri) -> Self {
+        Self {
+            credentials,
+            registry,
+        }
+    }
+
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let repositories_uri: Url = {
-            let mut url = self.0.url.clone();
-            url.set_path(&format!("{}/api/repositories", url.path()));
-            url
+        let repositories_uri = {
+            let mut uri = self.registry.to_owned();
+            let path = &format!("{}/api/repositories", uri.path());
+            uri.set_path(path);
+            uri
         };
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .get(repositories_uri.clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
-            )
-            .send()
-            .await?;
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .get(repositories_uri.as_str());
+
+            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
+            {
+                builder.header(Self::JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder.send().await?
+        };
 
         ensure!(response.status().is_success(), "Failed to ping artifactory");
 
@@ -88,12 +105,13 @@ impl Registry for Artifactory {
             }
         );
 
-        let artifact_uri: Url = {
-            let mut url = self.0.url.clone();
+        let artifact_uri = {
+            let path = dependency.manifest.registry.path().to_owned();
 
+            let mut url = dependency.manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
-                url.path(),
+                path,
                 dependency.manifest.repository,
                 dependency.package,
                 dependency.package,
@@ -103,17 +121,25 @@ impl Registry for Artifactory {
             url
         };
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .get(artifact_uri.clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
-            )
-            .send()
-            .await?;
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .get((*artifact_uri).clone());
+
+            let builder = if let Some(token) = self
+                .credentials
+                .registry_tokens
+                .get(&dependency.manifest.registry)
+            {
+                builder.header(Self::JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder.send().await?
+        };
 
         ensure!(
             response.status() != 302,
@@ -152,7 +178,7 @@ impl Registry for Artifactory {
     async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.0.url,
+            self.registry,
             repository,
             package.name(),
             package.name(),
@@ -161,19 +187,26 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .wrap_err("client error")?
-            .put(artifact_uri.clone())
-            .header(
-                "X-JFrog-Art-Api",
-                self.0.password.clone().unwrap_or_default(),
-            )
-            .body(package.tgz.clone())
-            .send()
-            .await
-            .wrap_err("Failed to upload release to artifactory")?;
+        let response = {
+            let builder = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .wrap_err("client error")?
+                .put(artifact_uri.clone())
+                .body(package.tgz.clone());
+
+            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
+            {
+                builder.header(Self::JFROG_AUTH_HEADER, token)
+            } else {
+                builder
+            };
+
+            builder
+                .send()
+                .await
+                .wrap_err("Failed to upload release to artifactory")?
+        };
 
         ensure!(
             response.status() != 302,
@@ -196,48 +229,4 @@ impl Registry for Artifactory {
 
         Ok(())
     }
-}
-
-impl From<ArtifactoryConfig> for Artifactory {
-    fn from(cfg: ArtifactoryConfig) -> Self {
-        Self(cfg.into())
-    }
-}
-
-/// Authentication data and settings for the artifactory registry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ArtifactoryConfig {
-    pub url: Url,
-    pub password: Option<String>,
-}
-
-impl ArtifactoryConfig {
-    /// Creates a new artifactory config in the system keyring
-    pub fn new(url: Url) -> eyre::Result<Self> {
-        sanity_check_url(&url)?;
-
-        Ok(Self {
-            url,
-            password: None,
-        })
-    }
-}
-
-fn sanity_check_url(url: &Url) -> eyre::Result<()> {
-    tracing::debug!(
-        "checking that url begins with http or https: {}",
-        url.scheme()
-    );
-    ensure!(
-        url.scheme() == "http" || url.scheme() == "https",
-        "The url must start with http:// or https://"
-    );
-
-    tracing::debug!("checking that url ends with /artifactory: {}", url.path());
-    ensure!(
-        url.path().ends_with("/artifactory"),
-        "The url must end with '/artifactory'"
-    );
-
-    Ok(())
 }
