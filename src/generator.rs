@@ -6,9 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{manifest::Manifest, package::PackageStore};
 
-/// The directory used for the generated code
-pub const BUILD_DIRECTORY: &str = "proto/build";
-
 /// The language used for code generation
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
@@ -16,6 +13,7 @@ pub const BUILD_DIRECTORY: &str = "proto/build";
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
     Rust,
+    Python,
 }
 
 impl fmt::Display for Language {
@@ -29,13 +27,14 @@ impl fmt::Display for Language {
 pub enum Generator {
     /// The tonic + prost stack
     Tonic,
+    // Protoc,
 }
 
 impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> eyre::Result<()> {
+    pub async fn run(&self, output_directory: String) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -47,6 +46,7 @@ impl Generator {
         match self {
             Generator::Tonic => {
                 tonic_build::configure()
+                    .out_dir(output_directory) // If OUT_DIR is not set, Tonic throws a rather unhelpful error
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
@@ -60,7 +60,7 @@ impl Generator {
 }
 
 /// Generate the code bindings for a language
-pub async fn generate(language: Language) -> eyre::Result<()> {
+pub async fn generate(language: Language, output_directory: String) -> eyre::Result<()> {
     let manifest = Manifest::read().await?;
 
     tracing::info!(":: initializing code generator for {language}");
@@ -70,11 +70,20 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         "Either a local package or at least one dependency is needed to generate code bindings."
     );
 
+    // Which directory should we use - prefer the one set in env var OUT_DIR, but allow a fall backk
+    // let output_directory: String = match std::env::var("OUT_DIR") {
+    //     Ok(dir) => dir,
+    //     Err(_) => {
+    //         tracing::warn!(":: outputting to default location: {BUILD_DIRECTORY}");
+    //         BUILD_DIRECTORY.to_string()
+    //     }
+    // };
+
     // Only tonic is supported right now
     let generator = Generator::Tonic;
 
     generator
-        .run()
+        .run(output_directory)
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 

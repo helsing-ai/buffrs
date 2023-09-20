@@ -1,6 +1,6 @@
 [package]
 name = "buffrs"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Modern protobuf package management"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
@@ -29,7 +29,7 @@ git = ["git2"]
 [dependencies]
 async-trait = "0.1"
 bytes = "1.0"
-clap = { version = "4.3", features = ["cargo", "derive"] }
+clap = { version = "4.3", features = ["cargo", "derive", "env"] }
 color-eyre = "0.6"
 eyre = "0.6"
 flate2 = "1"

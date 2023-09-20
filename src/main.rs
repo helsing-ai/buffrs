@@ -86,6 +86,9 @@ enum Command {
         #[clap(long = "lang")]
         #[arg(value_enum)]
         language: buffrs::generator::Language,
+
+        #[clap(long = "out-dir", env = "OUT_DIR")] // Defaults to None, but will use env var if set
+        output_directory: Option<String>,
     },
 
     /// Logs you in for a registry
@@ -149,7 +152,10 @@ async fn main() -> eyre::Result<()> {
         } => cmd::publish(credentials, registry, repository, allow_dirty, dry_run).await?,
         Command::Install {} => cmd::install(credentials).await?,
         Command::Uninstall => cmd::uninstall().await?,
-        Command::Generate { language } => cmd::generate(language).await?,
+        Command::Generate {
+            language,
+            output_directory,
+        } => cmd::generate(language, output_directory).await?,
         Command::Login { registry } => cmd::login(credentials, registry).await?,
         Command::Logout { registry } => cmd::logout(credentials, registry).await?,
     }
@@ -158,6 +164,9 @@ async fn main() -> eyre::Result<()> {
 }
 
 mod cmd {
+    /// The directory used for the generated code
+    pub const BUILD_DIRECTORY: &str = "proto/build";
+
     use std::{env, path::Path, sync::Arc};
 
     use buffrs::{
@@ -350,8 +359,20 @@ mod cmd {
     }
 
     /// Generate bindings for a given language
-    pub async fn generate(language: Language) -> eyre::Result<()> {
-        generator::generate(language)
+    pub async fn generate(
+        language: Language,
+        output_directory: Option<String>,
+    ) -> eyre::Result<()> {
+        // Determine the output directory now
+        let output_directory: String = match output_directory {
+            Some(dir) => dir,
+            None => {
+                tracing::warn!(":: outputting to default location: {BUILD_DIRECTORY}");
+                BUILD_DIRECTORY.to_string()
+            }
+        };
+
+        generator::generate(language, output_directory)
             .await
             .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
 

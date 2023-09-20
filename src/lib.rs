@@ -35,7 +35,10 @@ pub fn build() -> eyre::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(Language::Rust))?;
+    rt.block_on(generator::generate(
+        Language::Rust,
+        std::env::var("OUT_DIR").unwrap(),
+    ))?;
 
     Ok(())
 }
@@ -86,6 +89,15 @@ async fn install() -> eyre::Result<()> {
 #[macro_export]
 macro_rules! include {
     () => {
-        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
+        let output_directory = match env!("OUT_DIR") {
+            Some(dir) => dir,
+            None => {
+                let output_directory = "proto/gen".to_string();
+                tracing::warn!("outputting to default location: {output_directory}");
+                output_directory
+            }
+        };
+
+        ::std::include!(concat!(output_directory, "/buffrs.rs",));
     };
 }
