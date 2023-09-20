@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use eyre::{ensure, Context};
 use ring::digest;
 use semver::{Version, VersionReq};
-use serde::{Deserialize, Serialize};
+use serde::{de::Visitor, Deserialize, Serialize};
 use tokio::fs;
 
 use crate::{
@@ -27,13 +27,137 @@ use crate::{
 
 pub const LOCKFILE: &str = "Proto.lock";
 
+const SHA256_TAG: &str = "sha256";
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum DigestAlgorithm {
+    SHA256,
+}
+
+impl std::fmt::Display for DigestAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::SHA256 => SHA256_TAG,
+        };
+        f.write_str(s)
+    }
+}
+
+impl FromStr for DigestAlgorithm {
+    type Err = eyre::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            SHA256_TAG => Ok(Self::SHA256),
+            other => eyre::bail!("invalid digest algorithm: {other}"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Digest {
+    bytes: Vec<u8>,
+    algorithm: DigestAlgorithm,
+}
+
+impl TryFrom<digest::Digest> for Digest {
+    type Error = eyre::Report;
+
+    fn try_from(value: digest::Digest) -> Result<Self, Self::Error> {
+        let algorithm = if value.algorithm() == &digest::SHA256 {
+            DigestAlgorithm::SHA256
+        } else {
+            eyre::bail!("Unsupported digest algorithm: {:?}", value.algorithm())
+        };
+
+        Ok(Self {
+            bytes: value.as_ref().to_vec(),
+            algorithm,
+        })
+    }
+}
+
+impl std::fmt::Display for Digest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}:{}",
+            self.algorithm,
+            hex::encode(&self.bytes)
+        ))
+    }
+}
+
+impl Serialize for Digest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+struct DigestVisitor;
+
+impl<'de> Visitor<'de> for DigestVisitor {
+    type Value = Digest;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a hexadecimal encoded cryptographic digest")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let mut parts = value.split(':');
+        let algorithm_tag = parts.next().ok_or(E::missing_field("algorithm"))?;
+        let algorithm = algorithm_tag
+            .parse::<DigestAlgorithm>()
+            .map_err(|_| E::custom("invalid digest algorithm"))?;
+        let bytes = parts
+            .next()
+            .ok_or(E::missing_field("bytes"))
+            .and_then(|h| hex::decode(h).map_err(|_| E::custom("invalid encoding")))?;
+        Ok(Self::Value { algorithm, bytes })
+    }
+}
+
+impl<'de> Deserialize<'de> for Digest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(DigestVisitor)
+    }
+}
+
+impl PartialEq for Digest {
+    fn eq(&self, other: &Self) -> bool {
+        self.algorithm == other.algorithm && self.bytes == other.bytes
+    }
+}
+
+impl Eq for Digest {}
+
+impl Ord for Digest {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.bytes.cmp(&other.bytes)
+    }
+}
+
+impl PartialOrd for Digest {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Captures immutable metadata about a given package
 ///
 /// It is used to ensure that future installations will use the exact same dependencies.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockedPackage {
     pub name: PackageName,
-    pub checksum: String,
+    pub digest: Digest,
     pub repository: String,
     pub version: Version,
     pub dependencies: Vec<PackageName>,
@@ -42,12 +166,12 @@ pub struct LockedPackage {
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(package: &Package, repository: String) -> Self {
-        let checksum = digest::digest(&digest::SHA256, &package.tgz);
+        let digest = digest::digest(&digest::SHA256, &package.tgz);
 
         Self {
             name: package.name().to_owned(),
             repository,
-            checksum: hex::encode(checksum),
+            digest: digest.try_into().unwrap(), // won't fail as we SHA256 is sure to be supported
             version: package.version().to_owned(),
             dependencies: package
                 .manifest
@@ -68,10 +192,10 @@ impl LockedPackage {
             other.name
         );
         ensure!(
-            self.checksum == other.checksum,
-            "Checksum mismatch - expected {}, actual {}",
-            self.checksum,
-            other.checksum
+            self.digest == other.digest,
+            "Digest mismatch - expected {}, actual {}",
+            self.digest,
+            other.digest
         );
         ensure!(
             self.repository == other.repository,
