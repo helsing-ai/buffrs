@@ -12,9 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use async_recursion::async_recursion;
-use eyre::ContextCompat;
-
 use crate::{
     credentials::Credentials,
     generator,
@@ -24,11 +21,10 @@ use crate::{
     registry::{Artifactory, Registry, RegistryUri},
     Language,
 };
-
-use std::{env, path::Path, sync::Arc};
-
-use eyre::{ensure, Context};
+use async_recursion::async_recursion;
+use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
+use std::{env, path::Path, sync::Arc};
 
 /// Initializes the project
 pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
