@@ -103,16 +103,15 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 pub async fn remove(package: PackageName) -> eyre::Result<()> {
     let mut manifest = Manifest::read().await?;
 
-    let dependency = manifest
+    let match_idx = manifest
         .dependencies
         .iter()
-        .find(|d| d.package == package)
+        .position(|d| d.package == package)
         .wrap_err(eyre::eyre!(
             "Unable to remove unknown dependency {package:?}"
-        ))?
-        .to_owned();
+        ))?;
 
-    manifest.dependencies.retain(|d| *d != dependency);
+    let dependency = manifest.dependencies.remove(match_idx);
 
     PackageStore::uninstall(&dependency.package).await.ok();
 
