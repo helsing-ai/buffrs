@@ -55,7 +55,7 @@ impl FromStr for DigestAlgorithm {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Digest {
     bytes: Vec<u8>,
     algorithm: DigestAlgorithm,
@@ -131,14 +131,6 @@ impl<'de> Deserialize<'de> for Digest {
         deserializer.deserialize_str(DigestVisitor)
     }
 }
-
-impl PartialEq for Digest {
-    fn eq(&self, other: &Self) -> bool {
-        self.algorithm == other.algorithm && self.bytes == other.bytes
-    }
-}
-
-impl Eq for Digest {}
 
 impl Ord for Digest {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
