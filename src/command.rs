@@ -119,12 +119,12 @@ pub async fn remove(package: PackageName) -> eyre::Result<()> {
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: String, dry_run: bool) -> eyre::Result<()> {
+pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result<()> {
     let package = PackageStore::release()
         .await
         .wrap_err("Failed to create release")?;
 
-    let path = Path::new(&directory).join(format!(
+    let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
         package.manifest.package.name, package.manifest.package.version
     ));
