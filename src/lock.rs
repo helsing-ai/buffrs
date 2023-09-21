@@ -176,7 +176,7 @@ impl LockedPackage {
     ) -> Self {
         let digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
-            .unwrap(); // won't fail as SHA256 is sure to be supported
+            .expect("Unexpected error: only SHA256 is supported");
 
         Self {
             name: package.name().to_owned(),
@@ -188,8 +188,7 @@ impl LockedPackage {
                 .manifest
                 .dependencies
                 .iter()
-                .cloned()
-                .map(|d| d.package)
+                .map(|d| d.package.clone())
                 .collect(),
             dependants,
         }
