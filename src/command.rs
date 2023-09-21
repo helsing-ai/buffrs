@@ -49,7 +49,7 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
 
     let manifest = Manifest {
         package: PackageManifest {
-            r#type,
+            kind: r#type,
             name,
             version: VERSION,
             description: None,

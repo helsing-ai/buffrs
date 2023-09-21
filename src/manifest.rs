@@ -141,7 +141,8 @@ impl TryInto<String> for Manifest {
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PackageManifest {
     /// Type of the package
-    pub r#type: PackageType,
+    #[serde(rename = "type")]
+    pub kind: PackageType,
     /// Name of the package
     pub name: PackageName,
     /// Version of the package

@@ -80,7 +80,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     tracing::info!(":: initializing code generator for {language}");
 
     eyre::ensure!(
-        manifest.package.r#type.compilable() || !manifest.dependencies.is_empty(),
+        manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
         "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
     );
 
@@ -92,7 +92,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
-    if manifest.package.r#type.compilable() {
+    if manifest.package.kind.compilable() {
         let location = Path::new(PackageStore::PROTO_PATH);
         tracing::info!(
             ":: compiled {} [{}]",

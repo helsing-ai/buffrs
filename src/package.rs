@@ -132,7 +132,7 @@ impl PackageStore {
 
         let pkg_manifest = manifest.package.clone();
 
-        if let PackageType::Lib = pkg_manifest.r#type {
+        if let PackageType::Lib = pkg_manifest.kind {
             ensure!(
                 manifest.dependencies.is_empty(),
                 "Libraries can not have any dependencies"
@@ -147,7 +147,7 @@ impl PackageStore {
             let package = resolved.package;
 
             ensure!(
-                package.r#type == PackageType::Lib,
+                package.kind == PackageType::Lib,
                 "Depending on api packages is prohibited"
             );
         }

@@ -123,7 +123,7 @@ mod tests {
 
         let manifest = Manifest {
             package: PackageManifest {
-                r#type: PackageType::Api,
+                kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
