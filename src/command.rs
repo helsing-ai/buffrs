@@ -26,6 +26,8 @@ use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
+const INITIAL_VERSION: Version = Version::new(0, 1, 0);
+
 /// Initializes the project
 pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
     ensure!(
@@ -45,13 +47,11 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
             .parse()?,
     };
 
-    const VERSION: Version = Version::new(0, 1, 0);
-
     let manifest = Manifest {
         package: PackageManifest {
             kind: r#type,
             name,
-            version: VERSION,
+            version: INITIAL_VERSION,
             description: None,
         },
         dependencies: vec![],
