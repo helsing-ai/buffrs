@@ -63,7 +63,7 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: RegistryUri, dependency: String) -> eyre::Result<()> {
+pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
     let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
     let (repository, dependency) = dependency

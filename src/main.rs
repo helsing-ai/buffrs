@@ -149,7 +149,7 @@ async fn main() -> eyre::Result<()> {
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry, dependency).await,
+        } => command::add(registry, &dependency).await,
         Command::Remove { package } => command::remove(package).await,
         Command::Package {
             output_directory,
