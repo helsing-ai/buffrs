@@ -21,7 +21,7 @@ pub mod credentials;
 /// Code generator
 #[cfg(feature = "build")]
 pub mod generator;
-/// Lockfile Implementation
+/// Lockfile implementation
 pub mod lock;
 /// Manifest format and IO
 pub mod manifest;
