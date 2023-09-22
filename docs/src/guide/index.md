@@ -5,7 +5,7 @@ Buffrs to develop and consume protocol buffer packages.
 
 * [Why Buffrs Exists](./why-buffrs-exists.md)
 * [The Framework](./the-framework.md)
-* [Package Types](./package-types.md)
+* [Project Types](./project-types.md)
 * [Dependencies](./dependencies.md)
 * [Creating a Package](./creating-a-new-package.md)
 * [Consuming Packages](./consuming-packages.md)
