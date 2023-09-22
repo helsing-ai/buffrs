@@ -37,15 +37,16 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
 
     const DIR_ERR: &str = "Failed to read current directory name";
 
-    let name = match name {
-        Some(name) => name,
-        None => std::env::current_dir()?
+    fn curr_dir_name() -> eyre::Result<PackageName> {
+        std::env::current_dir()?
             .file_name()
             .wrap_err(DIR_ERR)?
             .to_str()
             .wrap_err(DIR_ERR)?
-            .parse()?,
-    };
+            .parse()
+    }
+
+    let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
 
     let manifest = Manifest {
         package: PackageManifest {
