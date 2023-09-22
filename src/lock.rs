@@ -55,6 +55,22 @@ impl FromStr for DigestAlgorithm {
     }
 }
 
+impl Ord for DigestAlgorithm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self {
+            DigestAlgorithm::SHA256 => match other {
+                DigestAlgorithm::SHA256 => std::cmp::Ordering::Equal,
+            },
+        }
+    }
+}
+
+impl PartialOrd for DigestAlgorithm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Digest {
     bytes: Vec<u8>,
@@ -134,7 +150,10 @@ impl<'de> Deserialize<'de> for Digest {
 
 impl Ord for Digest {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.bytes.cmp(&other.bytes)
+        match self.algorithm.cmp(&other.algorithm) {
+            std::cmp::Ordering::Equal => self.bytes.cmp(&other.bytes),
+            other => other,
+        }
     }
 }
 
