@@ -187,19 +187,19 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
 
     let lockfile = Lockfile::read_or_default().await?;
 
-    let dependency_tree =
+    let dependency_graph =
         DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
 
     let mut locked = Vec::new();
 
     #[async_recursion]
-    async fn process_recursively(
+    async fn traverse_and_install(
         name: &PackageName,
-        tree: &DependencyGraph,
+        graph: &DependencyGraph,
         locked: &mut Vec<LockedPackage>,
         prefix: String,
     ) -> eyre::Result<()> {
-        let resolved = tree
+        let resolved = graph
             .get(name)
             .wrap_err("Dependency missing from dependency tree")?;
 
@@ -229,16 +229,16 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
                 "{} {tree_char}",
                 if prefix.is_empty() { "  " } else { &prefix }
             );
-            process_recursively(dependency, tree, locked, new_prefix).await?;
+            traverse_and_install(dependency, graph, locked, new_prefix).await?;
         }
 
         Ok(())
     }
 
     for dependency in manifest.dependencies {
-        process_recursively(
+        traverse_and_install(
             &dependency.package,
-            &dependency_tree,
+            &dependency_graph,
             &mut locked,
             String::new(),
         )
