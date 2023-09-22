@@ -1,23 +1,41 @@
-// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::{
+    collections::HashMap,
     fmt::{self, Formatter},
     fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::Arc,
 };
 
+use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
 use eyre::{ensure, Context, ContextCompat};
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{self, Dependency, Manifest, PackageManifest, RawManifest, MANIFEST_FILE},
-    registry::Registry,
+    credentials::Credentials,
+    lock::{LockedPackage, Lockfile},
+    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
+    registry::{Artifactory, Registry, RegistryUri},
 };
 
 /// IO abstraction layer over local `buffrs` package store
@@ -62,7 +80,8 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.name.as_str());
+        let pkg_dir =
+            Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.package.name.as_str());
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -70,75 +89,23 @@ impl PackageStore {
             .await
             .wrap_err("Failed to install dependencies")?;
 
-        tar.unpack(pkg_dir.clone())
-            .wrap_err(format!("Failed to unpack tar of {}", package.manifest.name))?;
+        tar.unpack(pkg_dir.clone()).wrap_err(format!(
+            "Failed to unpack tar of {}",
+            package.manifest.package.name
+        ))?;
 
         tracing::debug!(
             ":: unpacked {}@{} into {}",
-            package.manifest.name,
-            package.manifest.version,
+            package.manifest.package.name,
+            package.manifest.package.version,
             pkg_dir.display()
         );
 
         Ok(())
     }
 
-    /// Installs a package and all of its dependency into the local filesystem
-    pub async fn install<R: Registry>(dependency: Dependency, registry: R) -> eyre::Result<()> {
-        let package = registry.download(dependency).await?;
-
-        Self::unpack(&package).await?;
-
-        let mut tree = format!(
-            ":: installed {}@{}",
-            package.manifest.name, package.manifest.version
-        );
-
-        let Manifest { dependencies, .. } = Self::resolve(&package.manifest.name).await?;
-
-        let dependency_count = dependencies.len();
-
-        for (index, dependency) in dependencies.into_iter().enumerate() {
-            if let Ok(manifest) = Self::resolve(&dependency.package).await {
-                let existing = manifest.package.wrap_err(eyre::eyre!(
-                    "Found installed manifest for {} but it is malformed",
-                    dependency.package,
-                ))?;
-
-                eyre::ensure!(
-                    dependency.manifest.version.matches(&existing.version),
-                    "A dependency of your project requires {}@{} which collides with {}@{} required by {}",
-                    existing.name,
-                    existing.version,
-                    dependency.package,
-                    dependency.manifest.version,
-                    package.manifest.name,
-                );
-            }
-
-            let dependency = registry.download(dependency).await?;
-
-            Self::unpack(&dependency).await?;
-
-            let tree_char = if index + 1 == dependency_count {
-                '┗'
-            } else {
-                '┣'
-            };
-
-            tree.push_str(&format!(
-                "\n   {tree_char} installed {}@{}",
-                dependency.manifest.name, dependency.manifest.version
-            ));
-        }
-
-        tracing::info!("{tree}");
-
-        Ok(())
-    }
-
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageId) -> eyre::Result<()> {
+    pub async fn uninstall(package: &PackageName) -> eyre::Result<()> {
         let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
@@ -147,14 +114,14 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageId) -> eyre::Result<Manifest> {
+    pub async fn resolve(package: &PackageName) -> eyre::Result<Manifest> {
         let manifest = Self::locate(package).join(MANIFEST_FILE);
 
         let manifest: String = fs::read_to_string(&manifest).await.wrap_err(format!(
             "Failed to locate local manifest for package: {package}"
         ))?;
 
-        toml::from_str::<RawManifest>(&manifest)
+        Manifest::try_from(manifest)
             .wrap_err(format!("Malformed manifest of package {package}"))
             .map(Manifest::from)
     }
@@ -163,12 +130,9 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        let pkg = manifest
-            .package
-            .to_owned()
-            .wrap_err("Releasing a package requires a package manifest")?;
+        let pkg_manifest = manifest.package.clone();
 
-        if let PackageType::Lib = pkg.r#type {
+        if let PackageType::Lib = pkg_manifest.kind {
             ensure!(
                 manifest.dependencies.is_empty(),
                 "Libraries can not have any dependencies"
@@ -180,12 +144,10 @@ impl PackageStore {
                 .await
                 .wrap_err("Failed to resolve dependency locally")?;
 
-            let package = resolved
-                .package
-                .wrap_err("Local dependencies must contain a package declaration")?;
+            let package = resolved.package;
 
             ensure!(
-                package.r#type == PackageType::Lib,
+                package.kind == PackageType::Lib,
                 "Depending on api packages is prohibited"
             );
         }
@@ -201,15 +163,24 @@ impl PackageStore {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        let manifest = toml::to_string_pretty(&RawManifest::from(manifest))
-            .wrap_err("Failed to encode release manifest")?
-            .into_bytes();
+        let manifest_bytes = {
+            let as_str: String = manifest
+                .clone()
+                .try_into()
+                .wrap_err("failed to render manifest as TOML")?;
+            as_str.into_bytes()
+        };
 
         let mut header = tar::Header::new_gnu();
-        header.set_size(manifest.len().try_into().wrap_err("Failed to pack tar")?);
+        header.set_size(
+            manifest_bytes
+                .len()
+                .try_into()
+                .wrap_err("Failed to pack tar")?,
+        );
         header.set_mode(0o444);
         archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest))
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
             .wrap_err("Failed to add manifest to release")?;
 
         for entry in Self::collect(&pkg_path).await {
@@ -254,13 +225,13 @@ impl PackageStore {
             .wrap_err("Failed to release package")?
             .into();
 
-        tracing::info!(":: packaged {}@{}", pkg.name, pkg.version);
+        tracing::info!(":: packaged {}@{}", pkg_manifest.name, pkg_manifest.version);
 
-        Ok(Package::new(pkg, tgz))
+        Ok(Package::new(manifest, tgz))
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(package: &PackageId) -> PathBuf {
+    pub fn locate(package: &PackageName) -> PathBuf {
         PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
     }
 
@@ -289,19 +260,40 @@ impl PackageStore {
 }
 
 /// An in memory representation of a `buffrs` package
-#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
     /// Manifest of the package
-    pub manifest: PackageManifest,
+    pub manifest: Manifest,
     /// The `tar.gz` archive containing the protocol buffers
-    #[serde(skip)]
     pub tgz: Bytes,
 }
 
 impl Package {
     /// Creates a new package
-    pub fn new(manifest: PackageManifest, tgz: Bytes) -> Self {
+    pub fn new(manifest: Manifest, tgz: Bytes) -> Self {
         Self { manifest, tgz }
+    }
+
+    /// The name of this package
+    #[inline]
+    pub fn name(&self) -> &PackageName {
+        &self.manifest.package.name
+    }
+
+    /// The version of this package
+    #[inline]
+    pub fn version(&self) -> &Version {
+        &self.manifest.package.version
+    }
+
+    /// Lock this package
+    pub fn lock(
+        &self,
+        registry: RegistryUri,
+        repository: String,
+        dependants: usize,
+    ) -> LockedPackage {
+        LockedPackage::lock(self, registry, repository, dependants)
     }
 }
 
@@ -334,13 +326,9 @@ impl TryFrom<Bytes> for Package {
             })
             .wrap_err("Failed to find manifest in package")?;
 
-        let manifest: Vec<u8> = manifest.bytes().collect::<io::Result<Vec<u8>>>()?;
-        let manifest: RawManifest = toml::from_str(&String::from_utf8(manifest)?)
-            .wrap_err("Failed to parse the manifest")?;
-
-        let manifest = manifest
-            .package
-            .wrap_err("The package section is missing the manifest")?;
+        let manifest = manifest.bytes().collect::<io::Result<Vec<_>>>()?;
+        let manifest = Manifest::try_from(String::from_utf8(manifest)?)
+            .wrap_err("Failed to parse manifest")?;
 
         Ok(Self { manifest, tgz })
     }
@@ -352,8 +340,24 @@ impl TryFrom<Bytes> for Package {
 pub enum PackageType {
     /// A library package containing primitive type definitions
     Lib,
-    /// A api package containing message and service definition
+    /// An api package containing message and service definition
     Api,
+    /// An implementation package that implements an api or library
+    ///
+    /// Note: Implementation packages can't be published via Buffrs
+    Impl,
+}
+
+impl PackageType {
+    /// Whether this package type is publishable
+    pub fn publishable(&self) -> bool {
+        *self != Self::Impl
+    }
+
+    /// Whether this package type is compilable
+    pub fn compilable(&self) -> bool {
+        *self != Self::Impl
+    }
 }
 
 impl FromStr for PackageType {
@@ -370,40 +374,47 @@ impl fmt::Display for PackageType {
     }
 }
 
-/// A `buffrs` package id for parsing and type safety
+impl Default for PackageType {
+    fn default() -> Self {
+        Self::Impl
+    }
+}
+
+/// A `buffrs` package name for parsing and type safety
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(try_from = "String", into = "String")]
-pub struct PackageId(String);
+pub struct PackageName(String);
 
-impl TryFrom<String> for PackageId {
+impl TryFrom<String> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: String) -> eyre::Result<Self> {
         ensure!(
             value.len() > 2,
-            "Package ids must be at least three chars long"
+            "Package names must be at least three chars long"
         );
 
         ensure!(
             value
                 .chars()
-                .all(|c| (c.is_ascii_alphanumeric() && c.is_ascii_lowercase()) || c == '-'),
-            "Package ids can only consist of lowercase alphanumeric ascii chars and dashes"
+                .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-')
+                ,
+            "Invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted",
         );
         ensure!(
             value
                 .get(0..1)
-                .wrap_err("Expected package id to be non empty")?
+                .wrap_err("Expected package name to be non empty")?
                 .chars()
                 .all(|c| c.is_ascii_alphabetic()),
-            "Package ids must begin with an alphabetic letter"
+            "Package names must begin with an alphabetic letter"
         );
 
         Ok(Self(value))
     }
 }
 
-impl TryFrom<&str> for PackageId {
+impl TryFrom<&str> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: &str) -> eyre::Result<Self> {
@@ -411,7 +422,7 @@ impl TryFrom<&str> for PackageId {
     }
 }
 
-impl TryFrom<&String> for PackageId {
+impl TryFrom<&String> for PackageName {
     type Error = eyre::Error;
 
     fn try_from(value: &String) -> eyre::Result<Self> {
@@ -419,7 +430,7 @@ impl TryFrom<&String> for PackageId {
     }
 }
 
-impl FromStr for PackageId {
+impl FromStr for PackageName {
     type Err = eyre::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -427,13 +438,13 @@ impl FromStr for PackageId {
     }
 }
 
-impl From<PackageId> for String {
-    fn from(s: PackageId) -> Self {
+impl From<PackageName> for String {
+    fn from(s: PackageName) -> Self {
         s.to_string()
     }
 }
 
-impl Deref for PackageId {
+impl Deref for PackageName {
     type Target = String;
 
     fn deref(&self) -> &Self::Target {
@@ -441,16 +452,171 @@ impl Deref for PackageId {
     }
 }
 
-impl fmt::Display for PackageId {
+impl fmt::Display for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl fmt::Debug for PackageId {
+impl fmt::Debug for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PackageId")
+        f.debug_tuple("PackageName")
             .field(&format!("{self}"))
             .finish()
+    }
+}
+
+/// Represents a dependency contextualized by the current dependency graph
+pub struct ResolvedDependency {
+    /// The materialized package as downloaded from the registry
+    pub package: Package,
+    /// The registry the package was downloaded from
+    pub registry: RegistryUri,
+    /// The repository in the registry where the package can be found
+    pub repository: String,
+    /// Packages that requested this dependency (and what versions they accept)
+    pub dependants: Vec<Dependant>,
+    /// Transitive dependencies
+    pub depends_on: Vec<PackageName>,
+}
+
+/// Represents a requester of the associated dependency
+pub struct Dependant {
+    /// Package that requested the dependency
+    pub name: PackageName,
+    /// Version requirement
+    pub version_req: VersionReq,
+}
+
+/// Represents direct and transitive dependencies of the root package
+pub struct DependencyGraph {
+    entries: HashMap<PackageName, ResolvedDependency>,
+}
+
+impl DependencyGraph {
+    /// Recursively resolves dependencies from the manifest to build a dependency graph
+    pub async fn from_manifest(
+        manifest: &Manifest,
+        lockfile: &Lockfile,
+        credentials: &Arc<Credentials>,
+    ) -> eyre::Result<Self> {
+        let name = manifest.package.name.clone();
+
+        let mut entries = HashMap::new();
+
+        for dependency in &manifest.dependencies {
+            Self::process_dependency(
+                name.clone(),
+                dependency.clone(),
+                lockfile,
+                credentials,
+                &mut entries,
+            )
+            .await?;
+        }
+
+        Ok(Self { entries })
+    }
+
+    #[async_recursion]
+    async fn process_dependency(
+        name: PackageName,
+        dependency: Dependency,
+        lockfile: &Lockfile,
+        credentials: &Arc<Credentials>,
+        entries: &mut HashMap<PackageName, ResolvedDependency>,
+    ) -> eyre::Result<()> {
+        let version_req = dependency.manifest.version.clone();
+
+        if let Some(entry) = entries.get_mut(&dependency.package) {
+            ensure!(version_req.matches(entry.package.version()), "A dependency of your project requires {}@{} which collides with {}@{} required by {}", dependency.package, dependency.manifest.version, entry.package.name(), entry.package.version(), entry.dependants[0].name);
+
+            entry.dependants.push(Dependant { name, version_req });
+        } else {
+            let dependency_reg = dependency.manifest.registry.clone();
+            let dependency_repo = dependency.manifest.repository.clone();
+            let dependency_pkg = Self::resolve(dependency, lockfile, credentials).await?;
+            let dependency_name = dependency_pkg.name().clone();
+
+            let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
+            let sub_dependency_names: Vec<_> = sub_dependencies
+                .iter()
+                .map(|sub_dependency| sub_dependency.package.clone())
+                .collect();
+
+            entries.insert(
+                dependency_name.clone(),
+                ResolvedDependency {
+                    package: dependency_pkg,
+                    registry: dependency_reg,
+                    repository: dependency_repo,
+                    dependants: vec![Dependant { name, version_req }],
+                    depends_on: sub_dependency_names,
+                },
+            );
+
+            for sub_dependency in sub_dependencies {
+                Self::process_dependency(
+                    dependency_name.clone(),
+                    sub_dependency,
+                    lockfile,
+                    credentials,
+                    entries,
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn resolve(
+        dependency: Dependency,
+        lockfile: &Lockfile,
+        credentials: &Arc<Credentials>,
+    ) -> eyre::Result<Package> {
+        if let Some(local_locked) = lockfile.get(&dependency.package) {
+            ensure!(
+                dependency.manifest.version.matches(&local_locked.version),
+                "Dependency {} cannot be satisfied - requested {}, but version {} is locked.",
+                &dependency.package,
+                &dependency.manifest.version,
+                &local_locked.version
+            );
+            ensure!(
+                dependency.manifest.registry == local_locked.registry,
+                "Mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
+                &dependency.package,
+                &dependency.manifest.registry,
+                &local_locked.registry
+            );
+
+            let registry = Artifactory::new(credentials.clone(), local_locked.registry.clone());
+            let package = registry.download(local_locked.as_dependency()).await?;
+            local_locked.validate(&package).wrap_err_with(|| {
+                format!(
+                    "Lockfile validation failed for dependency {}@{}",
+                    local_locked.name, local_locked.version
+                )
+            })?;
+
+            Ok(package)
+        } else {
+            let registry =
+                Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
+            registry.download(dependency).await
+        }
+    }
+
+    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
+        self.entries.get(name)
+    }
+}
+
+impl IntoIterator for DependencyGraph {
+    type Item = ResolvedDependency;
+    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_values()
     }
 }

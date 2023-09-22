@@ -1,4 +1,16 @@
-// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use std::path::PathBuf;
 
@@ -71,16 +83,21 @@ impl Registry for LocalRegistry {
     async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
-            repository, package.manifest.name, package.manifest.name, package.manifest.version,
+            repository,
+            package.name(),
+            package.name(),
+            package.version(),
         )));
+
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        std::fs::write(&path, package.tgz)?;
+        std::fs::write(&path, &package.tgz)?;
+
         tracing::info!(
             ":: published {}/{}@{} to {:?}",
             repository,
-            package.manifest.name,
-            package.manifest.version,
+            package.name(),
+            package.version(),
             path
         );
 
@@ -90,12 +107,11 @@ impl Registry for LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, PackageManifest};
-    use crate::package::{Package, PackageId, PackageType};
+    use crate::manifest::{Dependency, Manifest, PackageManifest};
+    use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
     use crate::registry::{Registry, RegistryUri};
     use bytes::Bytes;
-    use semver::{Version, VersionReq};
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::{env, fs};
@@ -105,17 +121,14 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = PackageManifest {
-            r#type: PackageType::Api,
-            name: PackageId::from_str("test-api").unwrap(),
-            version: Version {
-                major: 0,
-                minor: 1,
-                patch: 0,
-                pre: Default::default(),
-                build: Default::default(),
+        let manifest = Manifest {
+            package: PackageManifest {
+                kind: PackageType::Api,
+                name: "test-api".parse().unwrap(),
+                version: "0.1.0".parse().unwrap(),
+                description: None,
             },
-            description: None,
+            dependencies: vec![],
         };
 
         let package_bytes =
@@ -146,8 +159,8 @@ mod tests {
             .download(Dependency::new(
                 registry_uri,
                 "test-repo".into(),
-                PackageId::from_str("test-api").unwrap(),
-                VersionReq::from_str("=0.1.0").unwrap(),
+                "test-api".parse().unwrap(),
+                "=0.1.0".parse().unwrap(),
             ))
             .await
             .unwrap();
