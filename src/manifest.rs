@@ -35,7 +35,8 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct RawManifest {
     package: PackageManifest,
-    dependencies: Option<DependencyMap>,
+    #[serde(default)]
+    dependencies: DependencyMap,
 }
 
 impl From<Manifest> for RawManifest {
@@ -48,7 +49,7 @@ impl From<Manifest> for RawManifest {
 
         Self {
             package: manifest.package,
-            dependencies: Some(dependencies),
+            dependencies,
         }
     }
 }
@@ -107,7 +108,6 @@ impl From<RawManifest> for Manifest {
     fn from(raw: RawManifest) -> Self {
         let dependencies = raw
             .dependencies
-            .unwrap_or_default()
             .iter()
             .map(|(package, manifest)| Dependency {
                 package: package.to_owned(),
