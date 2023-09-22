@@ -35,10 +35,10 @@ pub fn build() -> eyre::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(
-        Language::Rust,
-        std::env::var("OUT_DIR").unwrap(),
-    ))?;
+    // rt.block_on(generator::generate(
+    //     Language::Rust,
+    //     std::path::Path::new(&std::env::var("OUT_DIR").unwrap()),
+    // ))?;
 
     Ok(())
 }

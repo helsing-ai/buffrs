@@ -1,4 +1,7 @@
-use std::{fmt, path::Path};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
 use eyre::Context;
 use protoc_bin_vendored::protoc_bin_path;
@@ -12,7 +15,6 @@ use crate::{manifest::Manifest, package::PackageStore};
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
-    Rust,
     Python,
 }
 
@@ -23,18 +25,21 @@ impl fmt::Display for Language {
 }
 
 /// Backend used to generate code bindings
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)] # TODO (alex.spencer) - was Copy ever used, why can it not be implemented for this type now?
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
-    /// The tonic + prost stack
     Tonic,
-    Protoc,
+    Protoc {
+        language: Language,
+        out_dir: PathBuf,
+    },
 }
 
 impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, output_directory: String, language: Language) -> eyre::Result<()> {
+    pub async fn run(&self, out_dir: PathBuf, language: Language) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -46,29 +51,37 @@ impl Generator {
         match self {
             Generator::Tonic => {
                 tonic_build::configure()
-                    .out_dir(output_directory) // If env var OUT_DIR is not set, Tonic throws a rather unhelpful error
+                    .out_dir(out_dir) // If env var OUT_DIR is not set, Tonic throws a rather unhelpful error
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
-            Generator::Protoc => {
+            Generator::Protoc {
+                language: language,
+                out_dir: out_dir,
+            } => {
                 let mut protoc_cmd = std::process::Command::new(protoc);
 
                 match language {
                     Language::Python => {
-                        protoc_cmd.arg("--python_out").arg(output_directory);
-                    }
-                    Language::Rust => {
-                        panic!("Protoc cannot output Rust, use Generator::Tonic instead")
-                        // TODO (alex.spencer) is panic really the right thing to do? This shouldn't ever happen as we control Generator type below
+                        protoc_cmd.arg("--python_out").arg(out_dir);
                     }
                 }
 
-                for input_proto in &protos {
-                    protoc_cmd.arg(input_proto);
-                }
+                // Setting proto path causes protoc to replace occurences of this string appearing in the
+                // path of the generated path with that provided by output path
+                // e.g. if input proto path is proto/vendor/units/units.proto and the proto path is 'proto'
+                // and the --python_out is 'proto/build/gen' then the file will be output to
+                // proto/build/gen/vendor/units/units.py
+
+                // Add the proto_path arg now
+                protoc_cmd.arg("--proto_path").arg("proto/vendor"); // We need both of these if we want "vendor" to be removed, and it has to come first
+                protoc_cmd.arg("--proto_path").arg("proto");
+
+                // Add the proto files we want code generated for
+                protoc_cmd.args(&protos);
 
                 tracing::info!(":: running {protoc_cmd:?}");
 
@@ -76,12 +89,12 @@ impl Generator {
                 match result.status.code() {
                     Some(0) => tracing::info!("{language} code generated successfully"),
                     Some(_) => {
-                        tracing::error!("Error generating {language} code:");
                         if !result.stderr.is_empty() {
+                            tracing::error!("Error generating {language} code:");
                             let stderr_str = String::from_utf8(result.stderr)?;
                             tracing::error!(stderr_str);
                         }
-                        // TODO (alex.spencer) - return not OK here
+                        eyre::bail!("Error generating {language} code:")
                     }
                     None => tracing::error!("Failed to retrieve exit code"),
                 }
@@ -93,7 +106,7 @@ impl Generator {
 }
 
 /// Generate the code bindings for a language
-pub async fn generate(language: Language, output_directory: String) -> eyre::Result<()> {
+pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
     let manifest = Manifest::read().await?;
 
     tracing::info!(":: initializing code generator for {language}");
@@ -104,13 +117,13 @@ pub async fn generate(language: Language, output_directory: String) -> eyre::Res
     );
 
     // Only tonic is supported right now
-    let generator = match language {
-        Language::Rust => Generator::Tonic,
-        Language::Python => Generator::Protoc,
+    let generator = Generator::Protoc {
+        language,
+        out_dir: out_dir.clone(),
     };
 
     generator
-        .run(output_directory, language)
+        .run(out_dir, language)
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 

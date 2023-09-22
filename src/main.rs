@@ -1,5 +1,7 @@
 // (c) Copyright 2023 Helsing GmbH. All rights reserved.
 
+use std::path::{Path, PathBuf};
+
 use buffrs::package::PackageId;
 use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, package::PackageType};
@@ -87,8 +89,8 @@ enum Command {
         #[arg(value_enum)]
         language: buffrs::generator::Language,
 
-        #[clap(long = "out-dir", env = "OUT_DIR")] // Defaults to None, but will use env var if set
-        output_directory: Option<String>,
+        #[clap(long = "out-dir")] // Defaults to None, but will use env var if set
+        out_dir: PathBuf,
     },
 
     /// Logs you in for a registry
@@ -152,10 +154,7 @@ async fn main() -> eyre::Result<()> {
         } => cmd::publish(credentials, registry, repository, allow_dirty, dry_run).await?,
         Command::Install {} => cmd::install(credentials).await?,
         Command::Uninstall => cmd::uninstall().await?,
-        Command::Generate {
-            language,
-            output_directory,
-        } => cmd::generate(language, output_directory).await?,
+        Command::Generate { language, out_dir } => cmd::generate(language, out_dir).await?,
         Command::Login { registry } => cmd::login(credentials, registry).await?,
         Command::Logout { registry } => cmd::logout(credentials, registry).await?,
     }
@@ -167,7 +166,11 @@ mod cmd {
     /// The directory used for the generated code
     pub const BUILD_DIRECTORY: &str = "proto/build";
 
-    use std::{env, path::Path, sync::Arc};
+    use std::{
+        env,
+        path::{Path, PathBuf},
+        sync::Arc,
+    };
 
     use buffrs::{
         credentials::Credentials,
@@ -359,20 +362,8 @@ mod cmd {
     }
 
     /// Generate bindings for a given language
-    pub async fn generate(
-        language: Language,
-        output_directory: Option<String>,
-    ) -> eyre::Result<()> {
-        // Determine the output directory now
-        let output_directory: String = match output_directory {
-            Some(dir) => dir,
-            None => {
-                tracing::warn!(":: outputting to default location: {BUILD_DIRECTORY}");
-                BUILD_DIRECTORY.to_string()
-            }
-        };
-
-        generator::generate(language, output_directory)
+    pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
+        generator::generate(language, out_dir)
             .await
             .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
 
