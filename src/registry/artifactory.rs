@@ -15,8 +15,7 @@
 use super::{Registry, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use eyre::{ensure, Context, ContextCompat};
-use reqwest::{header::HeaderMap, Certificate};
-use std::{env, path::PathBuf};
+use reqwest::header::HeaderMap;
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -32,19 +31,6 @@ impl Artifactory {
     pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
         let mut client_builder =
             reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
-
-        if let Ok(cert_path) = env::var("SSL_CERT_FILE").map(PathBuf::from) {
-            let ext = cert_path
-                .extension()
-                .and_then(std::ffi::OsStr::to_str)
-                .wrap_err("Missing certificate file extension")?;
-            let cert = match ext {
-                "pem" | "crt" => Certificate::from_pem(&std::fs::read(cert_path)?),
-                "der" => Certificate::from_der(&std::fs::read(cert_path)?),
-                other => eyre::bail!("Unsupported certificate extension: {}", other),
-            }?;
-            client_builder = client_builder.add_root_certificate(cert);
-        }
 
         if let Some(token) = credentials.registry_tokens.get(&registry) {
             let mut headers = HeaderMap::new();
