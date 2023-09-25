@@ -46,6 +46,12 @@ pub enum RegistryType {
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RegistryUri(Url);
 
+impl From<RegistryUri> for Url {
+    fn from(value: RegistryUri) -> Self {
+        value.0
+    }
+}
+
 impl std::ops::Deref for RegistryUri {
     type Target = Url;
 
