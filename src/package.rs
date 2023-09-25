@@ -34,7 +34,7 @@ use walkdir::WalkDir;
 use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
+    manifest::{self, Dependency, DependencyType, Manifest, MANIFEST_FILE},
     registry::{Artifactory, Registry, RegistryUri},
 };
 
@@ -527,7 +527,6 @@ impl DependencyGraph {
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
-
         if let Some(entry) = entries.get_mut(&dependency.package) {
             ensure!(version_req.matches(entry.package.version()), "A dependency of your project requires {}@{} which collides with {}@{} required by {}", dependency.package, dependency.manifest.version, entry.package.name(), entry.package.version(), entry.dependants[0].name);
 
@@ -584,7 +583,7 @@ impl DependencyGraph {
                 &local_locked.version
             );
             ensure!(
-                dependency.manifest.registry == local_locked.registry,
+                dependency.kind == DependencyType::Root || dependency.manifest.registry == local_locked.registry,
                 "Mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                 &dependency.package,
                 &dependency.manifest.registry,

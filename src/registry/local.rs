@@ -161,6 +161,7 @@ mod tests {
                 "test-repo".into(),
                 "test-api".parse().unwrap(),
                 "=0.1.0".parse().unwrap(),
+                Default::default(),
             ))
             .await
             .unwrap();

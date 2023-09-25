@@ -93,9 +93,13 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 
     let mut manifest = Manifest::read().await?;
 
-    manifest
-        .dependencies
-        .push(Dependency::new(registry, repository, package, version));
+    manifest.dependencies.push(Dependency::new(
+        registry,
+        repository,
+        package,
+        version,
+        crate::manifest::DependencyType::Root,
+    ));
 
     manifest.write().await
 }

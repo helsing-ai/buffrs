@@ -250,6 +250,7 @@ impl LockedPackage {
                 registry: self.registry.clone(),
                 repository: self.repository.clone(),
             },
+            kind: Default::default(),
         }
     }
 }
