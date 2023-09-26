@@ -15,48 +15,24 @@
 use super::{Registry, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use eyre::{ensure, Context, ContextCompat};
-use reqwest::header::HeaderMap;
 use url::Url;
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
     registry: RegistryUri,
+    token: Option<String>,
     client: reqwest::Client,
 }
 
 impl Artifactory {
-    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
-
     pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
-        let mut client_builder =
-            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
-
-        if let Some(token) = credentials.registry_tokens.get(&registry) {
-            if std::env::var("BUFFRS_TESTSUITE").is_err() {
-                tracing::info!(
-                    uri=?registry.as_str(),
-                    token_length=?token.len(),
-                    "The {} header is set",
-                    Self::JFROG_AUTH_HEADER,
-                );
-            }
-
-            let mut headers = HeaderMap::new();
-            headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
-
-            client_builder = client_builder.default_headers(headers);
-        } else if std::env::var("BUFFRS_TESTSUITE").is_err() {
-            tracing::info!(
-                uri=?registry.as_str(),
-                "The {} header is NOT set",
-                Self::JFROG_AUTH_HEADER,
-            );
-        }
-
         Ok(Self {
             registry: registry.clone(),
-            client: client_builder.build()?,
+            token: credentials.registry_tokens.get(&registry).cloned(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
         })
     }
 
@@ -69,7 +45,13 @@ impl Artifactory {
             uri.into()
         };
 
-        let response = self.client.get(repositories_url).send().await?;
+        let mut request_builder = self.client.get(repositories_url);
+
+        if let Some(token) = &self.token {
+            request_builder = request_builder.bearer_auth(token);
+        }
+
+        let response = request_builder.send().await?;
 
         let status = response.status();
 
@@ -135,7 +117,13 @@ impl Registry for Artifactory {
             url.into()
         };
 
-        let response = self.client.get(artifact_url).send().await?;
+        let mut request_builder = self.client.get(artifact_url);
+
+        if let Some(token) = &self.token {
+            request_builder = request_builder.bearer_auth(token);
+        }
+
+        let response = request_builder.send().await?;
 
         ensure!(
             response.status() != 302,
@@ -183,10 +171,13 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = self
-            .client
-            .put(artifact_uri)
-            .body(package.tgz.clone())
+        let mut request_builder = self.client.put(artifact_uri).body(package.tgz.clone());
+
+        if let Some(token) = &self.token {
+            request_builder = request_builder.bearer_auth(token);
+        }
+
+        let response = request_builder
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
