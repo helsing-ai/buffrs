@@ -34,7 +34,7 @@ use walkdir::WalkDir;
 use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{self, Dependency, DependencyType, Manifest, MANIFEST_FILE},
+    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
     registry::{Artifactory, Registry, RegistryUri},
 };
 
@@ -508,6 +508,7 @@ impl DependencyGraph {
             Self::process_dependency(
                 name.clone(),
                 dependency.clone(),
+                true,
                 lockfile,
                 credentials,
                 &mut entries,
@@ -522,6 +523,7 @@ impl DependencyGraph {
     async fn process_dependency(
         name: PackageName,
         dependency: Dependency,
+        is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
@@ -534,7 +536,7 @@ impl DependencyGraph {
         } else {
             let dependency_reg = dependency.manifest.registry.clone();
             let dependency_repo = dependency.manifest.repository.clone();
-            let dependency_pkg = Self::resolve(dependency, lockfile, credentials).await?;
+            let dependency_pkg = Self::resolve(dependency, is_root, lockfile, credentials).await?;
             let dependency_name = dependency_pkg.name().clone();
 
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -558,6 +560,7 @@ impl DependencyGraph {
                 Self::process_dependency(
                     dependency_name.clone(),
                     sub_dependency,
+                    false,
                     lockfile,
                     credentials,
                     entries,
@@ -571,6 +574,7 @@ impl DependencyGraph {
 
     async fn resolve(
         dependency: Dependency,
+        is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
     ) -> eyre::Result<Package> {
@@ -583,7 +587,7 @@ impl DependencyGraph {
                 &local_locked.version
             );
             ensure!(
-                dependency.kind == DependencyType::Root || dependency.manifest.registry == local_locked.registry,
+                is_root || dependency.manifest.registry == local_locked.registry,
                 "Mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                 &dependency.package,
                 &dependency.manifest.registry,

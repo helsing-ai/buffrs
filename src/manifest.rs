@@ -112,7 +112,6 @@ impl From<RawManifest> for Manifest {
             .map(|(package, manifest)| Dependency {
                 package: package.to_owned(),
                 manifest: manifest.to_owned(),
-                kind: DependencyType::Root,
             })
             .collect();
 
@@ -153,19 +152,6 @@ pub struct PackageManifest {
     pub description: Option<String>,
 }
 
-/// Represents
-#[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub enum DependencyType {
-    Root,
-    Transitive,
-}
-
-impl Default for DependencyType {
-    fn default() -> Self {
-        Self::Root
-    }
-}
-
 /// Represents a single project dependency
 #[derive(Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Dependency {
@@ -173,8 +159,6 @@ pub struct Dependency {
     pub package: PackageName,
     /// Version requirement in the buffrs format, currently only supports pinning
     pub manifest: DependencyManifest,
-    /// Describes whether the dependency was declared directly or derived transitively
-    pub kind: DependencyType,
 }
 
 impl Dependency {
@@ -184,7 +168,6 @@ impl Dependency {
         repository: String,
         package: PackageName,
         version: VersionReq,
-        kind: DependencyType,
     ) -> Self {
         Self {
             package,
@@ -193,7 +176,6 @@ impl Dependency {
                 version,
                 registry,
             },
-            kind,
         }
     }
 
