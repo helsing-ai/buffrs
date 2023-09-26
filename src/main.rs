@@ -106,6 +106,8 @@ enum Command {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
         registry: RegistryUri,
+        /// Artifactory username to use
+        username: String,
     },
     /// Logs you out from a registry
     Logout {
@@ -164,7 +166,9 @@ async fn main() -> eyre::Result<()> {
         Command::Install => command::install(credentials).await,
         Command::Uninstall => command::uninstall().await,
         Command::Generate { language } => command::generate(language).await,
-        Command::Login { registry } => command::login(credentials, registry).await,
+        Command::Login { registry, username } => {
+            command::login(credentials, registry, username).await
+        }
         Command::Logout { registry } => command::logout(credentials, registry).await,
     }
 }

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::{
-    credentials::Credentials,
+    credentials::{BasicAuthentication, Credentials},
     generator,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
@@ -163,7 +163,7 @@ pub async fn publish(
         }
     }
 
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    let artifactory = Artifactory::new(registry, &credentials);
 
     let package = PackageStore::release()
         .await
@@ -266,8 +266,12 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
-    let token = {
+pub async fn login(
+    mut credentials: Credentials,
+    registry: RegistryUri,
+    username: String,
+) -> eyre::Result<()> {
+    let auth = {
         tracing::info!("Please enter your artifactory token:");
 
         let mut raw = String::new();
@@ -276,12 +280,12 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
             .read_line(&mut raw)
             .wrap_err("Failed to read token")?;
 
-        raw.trim().into()
+        BasicAuthentication::new(username, raw.trim().into())
     };
 
-    credentials.registry_tokens.insert(registry.clone(), token);
+    credentials.map.insert(registry.clone(), auth);
 
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    let artifactory = Artifactory::new(registry, &credentials);
 
     if env::var("BUFFRS_TESTSUITE").is_err() {
         artifactory
@@ -295,6 +299,6 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
 
 /// Logs you out from a registry
 pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
-    credentials.registry_tokens.remove(&registry);
+    credentials.map.remove(&registry);
     credentials.write().await
 }

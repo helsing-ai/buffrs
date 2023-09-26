@@ -34,7 +34,7 @@ pub struct BasicAuthentication {
 }
 
 impl BasicAuthentication {
-    fn new(username: String, password: String) -> Self {
+    pub fn new(username: String, password: String) -> Self {
         Self { username, password }
     }
 }

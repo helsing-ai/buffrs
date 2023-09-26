@@ -13,51 +13,44 @@
 // limitations under the License.
 
 use super::{Registry, RegistryUri};
-use crate::{credentials::Credentials, manifest::Dependency, package::Package};
+use crate::{
+    credentials::{BasicAuthentication, Credentials},
+    manifest::Dependency,
+    package::Package,
+};
 use eyre::{ensure, Context, ContextCompat};
-use reqwest::header::HeaderMap;
 use url::Url;
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
     registry: RegistryUri,
-    client: reqwest::Client,
+    auth: Option<BasicAuthentication>,
 }
 
 impl Artifactory {
-    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> Self {
+        let auth = credentials.map.get(&registry).cloned();
 
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
-        let mut client_builder =
-            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+        Self { registry, auth }
+    }
 
-        if let Some(token) = credentials.registry_tokens.get(&registry) {
-            if std::env::var("BUFFRS_TESTSUITE").is_err() {
-                tracing::info!(
-                    uri=?registry.as_str(),
-                    token_length=?token.len(),
-                    "The {} header is set",
-                    Self::JFROG_AUTH_HEADER,
-                );
-            }
-
-            let mut headers = HeaderMap::new();
-            headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
-
-            client_builder = client_builder.default_headers(headers);
-        } else if std::env::var("BUFFRS_TESTSUITE").is_err() {
-            tracing::info!(
-                uri=?registry.as_str(),
-                "The {} header is NOT set",
-                Self::JFROG_AUTH_HEADER,
-            );
+    fn put(&self, uri: Url) -> reqwest::RequestBuilder {
+        match self.auth {
+            Some(ref auth) => reqwest::Client::new()
+                .put(uri)
+                .basic_auth(&auth.username, Some(&auth.password)),
+            None => reqwest::Client::new().put(uri),
         }
+    }
 
-        Ok(Self {
-            registry: registry.clone(),
-            client: client_builder.build()?,
-        })
+    fn get(&self, uri: Url) -> reqwest::RequestBuilder {
+        match self.auth {
+            Some(ref auth) => reqwest::Client::new()
+                .get(uri)
+                .basic_auth(&auth.username, Some(&auth.password)),
+            None => reqwest::Client::new().get(uri),
+        }
     }
 
     /// Pings artifactory to ensure registry access is working
@@ -69,7 +62,7 @@ impl Artifactory {
             uri.into()
         };
 
-        let response = self.client.get(repositories_url).send().await?;
+        let response = self.get(repositories_url).send().await?;
 
         let status = response.status();
 
@@ -135,7 +128,7 @@ impl Registry for Artifactory {
             url.into()
         };
 
-        let response = self.client.get(artifact_url).send().await?;
+        let response = self.get(artifact_url).send().await?;
 
         ensure!(
             response.status() != 302,
@@ -184,7 +177,6 @@ impl Registry for Artifactory {
         .wrap_err("Failed to construct artifact uri")?;
 
         let response = self
-            .client
             .put(artifact_uri)
             .body(package.tgz.clone())
             .send()
