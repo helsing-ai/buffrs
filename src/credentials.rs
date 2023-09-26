@@ -24,11 +24,26 @@ pub const BUFFRS_HOME: &str = ".buffrs";
 /// Filename of the credential store
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
+/// A set of credentials used for username and password based authentication
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct BasicAuthentication {
+    /// The username used to authenticate
+    pub username: String,
+    /// The password used to authenticate
+    pub password: String,
+}
+
+impl BasicAuthentication {
+    fn new(username: String, password: String) -> Self {
+        Self { username, password }
+    }
+}
+
 /// Credential store for storing authentication data
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    /// A mapping from registry URIs to their corresponding tokens
-    pub registry_tokens: HashMap<RegistryUri, String>,
+    /// A mapping from registry URIs to their corresponding authentication
+    pub map: HashMap<RegistryUri, BasicAuthentication>,
 }
 
 impl Credentials {
@@ -100,7 +115,8 @@ struct RawCredentialCollection {
 #[derive(Serialize, Deserialize)]
 struct RawRegistryCredentials {
     uri: RegistryUri,
-    token: String,
+    username: String,
+    password: String,
 }
 
 impl From<RawCredentialCollection> for Credentials {
@@ -108,21 +124,23 @@ impl From<RawCredentialCollection> for Credentials {
         let credentials = value
             .credentials
             .into_iter()
-            .map(|it| (it.uri, it.token))
+            .map(|it| (it.uri, BasicAuthentication::new(it.username, it.password)))
             .collect();
 
-        Self {
-            registry_tokens: credentials,
-        }
+        Self { map: credentials }
     }
 }
 
 impl From<Credentials> for RawCredentialCollection {
     fn from(value: Credentials) -> Self {
         let credentials = value
-            .registry_tokens
+            .map
             .into_iter()
-            .map(|(uri, token)| RawRegistryCredentials { uri, token })
+            .map(|(uri, auth)| RawRegistryCredentials {
+                uri,
+                username: auth.username,
+                password: auth.password,
+            })
             .collect();
 
         Self { credentials }
