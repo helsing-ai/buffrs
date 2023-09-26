@@ -57,7 +57,7 @@ impl Artifactory {
             {
                 tracing::info!(
                     uri=?repositories_uri.as_str(),
-                    length=?token.len(),
+                    token_length=?token.len(),
                     "Pinging with the {} header set",
                     Self::JFROG_AUTH_HEADER,
                 );
@@ -75,6 +75,11 @@ impl Artifactory {
         };
 
         let status = response.status();
+
+        if !status.is_success() {
+            tracing::info!(response_header=?response.headers());
+        }
+
         ensure!(
             response.status().is_success(),
             "Failed to ping artifactory. Status {status}",
