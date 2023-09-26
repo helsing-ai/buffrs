@@ -78,10 +78,11 @@ impl Artifactory {
 
         if !status.is_success() {
             tracing::info!(response_header=?response.headers());
+            tracing::info!(response_body=?response.text().await?);
         }
 
         ensure!(
-            response.status().is_success(),
+            status.is_success(),
             "Failed to ping artifactory. Status {status}",
             status = status.as_u16()
         );
