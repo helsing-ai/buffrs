@@ -45,13 +45,13 @@ impl Artifactory {
             uri.into()
         };
 
-        let mut request_builder = self.client.get(repositories_url);
+        let mut request = self.client.get(repositories_url);
 
         if let Some(token) = &self.token {
-            request_builder = request_builder.bearer_auth(token);
+            request = request.bearer_auth(token);
         }
 
-        let response = request_builder.send().await?;
+        let response = request.send().await?;
 
         let status = response.status();
 
@@ -117,13 +117,13 @@ impl Registry for Artifactory {
             url.into()
         };
 
-        let mut request_builder = self.client.get(artifact_url);
+        let mut request = self.client.get(artifact_url);
 
         if let Some(token) = &self.token {
-            request_builder = request_builder.bearer_auth(token);
+            request = request.bearer_auth(token);
         }
 
-        let response = request_builder.send().await?;
+        let response = request.send().await?;
 
         ensure!(
             response.status() != 302,
@@ -171,13 +171,13 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let mut request_builder = self.client.put(artifact_uri).body(package.tgz.clone());
+        let mut request = self.client.put(artifact_uri).body(package.tgz.clone());
 
         if let Some(token) = &self.token {
-            request_builder = request_builder.bearer_auth(token);
+            request = request.bearer_auth(token);
         }
 
-        let response = request_builder
+        let response = request
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
