@@ -12,21 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    fmt::{self, Display},
-    ops::DerefMut,
-    str::FromStr,
-};
-
-use crate::{manifest::Dependency, package::Package};
-
 mod artifactory;
+
 #[cfg(test)]
 mod local;
 
+use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 pub use artifactory::Artifactory;
 use eyre::ensure;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display},
+    ops::DerefMut,
+    str::FromStr,
+    sync::Arc,
+};
 use url::Url;
 
 /// A `buffrs` registry used for remote package management
@@ -83,7 +84,7 @@ impl FromStr for RegistryUri {
 }
 
 impl RegistryUri {
-    pub fn sanity_check_url(&self) -> eyre::Result<()> {
+    fn sanity_check_url(&self) -> eyre::Result<()> {
         tracing::debug!(
             "checking that url begins with http or https: {}",
             self.0.scheme()
@@ -107,5 +108,42 @@ impl RegistryUri {
         }
 
         Ok(())
+    }
+
+    /// Returns the type of registry this URI refers to
+    pub fn kind(&self) -> RegistryType {
+        RegistryType::Artifactory
+    }
+}
+
+#[derive(Default)]
+pub struct RegistryProvider {
+    credentials: Credentials,
+    registries: HashMap<RegistryUri, Arc<dyn Registry + Send + Sync>>,
+}
+
+impl RegistryProvider {
+    pub fn new(credentials: Credentials) -> Self {
+        Self {
+            credentials,
+            registries: Default::default(),
+        }
+    }
+
+    pub fn get_or_create(
+        &mut self,
+        registry_uri: &RegistryUri,
+    ) -> eyre::Result<Arc<dyn Registry + Send + Sync>> {
+        if !self.registries.contains_key(registry_uri) {
+            let registry = Arc::new(match registry_uri.kind() {
+                RegistryType::Artifactory => {
+                    Artifactory::from_credentials(registry_uri, &self.credentials)?
+                }
+            });
+
+            self.registries.insert(registry_uri.clone(), registry);
+        }
+
+        Ok(self.registries.get(registry_uri).unwrap().clone())
     }
 }

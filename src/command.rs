@@ -18,13 +18,13 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
-    registry::{Artifactory, Registry, RegistryUri},
+    registry::{Artifactory, RegistryProvider, RegistryType, RegistryUri},
     Language,
 };
 use async_recursion::async_recursion;
 use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
-use std::{env, path::Path, sync::Arc};
+use std::{env, path::Path};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
@@ -140,7 +140,7 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result
 /// Publishes the api package to the registry
 pub async fn publish(
     credentials: Credentials,
-    registry: RegistryUri,
+    uri: RegistryUri,
     repository: String,
     allow_dirty: bool,
     dry_run: bool,
@@ -163,7 +163,7 @@ pub async fn publish(
         }
     }
 
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    let mut registry_provider = RegistryProvider::new(credentials);
 
     let package = PackageStore::release()
         .await
@@ -174,21 +174,26 @@ pub async fn publish(
         return Ok(());
     }
 
-    artifactory.publish(package, repository).await?;
+    registry_provider
+        .get_or_create(&uri)?
+        .publish(package, repository)
+        .await?;
 
     Ok(())
 }
 
 /// Installs dependencies
 pub async fn install(credentials: Credentials) -> eyre::Result<()> {
-    let credentials = Arc::new(credentials);
-
     let manifest = Manifest::read().await?;
 
     let lockfile = Lockfile::read_or_default().await?;
 
-    let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
+    let dependency_graph = DependencyGraph::from_manifest(
+        &manifest,
+        &lockfile,
+        &mut RegistryProvider::new(credentials),
+    )
+    .await?;
 
     let mut locked = Vec::new();
 
@@ -266,7 +271,7 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+pub async fn login(mut credentials: Credentials, uri: RegistryUri) -> eyre::Result<()> {
     let token = {
         tracing::info!("Please enter your artifactory token:");
 
@@ -279,15 +284,19 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
         raw.trim().into()
     };
 
-    credentials.registry_tokens.insert(registry.clone(), token);
+    credentials.registry_tokens.insert(uri.clone(), token);
 
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    match uri.kind() {
+        RegistryType::Artifactory => {
+            let artifactory = Artifactory::from_credentials(&uri, &credentials)?;
 
-    if env::var("BUFFRS_TESTSUITE").is_err() {
-        artifactory
-            .ping()
-            .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+            if env::var("BUFFRS_TESTSUITE").is_err() {
+                artifactory
+                    .ping()
+                    .await
+                    .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+            }
+        }
     }
 
     credentials.write().await

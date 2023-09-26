@@ -20,7 +20,6 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
 };
 
 use async_recursion::async_recursion;
@@ -32,10 +31,9 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, MANIFEST_FILE},
-    registry::{Artifactory, Registry, RegistryUri},
+    registry::{RegistryProvider, RegistryUri},
 };
 
 /// IO abstraction layer over local `buffrs` package store
@@ -498,7 +496,7 @@ impl DependencyGraph {
     pub async fn from_manifest(
         manifest: &Manifest,
         lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
+        provider: &mut RegistryProvider,
     ) -> eyre::Result<Self> {
         let name = manifest.package.name.clone();
 
@@ -510,7 +508,7 @@ impl DependencyGraph {
                 dependency.clone(),
                 true,
                 lockfile,
-                credentials,
+                provider,
                 &mut entries,
             )
             .await?;
@@ -525,7 +523,7 @@ impl DependencyGraph {
         dependency: Dependency,
         is_root: bool,
         lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
+        provider: &mut RegistryProvider,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -534,7 +532,7 @@ impl DependencyGraph {
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
-            let dependency_pkg = Self::resolve(dependency.clone(), is_root, lockfile, credentials)
+            let dependency_pkg = Self::resolve(dependency.clone(), is_root, lockfile, provider)
                 .await
                 .wrap_err_with(|| {
                     format!(
@@ -567,7 +565,7 @@ impl DependencyGraph {
                     sub_dependency,
                     false,
                     lockfile,
-                    credentials,
+                    provider,
                     entries,
                 )
                 .await?;
@@ -581,7 +579,7 @@ impl DependencyGraph {
         dependency: Dependency,
         is_root: bool,
         lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
+        provider: &mut RegistryProvider,
     ) -> eyre::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
@@ -599,7 +597,7 @@ impl DependencyGraph {
                 &local_locked.registry
             );
 
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
+            let registry = provider.get_or_create(&dependency.manifest.registry)?;
             let package = registry
                 .download(dependency.with_version(&local_locked.version))
                 .await
@@ -618,8 +616,10 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
-            registry.download(dependency).await
+            provider
+                .get_or_create(&dependency.manifest.registry)?
+                .download(dependency)
+                .await
         }
     }
 

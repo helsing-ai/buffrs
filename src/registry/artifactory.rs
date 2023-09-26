@@ -28,36 +28,36 @@ pub struct Artifactory {
 impl Artifactory {
     const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
 
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
-        let mut client_builder =
-            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+    /// Creates an instance for the given URI without authentication
+    pub fn new(uri: &RegistryUri) -> eyre::Result<Self> {
+        Ok(Self {
+            registry: uri.clone(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
+        })
+    }
 
-        if let Some(token) = credentials.registry_tokens.get(&registry) {
-            if std::env::var("BUFFRS_TESTSUITE").is_err() {
-                tracing::info!(
-                    uri=?registry.as_str(),
-                    token_length=?token.len(),
-                    "The {} header is set",
-                    Self::JFROG_AUTH_HEADER,
-                );
-            }
-
-            let mut headers = HeaderMap::new();
-            headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
-
-            client_builder = client_builder.default_headers(headers);
-        } else if std::env::var("BUFFRS_TESTSUITE").is_err() {
-            tracing::info!(
-                uri=?registry.as_str(),
-                "The {} header is NOT set",
-                Self::JFROG_AUTH_HEADER,
-            );
-        }
+    /// Creates an instance for the given URI with token-based authentication
+    pub fn with_token(uri: &RegistryUri, token: &str) -> eyre::Result<Self> {
+        let mut headers = HeaderMap::new();
+        headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
 
         Ok(Self {
-            registry: registry.clone(),
-            client: client_builder.build()?,
+            registry: uri.clone(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .default_headers(headers)
+                .build()?,
         })
+    }
+
+    pub fn from_credentials(uri: &RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
+        if let Some(token) = credentials.registry_tokens.get(uri) {
+            Self::with_token(uri, token)
+        } else {
+            Self::new(uri)
+        }
     }
 
     /// Pings artifactory to ensure registry access is working
