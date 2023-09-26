@@ -590,8 +590,8 @@ impl DependencyGraph {
                 &local_locked.registry
             );
 
-            let registry = Artifactory::new(local_locked.registry.clone(), credentials)?;
-            let package = registry.download(local_locked.as_dependency()).await?;
+            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
+            let package = registry.download(dependency).await?;
             local_locked.validate(&package).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",
