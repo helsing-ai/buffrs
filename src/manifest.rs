@@ -196,6 +196,20 @@ impl Dependency {
             kind,
         }
     }
+
+    pub fn with_version(&self, version: &Version) -> Dependency {
+        let mut dependency = self.clone();
+        dependency.manifest.version = VersionReq {
+            comparators: vec![semver::Comparator {
+                op: semver::Op::Exact,
+                major: version.major,
+                minor: Some(version.minor),
+                patch: Some(version.patch),
+                pre: version.pre.clone(),
+            }],
+        };
+        dependency
+    }
 }
 
 impl Display for Dependency {
