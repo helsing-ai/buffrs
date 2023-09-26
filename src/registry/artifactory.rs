@@ -33,10 +33,23 @@ impl Artifactory {
             reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
 
         if let Some(token) = credentials.registry_tokens.get(&registry) {
+            tracing::info!(
+                uri=?registry.as_str(),
+                token_length=?token.len(),
+                "The {} header is set",
+                Self::JFROG_AUTH_HEADER,
+            );
+
             let mut headers = HeaderMap::new();
             headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
 
             client_builder = client_builder.default_headers(headers);
+        } else {
+            tracing::info!(
+                uri=?registry.as_str(),
+                "The {} header is NOT set",
+                Self::JFROG_AUTH_HEADER,
+            );
         }
 
         Ok(Self {
@@ -56,9 +69,15 @@ impl Artifactory {
 
         let response = self.client.get(repositories_url).send().await?;
 
-        ensure!(response.status().is_success(), "Failed to ping artifactory");
+        let status = response.status();
 
-        tracing::debug!("pinging artifactory succeeded");
+        if !status.is_success() {
+            tracing::info!("Artifactory response header: {:?}", response);
+        }
+
+        ensure!(status.is_success(), "Failed to ping artifactory");
+
+        tracing::debug!("Pinging artifactory succeeded");
 
         Ok(())
     }
