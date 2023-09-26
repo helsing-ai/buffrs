@@ -33,18 +33,20 @@ impl Artifactory {
             reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
 
         if let Some(token) = credentials.registry_tokens.get(&registry) {
-            tracing::info!(
-                uri=?registry.as_str(),
-                token_length=?token.len(),
-                "The {} header is set",
-                Self::JFROG_AUTH_HEADER,
-            );
+            if std::env::var("BUFFRS_TESTSUITE").is_err() {
+                tracing::info!(
+                    uri=?registry.as_str(),
+                    token_length=?token.len(),
+                    "The {} header is set",
+                    Self::JFROG_AUTH_HEADER,
+                );
+            }
 
             let mut headers = HeaderMap::new();
             headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
 
             client_builder = client_builder.default_headers(headers);
-        } else {
+        } else if std::env::var("BUFFRS_TESTSUITE").is_err() {
             tracing::info!(
                 uri=?registry.as_str(),
                 "The {} header is NOT set",
