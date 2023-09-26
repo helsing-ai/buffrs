@@ -141,7 +141,8 @@ impl Registry for Artifactory {
 
         ensure!(
             response.status() != 302,
-            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+            "Remote server attempted to redirect request - is this registry URL valid? {}",
+            dependency.manifest.registry,
         );
 
         let headers = response.headers();

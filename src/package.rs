@@ -534,9 +534,14 @@ impl DependencyGraph {
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
-            let dependency_reg = dependency.manifest.registry.clone();
-            let dependency_repo = dependency.manifest.repository.clone();
-            let dependency_pkg = Self::resolve(dependency, is_root, lockfile, credentials).await?;
+            let dependency_pkg = Self::resolve(dependency.clone(), is_root, lockfile, credentials)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Error resolving dependency {} with version {}",
+                        dependency.package, dependency.manifest.version
+                    )
+                })?;
             let dependency_name = dependency_pkg.name().clone();
 
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -549,8 +554,8 @@ impl DependencyGraph {
                 dependency_name.clone(),
                 ResolvedDependency {
                     package: dependency_pkg,
-                    registry: dependency_reg,
-                    repository: dependency_repo,
+                    registry: dependency.manifest.registry,
+                    repository: dependency.manifest.repository,
                     dependants: vec![Dependant { name, version_req }],
                     depends_on: sub_dependency_names,
                 },
@@ -597,7 +602,13 @@ impl DependencyGraph {
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
             let package = registry
                 .download(dependency.with_version(&local_locked.version))
-                .await?;
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Error downloading package {}@{}",
+                        local_locked.name, local_locked.version
+                    )
+                })?;
             local_locked.validate(&package).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",
