@@ -55,15 +55,34 @@ impl Artifactory {
 
             let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
             {
+                let first_two: String = token.chars().take(2).collect();
+
+                tracing::info!(
+                    uri=?repositories_uri.as_str(),
+                    "Pinging with the {} header set. It has a length of {} bytes, starting with {:?}",
+                    Self::JFROG_AUTH_HEADER,
+                    token.len(),
+                    first_two,
+                );
                 builder.header(Self::JFROG_AUTH_HEADER, token)
             } else {
+                tracing::info!(
+                    uri=?repositories_uri.as_str(),
+                    "Pinging without the {} set",
+                    Self::JFROG_AUTH_HEADER
+                );
                 builder
             };
 
             builder.send().await?
         };
 
-        ensure!(response.status().is_success(), "Failed to ping artifactory");
+        let status = response.status();
+        ensure!(
+            response.status().is_success(),
+            "Failed to ping artifactory. Status {status}",
+            status = status.as_u16()
+        );
 
         tracing::debug!("pinging artifactory succeeded");
 
