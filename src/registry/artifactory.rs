@@ -15,43 +15,40 @@
 use super::{Registry, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use eyre::{ensure, Context, ContextCompat};
-use reqwest::header::HeaderMap;
 use url::Url;
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
     registry: RegistryUri,
+    token: Option<String>,
     client: reqwest::Client,
 }
 
 impl Artifactory {
-    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
-
     /// Creates an instance for the given URI without authentication
     pub fn new(uri: &RegistryUri) -> eyre::Result<Self> {
         Ok(Self {
             registry: uri.clone(),
+            token: None,
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
         })
     }
 
-    /// Creates an instance for the given URI with token-based authentication
+    /// Creates an instance for the given URI with authentication
     pub fn with_token(uri: &RegistryUri, token: &str) -> eyre::Result<Self> {
-        let mut headers = HeaderMap::new();
-        headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
-
         Ok(Self {
             registry: uri.clone(),
+            token: Some(token.to_owned()),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
-                .default_headers(headers)
                 .build()?,
         })
     }
 
+    /// Creates an instance for the given URI with authentication if provided in Credentials
     pub fn from_credentials(uri: &RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
         if let Some(token) = credentials.registry_tokens.get(uri) {
             Self::with_token(uri, token)
@@ -69,7 +66,13 @@ impl Artifactory {
             uri.into()
         };
 
-        let response = self.client.get(repositories_url).send().await?;
+        let mut request = self.client.get(repositories_url);
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+
+        let response = request.send().await?;
 
         let status = response.status();
 
@@ -137,7 +140,13 @@ impl Registry for Artifactory {
 
         tracing::debug!("Hitting download URL: {artifact_url}");
 
-        let response = self.client.get(artifact_url).send().await?;
+        let mut request = self.client.get(artifact_url);
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+
+        let response = request.send().await?;
 
         ensure!(
             response.status() != 302,
@@ -186,10 +195,13 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = self
-            .client
-            .put(artifact_uri)
-            .body(package.tgz.clone())
+        let mut request = self.client.put(artifact_uri).body(package.tgz.clone());
+
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+
+        let response = request
             .send()
             .await
             .wrap_err("Failed to upload release to artifactory")?;
