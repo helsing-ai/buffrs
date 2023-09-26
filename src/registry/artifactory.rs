@@ -77,8 +77,7 @@ impl Artifactory {
         let status = response.status();
 
         if !status.is_success() {
-            tracing::info!(response_header=?response.headers());
-            tracing::info!(response_body=?response.text().await?);
+            tracing::info!("Artifactory response header: {:?}", response);
         }
 
         ensure!(
