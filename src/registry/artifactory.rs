@@ -114,6 +114,8 @@ impl Registry for Artifactory {
             url.into()
         };
 
+        tracing::debug!("Hitting download URL: {artifact_url}");
+
         let response = self.client.get(artifact_url).send().await?;
 
         ensure!(
