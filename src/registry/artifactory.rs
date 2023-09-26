@@ -12,38 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
-use eyre::{ensure, Context, ContextCompat};
-use url::Url;
-
 use super::{Registry, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
+use eyre::{ensure, Context, ContextCompat};
+use reqwest::header::HeaderMap;
+use url::Url;
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    credentials: Arc<Credentials>,
     registry: RegistryUri,
+    client: reqwest::Client,
 }
 
 impl Artifactory {
     const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
 
-    pub fn new(credentials: Arc<Credentials>, registry: RegistryUri) -> Self {
-        Self {
-            credentials,
-            registry,
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
+        let mut client_builder =
+            reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+
+        if let Some(token) = credentials.registry_tokens.get(&registry) {
+            let mut headers = HeaderMap::new();
+            headers.insert(Self::JFROG_AUTH_HEADER, token.parse()?);
+
+            client_builder = client_builder.default_headers(headers);
         }
+
+        Ok(Self {
+            registry: registry.clone(),
+            client: client_builder.build()?,
+        })
     }
 
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let repositories_uri = {
+        let repositories_url: Url = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
-            uri
+            uri.into()
         };
 
         let response = {
@@ -126,7 +134,7 @@ impl Registry for Artifactory {
             }
         );
 
-        let artifact_uri = {
+        let artifact_url: Url = {
             let path = dependency.manifest.registry.path().to_owned();
 
             let mut url = dependency.manifest.registry.clone();
@@ -139,28 +147,10 @@ impl Registry for Artifactory {
                 version
             ));
 
-            url
+            url.into()
         };
 
-        let response = {
-            let builder = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .wrap_err("client error")?
-                .get((*artifact_uri).clone());
-
-            let builder = if let Some(token) = self
-                .credentials
-                .registry_tokens
-                .get(&dependency.manifest.registry)
-            {
-                builder.header(Self::JFROG_AUTH_HEADER, token)
-            } else {
-                builder
-            };
-
-            builder.send().await?
-        };
+        let response = self.client.get(artifact_url).send().await?;
 
         ensure!(
             response.status() != 302,
@@ -208,26 +198,13 @@ impl Registry for Artifactory {
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = {
-            let builder = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .wrap_err("client error")?
-                .put(artifact_uri.clone())
-                .body(package.tgz.clone());
-
-            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
-            {
-                builder.header(Self::JFROG_AUTH_HEADER, token)
-            } else {
-                builder
-            };
-
-            builder
-                .send()
-                .await
-                .wrap_err("Failed to upload release to artifactory")?
-        };
+        let response = self
+            .client
+            .put(artifact_uri)
+            .body(package.tgz.clone())
+            .send()
+            .await
+            .wrap_err("Failed to upload release to artifactory")?;
 
         ensure!(
             response.status() != 302,

@@ -163,7 +163,7 @@ pub async fn publish(
         }
     }
 
-    let artifactory = Artifactory::new(Arc::new(credentials), registry);
+    let artifactory = Artifactory::new(registry, &credentials)?;
 
     let package = PackageStore::release()
         .await
@@ -281,7 +281,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
 
     credentials.registry_tokens.insert(registry.clone(), token);
 
-    let artifactory = Artifactory::new(Arc::new(credentials.clone()), registry.clone());
+    let artifactory = Artifactory::new(registry, &credentials)?;
 
     if env::var("BUFFRS_TESTSUITE").is_err() {
         artifactory

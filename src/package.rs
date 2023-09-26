@@ -591,7 +591,7 @@ impl DependencyGraph {
                 &local_locked.registry
             );
 
-            let registry = Artifactory::new(credentials.clone(), local_locked.registry.clone());
+            let registry = Artifactory::new(local_locked.registry.clone(), credentials)?;
             let package = registry.download(local_locked.as_dependency()).await?;
             local_locked.validate(&package).wrap_err_with(|| {
                 format!(
@@ -602,8 +602,7 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry =
-                Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
+            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
             registry.download(dependency).await
         }
     }
