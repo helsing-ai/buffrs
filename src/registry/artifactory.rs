@@ -55,20 +55,17 @@ impl Artifactory {
 
             let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
             {
-                let first_two: String = token.chars().take(2).collect();
-
                 tracing::info!(
                     uri=?repositories_uri.as_str(),
-                    "Pinging with the {} header set. It has a length of {} bytes, starting with {:?}",
+                    length=?token.len(),
+                    "Pinging with the {} header set",
                     Self::JFROG_AUTH_HEADER,
-                    token.len(),
-                    first_two,
                 );
                 builder.header(Self::JFROG_AUTH_HEADER, token)
             } else {
                 tracing::info!(
                     uri=?repositories_uri.as_str(),
-                    "Pinging without the {} set",
+                    "Pinging WITHOUT the {} header set",
                     Self::JFROG_AUTH_HEADER
                 );
                 builder
