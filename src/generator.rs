@@ -23,6 +23,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{manifest::Manifest, package::PackageStore};
 
+/// The directory used for the generated code
+pub const BUILD_DIRECTORY: &str = "proto/build";
+
 /// The language used for code generation
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
@@ -52,7 +55,7 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self, out_dir: PathBuf, language: Language) -> eyre::Result<()> {
+    pub async fn run(&self) -> eyre::Result<()> {
         let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
@@ -64,7 +67,6 @@ impl Generator {
         match self {
             Generator::Tonic => {
                 tonic_build::configure()
-                    .out_dir(out_dir) // If env var OUT_DIR is not set, Tonic throws a rather unhelpful error
                     .build_client(true)
                     .build_server(true)
                     .build_transport(true)
@@ -114,24 +116,19 @@ impl Generator {
         Ok(())
     }
 
-    /// Generate the code bindings for a language
-    pub async fn generate(language: Language) -> eyre::Result<()> {
+    pub async fn generate(&self) -> eyre::Result<()> {
         let manifest = Manifest::read().await?;
 
         tracing::info!(":: initializing code generator");
 
         eyre::ensure!(
-        manifest.package.is_some() || !manifest.dependencies.is_empty(),
-        "Either a local package or at least one dependency is needed to generate code bindings."
-    );
+            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
+            "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
+        );
 
-        // Only tonic is supported right now
-        let generator = Generator::Tonic;
-
-        generator
-            .run()
+        self.run()
             .await
-            .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
+            .wrap_err_with(|| "Failed to generate bindings")?;
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);

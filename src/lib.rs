@@ -63,15 +63,6 @@ pub fn build() -> eyre::Result<()> {
 #[macro_export]
 macro_rules! include {
     () => {
-        let output_directory = match env!("OUT_DIR") {
-            Some(dir) => dir,
-            None => {
-                let output_directory = "proto/gen".to_string();
-                tracing::warn!("outputting to default location: {output_directory}");
-                output_directory
-            }
-        };
-
-        ::std::include!(concat!(output_directory, "/buffrs.rs",));
+        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
     };
 }
