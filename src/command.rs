@@ -14,13 +14,13 @@
 
 use crate::{
     credentials::Credentials,
-    generator,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
     registry::{Artifactory, Registry, RegistryUri},
-    Language,
 };
+#[cfg(feature = "build")]
+use crate::{generator, Language};
 use async_recursion::async_recursion;
 use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
@@ -142,9 +142,10 @@ pub async fn publish(
     credentials: Credentials,
     registry: RegistryUri,
     repository: String,
-    allow_dirty: bool,
+    #[cfg(feature = "build")] allow_dirty: bool,
     dry_run: bool,
 ) -> eyre::Result<()> {
+    #[cfg(feature = "build")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
@@ -257,6 +258,7 @@ pub async fn uninstall() -> eyre::Result<()> {
 }
 
 /// Generate bindings for a given language
+#[cfg(feature = "build")]
 pub async fn generate(language: Language) -> eyre::Result<()> {
     generator::generate(language)
         .await
