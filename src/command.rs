@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#[cfg(feature = "build")]
+use crate::generator;
 use crate::{
     credentials::Credentials,
-    generator,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
@@ -142,9 +143,10 @@ pub async fn publish(
     credentials: Credentials,
     uri: RegistryUri,
     repository: String,
-    allow_dirty: bool,
+    #[cfg(feature = "build")] allow_dirty: bool,
     dry_run: bool,
 ) -> eyre::Result<()> {
+    #[cfg(feature = "build")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
@@ -262,6 +264,7 @@ pub async fn uninstall() -> eyre::Result<()> {
 }
 
 /// Generate bindings for a given language
+#[cfg(feature = "build")]
 pub async fn generate(language: Language) -> eyre::Result<()> {
     generator::generate(language)
         .await
