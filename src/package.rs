@@ -132,7 +132,7 @@ impl PackageStore {
 
         ensure!(
             manifest.package.kind != PackageType::Impl,
-            "Impl packages cannot be published"
+            "Packages with type `impl` cannot be published"
         );
 
         if let PackageType::Lib = manifest.package.kind {
