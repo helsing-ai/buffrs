@@ -13,7 +13,7 @@
 * [Buffrs Guide](guide/index.md)
     * [Why Buffrs Exists](guide/why-buffrs-exists.md)
     * [The Framework](guide/the-framework.md)
-    * [Project Types](guide/project-types.md)
+    * [Package Types](guide/package-types.md)
     * [Dependencies](guide/dependencies.md)
     * [Creating a Package](guide/creating-a-new-package.md)
     * [Consuming Packages](guide/consuming-packages.md)
