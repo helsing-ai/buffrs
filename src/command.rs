@@ -29,10 +29,10 @@ use std::{env, path::Path, sync::Arc};
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
 /// Initializes the project
-pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
+pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
     ensure!(
         !Manifest::exists().await?,
-        "Cant initialize existing project"
+        "Cannot re-initialize an existing project"
     );
 
     const DIR_ERR: &str = "Failed to read current directory name";
@@ -50,7 +50,7 @@ pub async fn init(r#type: PackageType, name: Option<PackageName>) -> eyre::Resul
 
     let manifest = Manifest {
         package: PackageManifest {
-            kind: r#type,
+            kind,
             name,
             version: INITIAL_VERSION,
             description: None,
