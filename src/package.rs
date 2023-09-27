@@ -130,9 +130,12 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        let pkg_manifest = manifest.package.clone();
+        ensure!(
+            manifest.package.kind != PackageType::Impl,
+            "Packages with type `impl` cannot be published"
+        );
 
-        if let PackageType::Lib = pkg_manifest.kind {
+        if let PackageType::Lib = manifest.package.kind {
             ensure!(
                 manifest.dependencies.is_empty(),
                 "Libraries can not have any dependencies"
@@ -225,7 +228,11 @@ impl PackageStore {
             .wrap_err("Failed to release package")?
             .into();
 
-        tracing::info!(":: packaged {}@{}", pkg_manifest.name, pkg_manifest.version);
+        tracing::info!(
+            ":: packaged {}@{}",
+            manifest.package.name,
+            manifest.package.version
+        );
 
         Ok(Package::new(manifest, tgz))
     }
