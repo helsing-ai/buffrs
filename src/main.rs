@@ -101,7 +101,7 @@ enum Command {
         #[clap(long = "lang")]
         #[arg(value_enum)]
         language: buffrs::generator::Language,
-
+        /// Directory where generated code should be created
         #[clap(long = "out-dir")]
         out_dir: PathBuf,
     },

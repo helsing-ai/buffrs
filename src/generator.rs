@@ -44,7 +44,9 @@ impl fmt::Display for Language {
 /// Backend used to generate code bindings
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
+    /// The tonic + prost stack
     Tonic,
+    /// For protoc generator
     Protoc {
         language: Language,
         out_dir: PathBuf,
