@@ -82,7 +82,7 @@ impl Generator {
                     }
                 }
 
-                // Setting proto path causes protoc to replace occurences of this string appearing in the
+                // Setting proto path causes protoc to replace occurrences of this string appearing in the
                 // path of the generated path with that provided by output path
                 // e.g. if input proto path is proto/vendor/units/units.proto and the proto path is 'proto'
                 // and the --python_out is 'proto/build/gen' then the file will be output to
