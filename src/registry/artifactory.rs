@@ -1,59 +1,67 @@
-// (c) Copyright 2023 Helsing GmbH. All rights reserved.
-
-use std::sync::Arc;
-
-use eyre::{ensure, Context, ContextCompat};
-use url::Url;
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 use super::{Registry, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
+use eyre::{ensure, Context, ContextCompat};
+use url::Url;
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    credentials: Arc<Credentials>,
     registry: RegistryUri,
+    token: Option<String>,
+    client: reqwest::Client,
 }
 
 impl Artifactory {
-    const JFROG_AUTH_HEADER: &str = "X-JFrog-Art-Api";
-
-    pub fn new(credentials: Arc<Credentials>, registry: RegistryUri) -> Self {
-        Self {
-            credentials,
-            registry,
-        }
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
+        Ok(Self {
+            registry: registry.clone(),
+            token: credentials.registry_tokens.get(&registry).cloned(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?,
+        })
     }
 
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> eyre::Result<()> {
-        let repositories_uri = {
+        let repositories_url: Url = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
-            uri
+            uri.into()
         };
 
-        let response = {
-            let builder = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .wrap_err("client error")?
-                .get(repositories_uri.as_str());
+        let mut request = self.client.get(repositories_url);
 
-            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
-            {
-                builder.header(Self::JFROG_AUTH_HEADER, token)
-            } else {
-                builder
-            };
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
 
-            builder.send().await?
-        };
+        let response = request.send().await?;
 
-        ensure!(response.status().is_success(), "Failed to ping artifactory");
+        let status = response.status();
 
-        tracing::debug!("pinging artifactory succeeded");
+        if !status.is_success() {
+            tracing::info!("Artifactory response header: {:?}", response);
+        }
+
+        ensure!(status.is_success(), "Failed to ping artifactory");
+
+        tracing::debug!("Pinging artifactory succeeded");
 
         Ok(())
     }
@@ -93,7 +101,7 @@ impl Registry for Artifactory {
             }
         );
 
-        let artifact_uri = {
+        let artifact_url: Url = {
             let path = dependency.manifest.registry.path().to_owned();
 
             let mut url = dependency.manifest.registry.clone();
@@ -106,32 +114,34 @@ impl Registry for Artifactory {
                 version
             ));
 
-            url
+            url.into()
         };
 
-        let response = {
-            let builder = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .wrap_err("client error")?
-                .get((*artifact_uri).clone());
+        tracing::debug!("Hitting download URL: {artifact_url}");
 
-            let builder = if let Some(token) = self
-                .credentials
-                .registry_tokens
-                .get(&dependency.manifest.registry)
-            {
-                builder.header(Self::JFROG_AUTH_HEADER, token)
-            } else {
-                builder
-            };
+        let mut request = self.client.get(artifact_url);
 
-            builder.send().await?
-        };
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+
+        let response = request.send().await?;
 
         ensure!(
-            response.status() != 302,
-            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+            !response.status().is_redirection(),
+            "Remote server attempted to redirect request - is this registry URL valid? {}",
+            dependency.manifest.registry,
+        );
+
+        ensure!(
+            response.status() != 401,
+            "Unauthorized - please provide registry credentials with `buffrs login`",
+        );
+
+        ensure!(
+            response.status().is_success(),
+            "Failed to fetch {dependency}: {}",
+            response.status()
         );
 
         let headers = response.headers();
@@ -144,17 +154,16 @@ impl Registry for Artifactory {
             "Server response has incorrect mime type: {content_type:?}"
         );
 
-        ensure!(
-            response.status().is_success(),
-            "Failed to fetch {dependency}: {}",
-            response.status()
-        );
-
         tracing::debug!("downloaded dependency {dependency}");
 
         let tgz = response.bytes().await.wrap_err("Failed to download tar")?;
 
-        Package::try_from(tgz)
+        Package::try_from(tgz).wrap_err_with(|| {
+            format!(
+                "Failed to process dependency {}@{}",
+                dependency.package, version
+            )
+        })
     }
 
     /// Publishes a package to artifactory
@@ -163,51 +172,46 @@ impl Registry for Artifactory {
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
             repository,
-            package.manifest.name,
-            package.manifest.name,
-            package.manifest.version,
+            package.name(),
+            package.name(),
+            package.version(),
         )
         .parse()
         .wrap_err("Failed to construct artifact uri")?;
 
-        let response = {
-            let builder = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .wrap_err("client error")?
-                .put(artifact_uri.clone())
-                .body(package.tgz);
+        let mut request = self.client.put(artifact_uri).body(package.tgz.clone());
 
-            let builder = if let Some(token) = self.credentials.registry_tokens.get(&self.registry)
-            {
-                builder.header(Self::JFROG_AUTH_HEADER, token)
-            } else {
-                builder
-            };
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
 
-            builder
-                .send()
-                .await
-                .wrap_err("Failed to upload release to artifactory")?
-        };
+        let response = request
+            .send()
+            .await
+            .wrap_err("Failed to upload release to artifactory")?;
 
         ensure!(
-            response.status() != 302,
-            "Remote server attempted to redirect publish request - is the Artifactory URL valid?"
+            !response.status().is_redirection(),
+            "Remote server attempted to redirect publish request - is the registry URL valid?"
+        );
+
+        ensure!(
+            response.status() != 401,
+            "Unauthorized - please provide registry credentials with `buffrs login`",
         );
 
         ensure!(
             response.status().is_success(),
             "Failed to publish {}: {}",
-            package.manifest.name,
+            package.name(),
             response.status()
         );
 
         tracing::info!(
             ":: published {}/{}@{}",
             repository,
-            package.manifest.name,
-            package.manifest.version
+            package.name(),
+            package.version()
         );
 
         Ok(())

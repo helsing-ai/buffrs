@@ -1,3 +1,17 @@
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -25,7 +39,6 @@ impl fmt::Display for Language {
 }
 
 /// Backend used to generate code bindings
-// #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)] # TODO (alex.spencer) - was Copy ever used, why can it not be implemented for this type now?
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
     Tonic,
@@ -58,10 +71,7 @@ impl Generator {
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
-            Generator::Protoc {
-                language: language,
-                out_dir: out_dir,
-            } => {
+            Generator::Protoc { language, out_dir } => {
                 let mut protoc_cmd = std::process::Command::new(protoc);
 
                 match language {
@@ -103,43 +113,44 @@ impl Generator {
 
         Ok(())
     }
-}
 
-/// Generate the code bindings for a language
-pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
-    let manifest = Manifest::read().await?;
+    /// Generate the code bindings for a language
+    pub async fn generate(language: Language) -> eyre::Result<()> {
+        let manifest = Manifest::read().await?;
 
-    tracing::info!(":: initializing code generator for {language}");
+        tracing::info!(":: initializing code generator");
 
-    eyre::ensure!(
+        eyre::ensure!(
         manifest.package.is_some() || !manifest.dependencies.is_empty(),
         "Either a local package or at least one dependency is needed to generate code bindings."
     );
 
-    // Only tonic is supported right now
-    let generator = Generator::Protoc {
-        language,
-        out_dir: out_dir.clone(),
-    };
+        // Only tonic is supported right now
+        let generator = Generator::Tonic;
 
-    generator
-        .run(out_dir, language)
-        .await
-        .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
+        generator
+            .run()
+            .await
+            .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
-    if let Some(ref pkg) = manifest.package {
-        let location = Path::new(PackageStore::PROTO_PATH);
-        tracing::info!(":: compiled {} [{}]", pkg.name, location.display());
+        if manifest.package.kind.compilable() {
+            let location = Path::new(PackageStore::PROTO_PATH);
+            tracing::info!(
+                ":: compiled {} [{}]",
+                manifest.package.name,
+                location.display()
+            );
+        }
+
+        for dependency in manifest.dependencies {
+            let location = PackageStore::locate(&dependency.package);
+            tracing::info!(
+                ":: compiled {} [{}]",
+                dependency.package,
+                location.display()
+            );
+        }
+
+        Ok(())
     }
-
-    for dependency in manifest.dependencies {
-        let location = PackageStore::locate(&dependency.package);
-        tracing::info!(
-            ":: compiled {} [{}]",
-            dependency.package,
-            location.display()
-        );
-    }
-
-    Ok(())
 }

@@ -34,7 +34,7 @@
     * [Environment Variables]()
     * [Build Configuration]()
     * [Publishing on buff.rs]()
-    * [Package ID Specifications]()
+    * [Package Name Specifications]()
     * [Dependency Resolution]()
     * [SemVer Compatibility]()
 
@@ -66,7 +66,8 @@
         * [buffrs update]()
     * [Package Commands]()
         * [buffrs init]()
-        * [buffrs install]()
+        * [buffrs package]()
+        * [buffrs install](commands/buffrs-install.md)
         * [buffrs uninstall]()
     * [Publishing Commands]()
         * [buffrs login]()
