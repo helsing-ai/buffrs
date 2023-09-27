@@ -132,18 +132,16 @@ impl RegistryProvider {
 
     pub fn get_or_create(
         &mut self,
-        registry_uri: &RegistryUri,
+        uri: &RegistryUri,
     ) -> eyre::Result<Arc<dyn Registry + Send + Sync>> {
-        if !self.registries.contains_key(registry_uri) {
-            let registry = Arc::new(match registry_uri.kind() {
-                RegistryType::Artifactory => {
-                    Artifactory::from_credentials(registry_uri, &self.credentials)?
-                }
+        if !self.registries.contains_key(uri) {
+            let registry = Arc::new(match uri.kind() {
+                RegistryType::Artifactory => Artifactory::from_credentials(uri, &self.credentials)?,
             });
 
-            self.registries.insert(registry_uri.clone(), registry);
+            self.registries.insert(uri.clone(), registry);
         }
 
-        Ok(self.registries.get(registry_uri).unwrap().clone())
+        Ok(self.registries.get(uri).unwrap().clone())
     }
 }
