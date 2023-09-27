@@ -53,13 +53,7 @@ impl Artifactory {
 
         let response = request.send().await?;
 
-        let status = response.status();
-
-        if !status.is_success() {
-            tracing::info!("Artifactory response header: {:?}", response);
-        }
-
-        ensure!(status.is_success(), "Failed to ping artifactory");
+        response.error_for_status()?;
 
         tracing::debug!("Pinging artifactory succeeded");
 

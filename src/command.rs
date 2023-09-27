@@ -23,6 +23,7 @@ use crate::{
 use crate::{generator, Language};
 use async_recursion::async_recursion;
 use eyre::{ensure, Context, ContextCompat};
+use inquire::Password;
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
@@ -269,17 +270,11 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
 
 /// Logs you in for a registry
 pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
-    let token = {
-        tracing::info!("Please enter your artifactory token:");
-
-        let mut raw = String::new();
-
-        std::io::stdin()
-            .read_line(&mut raw)
-            .wrap_err("Failed to read token")?;
-
-        raw.trim().into()
-    };
+    let token = Password::new("Please enter your artifactory token:")
+        .with_display_mode(inquire::PasswordDisplayMode::Masked)
+        .with_help_message("An identity token can be generated from your user profile")
+        .without_confirmation()
+        .prompt()?;
 
     credentials.registry_tokens.insert(registry.clone(), token);
 

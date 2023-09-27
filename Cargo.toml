@@ -52,6 +52,7 @@ tracing-subscriber = "0.3"
 url = { version = "2.4", features = ["serde"] }
 walkdir = "2"
 async-recursion = "1.0.5"
+inquire = "0.6.2"
 
 [dependencies.reqwest]
 version = "0.11"
