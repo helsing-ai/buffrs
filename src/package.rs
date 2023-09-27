@@ -616,6 +616,7 @@ impl DependencyGraph {
                         local_locked.name, local_locked.version
                     )
                 })?;
+
             local_locked.validate(&package).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",
