@@ -179,6 +179,7 @@ impl Dependency {
         }
     }
 
+    /// Creates a copy of this dependency with a pinned version
     pub fn with_version(&self, version: &Version) -> Dependency {
         let mut dependency = self.clone();
         dependency.manifest.version = VersionReq {
