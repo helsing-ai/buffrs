@@ -1,3 +1,17 @@
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use std::{fmt, path::Path};
 
 use eyre::Context;
@@ -66,8 +80,8 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     tracing::info!(":: initializing code generator for {language}");
 
     eyre::ensure!(
-        manifest.package.is_some() || !manifest.dependencies.is_empty(),
-        "Either a local package or at least one dependency is needed to generate code bindings."
+        manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
+        "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
     );
 
     // Only tonic is supported right now
@@ -78,9 +92,13 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
         .await
         .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
 
-    if let Some(ref pkg) = manifest.package {
+    if manifest.package.kind.compilable() {
         let location = Path::new(PackageStore::PROTO_PATH);
-        tracing::info!(":: compiled {} [{}]", pkg.name, location.display());
+        tracing::info!(
+            ":: compiled {} [{}]",
+            manifest.package.name,
+            location.display()
+        );
     }
 
     for dependency in manifest.dependencies {

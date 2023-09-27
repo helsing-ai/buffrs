@@ -1,12 +1,28 @@
-// (c) Copyright 2023 Helsing GmbH. All rights reserved.
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #![doc = include_str!("../README.md")]
 
+/// CLI command implementations
+pub mod command;
 /// Credential management
 pub mod credentials;
 /// Code generator
 #[cfg(feature = "build")]
 pub mod generator;
+/// Lockfile implementation
+pub mod lock;
 /// Manifest format and IO
 pub mod manifest;
 /// Packages formats and utilities
@@ -14,64 +30,28 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
-use std::sync::Arc;
-
 #[cfg(feature = "build")]
 pub use generator::Language;
-
-use credentials::Credentials;
-use eyre::{ContextCompat, WrapErr};
-use manifest::Manifest;
-use package::PackageStore;
-use registry::Artifactory;
 
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
+    use credentials::Credentials;
+    use package::PackageStore;
+
+    async fn install() -> eyre::Result<()> {
+        let credentials = Credentials::read().await?;
+        command::install(credentials).await
+    }
+
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
 
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
     rt.block_on(generator::generate(Language::Rust))?;
-
-    Ok(())
-}
-
-async fn install() -> eyre::Result<()> {
-    let credentials = Arc::new(Credentials::read().await?);
-    let manifest = Manifest::read().await?;
-
-    let mut install = Vec::new();
-
-    for dependency in manifest.dependencies {
-        if let Ok(pkg) = PackageStore::resolve(&dependency.package).await {
-            let pkg = pkg.package.wrap_err_with(|| {
-                format!(
-                    "required package entry in manifest of {} to be present",
-                    dependency.package
-                )
-            })?;
-
-            if dependency.manifest.version.matches(&pkg.version) {
-                continue;
-            }
-        }
-
-        let artifactory =
-            Artifactory::new(credentials.clone(), dependency.manifest.registry.clone());
-
-        install.push(PackageStore::install(
-            dependency.clone(),
-            artifactory.clone(),
-        ));
-    }
-
-    futures::future::try_join_all(install)
-        .await
-        .wrap_err("Failed to install missing dependencies")?;
 
     Ok(())
 }

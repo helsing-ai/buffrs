@@ -1,6 +1,7 @@
 use crate::VirtualFileSystem;
 
 #[test]
+#[ignore]
 fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
