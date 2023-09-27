@@ -515,6 +515,7 @@ impl DependencyGraph {
             Self::process_dependency(
                 name.clone(),
                 dependency.clone(),
+                true,
                 lockfile,
                 credentials,
                 &mut entries,
@@ -529,20 +530,25 @@ impl DependencyGraph {
     async fn process_dependency(
         name: PackageName,
         dependency: Dependency,
+        is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
-
         if let Some(entry) = entries.get_mut(&dependency.package) {
             ensure!(version_req.matches(entry.package.version()), "A dependency of your project requires {}@{} which collides with {}@{} required by {}", dependency.package, dependency.manifest.version, entry.package.name(), entry.package.version(), entry.dependants[0].name);
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
-            let dependency_reg = dependency.manifest.registry.clone();
-            let dependency_repo = dependency.manifest.repository.clone();
-            let dependency_pkg = Self::resolve(dependency, lockfile, credentials).await?;
+            let dependency_pkg = Self::resolve(dependency.clone(), is_root, lockfile, credentials)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Error resolving dependency {} with version {}",
+                        dependency.package, dependency.manifest.version
+                    )
+                })?;
             let dependency_name = dependency_pkg.name().clone();
 
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -555,8 +561,8 @@ impl DependencyGraph {
                 dependency_name.clone(),
                 ResolvedDependency {
                     package: dependency_pkg,
-                    registry: dependency_reg,
-                    repository: dependency_repo,
+                    registry: dependency.manifest.registry,
+                    repository: dependency.manifest.repository,
                     dependants: vec![Dependant { name, version_req }],
                     depends_on: sub_dependency_names,
                 },
@@ -566,6 +572,7 @@ impl DependencyGraph {
                 Self::process_dependency(
                     dependency_name.clone(),
                     sub_dependency,
+                    false,
                     lockfile,
                     credentials,
                     entries,
@@ -579,6 +586,7 @@ impl DependencyGraph {
 
     async fn resolve(
         dependency: Dependency,
+        is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
     ) -> eyre::Result<Package> {
@@ -591,15 +599,24 @@ impl DependencyGraph {
                 &local_locked.version
             );
             ensure!(
-                dependency.manifest.registry == local_locked.registry,
+                is_root || dependency.manifest.registry == local_locked.registry,
                 "Mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                 &dependency.package,
                 &dependency.manifest.registry,
                 &local_locked.registry
             );
 
-            let registry = Artifactory::new(local_locked.registry.clone(), credentials)?;
-            let package = registry.download(local_locked.as_dependency()).await?;
+            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)?;
+            let package = registry
+                .download(dependency.with_version(&local_locked.version))
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Error downloading package {}@{}",
+                        local_locked.name, local_locked.version
+                    )
+                })?;
+
             local_locked.validate(&package).wrap_err_with(|| {
                 format!(
                     "Lockfile validation failed for dependency {}@{}",

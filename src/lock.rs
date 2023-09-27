@@ -16,12 +16,11 @@ use std::{collections::HashMap, str::FromStr};
 
 use eyre::{ensure, Context};
 use ring::digest;
-use semver::{Version, VersionReq};
+use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
 use tokio::fs;
 
 use crate::{
-    manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -231,26 +230,6 @@ impl LockedPackage {
         );
 
         Ok(())
-    }
-
-    /// Constructs a Dependency instance with matching metadata
-    pub fn as_dependency(&self) -> Dependency {
-        Dependency {
-            package: self.name.clone(),
-            manifest: DependencyManifest {
-                version: VersionReq {
-                    comparators: vec![semver::Comparator {
-                        op: semver::Op::Exact,
-                        major: self.version.major,
-                        minor: Some(self.version.minor),
-                        patch: Some(self.version.patch),
-                        pre: self.version.pre.clone(),
-                    }],
-                },
-                registry: self.registry.clone(),
-                repository: self.repository.clone(),
-            },
-        }
     }
 }
 

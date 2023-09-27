@@ -117,6 +117,8 @@ impl Registry for Artifactory {
             url.into()
         };
 
+        tracing::debug!("Hitting download URL: {artifact_url}");
+
         let mut request = self.client.get(artifact_url);
 
         if let Some(token) = &self.token {
@@ -127,7 +129,8 @@ impl Registry for Artifactory {
 
         ensure!(
             response.status() != 302,
-            "Remote server attempted to redirect request - is the Artifactory URL valid?"
+            "Remote server attempted to redirect request - is this registry URL valid? {}",
+            dependency.manifest.registry,
         );
 
         let headers = response.headers();
