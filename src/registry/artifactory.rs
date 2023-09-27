@@ -128,9 +128,20 @@ impl Registry for Artifactory {
         let response = request.send().await?;
 
         ensure!(
-            response.status() != 302,
+            !response.status().is_redirection(),
             "Remote server attempted to redirect request - is this registry URL valid? {}",
             dependency.manifest.registry,
+        );
+
+        ensure!(
+            response.status() != 401,
+            "Unauthorized - please provide registry credentials with `buffrs login`",
+        );
+
+        ensure!(
+            response.status().is_success(),
+            "Failed to fetch {dependency}: {}",
+            response.status()
         );
 
         let headers = response.headers();
@@ -141,12 +152,6 @@ impl Registry for Artifactory {
         ensure!(
             content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
             "Server response has incorrect mime type: {content_type:?}"
-        );
-
-        ensure!(
-            response.status().is_success(),
-            "Failed to fetch {dependency}: {}",
-            response.status()
         );
 
         tracing::debug!("downloaded dependency {dependency}");
@@ -186,8 +191,13 @@ impl Registry for Artifactory {
             .wrap_err("Failed to upload release to artifactory")?;
 
         ensure!(
-            response.status() != 302,
-            "Remote server attempted to redirect publish request - is the Artifactory URL valid?"
+            !response.status().is_redirection(),
+            "Remote server attempted to redirect publish request - is the registry URL valid?"
+        );
+
+        ensure!(
+            response.status() != 401,
+            "Unauthorized - please provide registry credentials with `buffrs login`",
         );
 
         ensure!(
