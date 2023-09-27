@@ -30,17 +30,14 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
-#[cfg(feature = "build")]
-pub use generator::Language;
+use credentials::Credentials;
+use package::PackageStore;
 
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
-    use credentials::Credentials;
-    use package::PackageStore;
-
     async fn install() -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
         command::install(credentials).await
@@ -51,7 +48,7 @@ pub fn build() -> eyre::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(Language::Rust))?;
+    rt.block_on(generator::Generator::Tonic.generate())?;
 
     Ok(())
 }
