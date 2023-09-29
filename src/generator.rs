@@ -90,11 +90,9 @@ impl Generator {
                 // and the --python_out is 'proto/build/gen' then the file will be output to
                 // proto/build/gen/vendor/units/units.py
 
-                // Add the proto_path arg now
                 protoc_cmd.arg("--proto_path").arg("proto/vendor"); // We need both of these if we want "vendor" to be removed, and it has to come first
                 protoc_cmd.arg("--proto_path").arg("proto");
 
-                // Add the proto files we want code generated for
                 protoc_cmd.args(&protos);
 
                 tracing::debug!(":: running {protoc_cmd:?}");
@@ -103,6 +101,7 @@ impl Generator {
                     .output()
                     .await
                     .wrap_err("failed to retrieve protoc output")?;
+
                 let exit = output
                     .status
                     .code()
