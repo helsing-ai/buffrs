@@ -57,7 +57,7 @@ pub enum InitError {
 
 /// Initializes the project
 pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), InitError> {
-    if !Manifest::exists().await.map_err(InitError::Io)? {
+    if Manifest::exists().await.map_err(InitError::Io)? {
         return Err(InitError::ManifestExists);
     }
 
