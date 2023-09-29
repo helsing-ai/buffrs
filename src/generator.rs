@@ -99,7 +99,6 @@ impl Generator {
 
                 tracing::debug!(":: running {protoc_cmd:?}");
 
-                // Run the command, displaying useful error messages for failures
                 let output = protoc_cmd
                     .output()
                     .await
