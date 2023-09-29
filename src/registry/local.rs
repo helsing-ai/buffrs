@@ -15,7 +15,6 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use eyre::{ensure, ContextCompat};
 
 use crate::{manifest::Dependency, package::Package};
 

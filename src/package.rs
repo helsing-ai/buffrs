@@ -42,30 +42,42 @@ use crate::{
 /// IO abstraction layer over local `buffrs` package store
 pub struct PackageStore;
 
+/// Error produced when generating a package release
 #[derive(Error, Debug)]
 pub enum ReleaseError {
+    /// Could not load the manifest file
     #[error("Failed to read manifest. {0}")]
     ManifestReadError(manifest::ReadError),
+    /// Attempted to publish an implementation package
     #[error("Packages with type `impl` cannot be published")]
     InvalidPackageType,
+    /// Attempted to publish a library with dependencies
     #[error("Libraries can not have any dependencies")]
     LibWithDependencies,
+    /// A `lib` or `api` package attempted to depend on an `api` package
     #[error("Depending on API packages is not allowed for {0} packages")]
     ApiDependency(PackageType),
+    /// Contextualized IO error
     #[error("{0}")]
     Io(IoError),
+    /// Could not encode the manifest as a TOML payload
     #[error("Failed to render manifest as TOML: {0}")]
     Toml(toml::ser::Error),
+    /// Serialized manifest was too large to fit in a tarball
     #[error("Manifest too large to package")]
     ManifestTooLarge,
 }
 
+/// Error produced when extracting a package to the filesystem
 #[derive(Error, Debug)]
 pub enum UnpackError {
+    /// Could not decompress the gzip wrapper
     #[error("Failed to decompress package: {0}")]
     Decompress(std::io::Error),
+    /// Could not create the target extraction directory
     #[error("Failed to create dependency directory: {0}")]
     CreateDir(std::io::Error),
+    /// Could not write the data to the filesystem
     #[error("Failed to extract tar contents: {0}")]
     Extract(std::io::Error),
 }
@@ -325,14 +337,19 @@ impl Package {
     }
 }
 
+/// Error produced when decoding a package's binary data
 #[derive(Error, Debug)]
 pub enum DecodePackageError {
+    /// Contextualized input/output error
     #[error("{0}")]
     Io(IoError),
+    /// No manifest file in package
     #[error("Package is missing a manifest file")]
     MissingManifest,
+    /// Manifest not encoded as unicode text
     #[error("Manifest has invalid character encoding (not UTF-8)")]
     Utf8Error,
+    /// Failed to parse the manifest as a TOML payload
     #[error("Manifest has invalid TOML syntax: {0}")]
     TomlDecode(toml::de::Error),
 }
@@ -432,12 +449,16 @@ impl Default for PackageType {
 #[serde(try_from = "String", into = "String")]
 pub struct PackageName(String);
 
+/// Error produced when validating the name of a package
 #[derive(Error, Debug)]
 pub enum PackageNameValidationError {
+    /// Package name has insufficient length
     #[error("Package names must be at least three chars long")]
     InvalidLength(usize),
+    /// Package name contains invalid characters
     #[error("Invalid package name: {0} - only ASCII lowercase alphanumeric characters and dashes are accepted")]
     InvalidCharacters(String),
+    /// Package name begins with an invalid character
     #[error("Package names must begin with an alphabetic letter")]
     InvalidFirstCharacter,
 }
@@ -547,39 +568,60 @@ pub struct DependencyGraph {
     entries: HashMap<PackageName, ResolvedDependency>,
 }
 
+/// Error produced when materializing a package from its locator
 #[derive(Error, Debug)]
 pub enum PackageResolutionError {
+    /// Two or more dependencies have incompatible version requirements for the same package
     #[error("Dependency {name} cannot be satisfied - requested {requested}, but version {locked} is locked.")]
     ConstraintViolation {
+        /// Name of the dependency
         name: PackageName,
+        /// Version requirement of dependency
         requested: VersionReq,
+        /// Version pinned in lockfile
         locked: Version,
     },
+    /// The registry specified in the manifest does not match the one recorded in the lockfile
     #[error("Mismatched registry detected for dependency {name} - requested {requested} but lockfile requires {locked}")]
     MismatchedRegistry {
+        /// Name of the dependency
         name: PackageName,
+        /// Version requirement of dependency
         requested: RegistryUri,
+        /// Version pinned in lockfile
         locked: RegistryUri,
     },
+    /// Downloading from the registry failed
     #[error("Failed to download dependency {name}@{version} from the registry. Cause: {source}")]
     DownloadError {
+        /// Name of the dependency
         name: PackageName,
+        /// Version requirement of dependency
         version: VersionReq,
+        /// Detailed error
         source: eyre::Report,
     },
+    /// The downloaded package did not match the lockfile entry
     #[error("Failed to validate dependency package. {0}")]
     ValidationError(lock::ValidationError),
 }
 
+/// Error produced when constructing the dependency graph
 #[derive(Error, Debug)]
 pub enum DependencyGraphBuildError {
+    /// Could not materialize a package from its locator
     #[error("{0}")]
     PackageResolution(PackageResolutionError),
+    /// Dependencies have mutually conflicting version requirements
     #[error("A dependency of your project requires {package}@{curr} which collides with {package}@{other} required by {dependant}")]
     ConstraintViolation {
+        /// Name of the dependency
         package: PackageName,
+        /// Package that depends on it
         dependant: PackageName,
+        /// The current version requirement
         curr: VersionReq,
+        /// The previous resolved version
         other: Version,
     },
 }
@@ -731,6 +773,7 @@ impl DependencyGraph {
         }
     }
 
+    /// Locates and returns a reference to a resolved dependency package by its name
     pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
         self.entries.get(name)
     }

@@ -31,16 +31,22 @@ use thiserror::Error;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
+/// Error produced when initializing a Buffrs project
 #[derive(Error, Debug)]
 pub enum InitError {
+    /// Repository was already initialized
     #[error("A manifest file is already present in the current director and won't be overriden")]
     ManifestExists,
+    /// Failed to interface with filesystem
     #[error("{0}")]
     Io(IoError),
+    /// Failed to write the manifest to the filesystem
     #[error("Failed to write manifest. Cause: {0}")]
     ManifestWrite(manifest::WriteError),
+    /// System path contains non-unicode data
     #[error("Path is not valid a UTF-8 string")]
     Utf8Error,
+    /// Package name contains invalid characters
     #[error("Invalid package name. {0}")]
     PackageNameValidation(PackageNameValidationError),
 }
@@ -50,8 +56,6 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), In
     if !Manifest::exists().await.map_err(InitError::Io)? {
         return Err(InitError::ManifestExists);
     }
-
-    const DIR_ERR: &str = "Failed to read current directory name";
 
     fn curr_dir_name() -> Result<PackageName, InitError> {
         std::env::current_dir()
@@ -81,23 +85,33 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), In
     PackageStore::create().await.map_err(InitError::Io)
 }
 
+/// Error produced by the add command
 #[derive(Error, Debug)]
 pub enum AddError {
+    /// A repository component could not be extracted
     #[error("Locator {0} is missing a repository delimiter")]
     MissingRepository(String),
+    /// Repository name not in kebab case
     #[error("Repository {0} is not in kebab case")]
     NotKebabCase(String),
+    /// No version could be extracted
     #[error("Dependency specification is missing version part: {0}")]
     MissingVersion(String),
+    /// Dependency name contains invalid characters
     #[error("Failed to validate dependency name. {0}")]
     InvalidName(package::PackageNameValidationError),
+    /// Version does not follow SemVer spec
     #[error("Not a valid version requirement: {given}. Cause: {source}")]
     InvalidVersionReq {
+        /// The raw specification provided by the user
         given: String,
+        /// The original validation error produced by the semver crate
         source: semver::Error,
     },
+    /// Manifest file could not be read
     #[error("Failed to read manifest. {0}")]
     ManifestRead(manifest::ReadError),
+    /// Manifest file could not be written to
     #[error("Failed to write manifest. {0}")]
     ManifestWrite(manifest::WriteError),
 }
@@ -141,12 +155,16 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> Result<(), AddError
     manifest.write().await.map_err(AddError::ManifestWrite)
 }
 
+/// Error produced by the remove command
 #[derive(Error, Debug)]
 pub enum RemoveError {
+    /// Failed to read the manifest file
     #[error("Failed to read manifest. {0}")]
     ManifestRead(manifest::ReadError),
+    /// Package not present in manifest
     #[error("Package {0} not in manifest")]
     PackageNotFound(PackageName),
+    /// Failed to write to the manifest file
     #[error("Failed to write manifest. {0}")]
     ManifestWrite(manifest::WriteError),
 }
@@ -168,10 +186,13 @@ pub async fn remove(package: PackageName) -> Result<(), RemoveError> {
     manifest.write().await.map_err(RemoveError::ManifestWrite)
 }
 
+/// Error produced by the package command
 #[derive(Error, Debug)]
 pub enum PackageError {
+    /// Could not generate a package release from the project
     #[error("Failed to release package. {0}")]
     Release(package::ReleaseError),
+    /// Could not write the package to the filesystem
     #[error("Failed to write package to filesystem. {0}")]
     Io(std::io::Error),
 }
@@ -194,18 +215,24 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> Result<(), P
     Ok(())
 }
 
+/// Error produced by the publish command
 #[derive(Error, Debug)]
 pub enum PublishError {
+    /// Failed to fetch repository status from git
     #[cfg(feature = "build")]
     #[error("Failed to get repository status: {0}")]
     RepositoryStatus(git2::Error),
+    /// Attempted to publish a dirty repository
     #[cfg(feature = "build")]
     #[error("Cannot publish dirty repository")]
     DirtyRepository,
+    /// Failed to generate a package release
     #[error("Cannot release package. {0}")]
     Release(package::ReleaseError),
+    /// Failed to instantiate the registry client
     #[error("Cannot instance registry client. {0}")]
     Registry(registry::artifactory::BuildError),
+    /// Some other error produced by the registry client
     #[error(transparent)]
     Internal(registry::PublishError),
 }
@@ -256,16 +283,22 @@ pub async fn publish(
     Ok(())
 }
 
+/// Error produced by the install command
 #[derive(Error, Debug)]
 pub enum InstallError {
+    /// Could not read the manifest file
     #[error("Failed to read manifest. {0}")]
     ReadManifest(manifest::ReadError),
+    /// Could not read the lockfile
     #[error("Failed to read lockfile. {0}")]
     ReadLockfile(lock::ReadError),
+    /// Could not generate the dependency graph
     #[error("Dependency resolution failed. {0}")]
     BuildDependencyGraph(package::DependencyGraphBuildError),
+    /// Could not write to the lockfile
     #[error("Failed to write lockfile. {0}")]
     WriteLockfile(lock::WriteError),
+    /// Could not extract the package to the local fs store
     #[error("Failed to unpack dependency. {0}")]
     UnpackError(package::UnpackError),
 }
@@ -367,14 +400,19 @@ pub async fn generate(language: Language) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Error produced by the login command
 #[derive(Error, Debug)]
 pub enum LoginError {
+    /// Failed to read the token from the user
     #[error("Failed to read token: {0}")]
     Input(std::io::Error),
+    /// Failed to instantiate the registry client
     #[error("Failed to instantiate an Artifactory client. {0}")]
     Registry(registry::artifactory::BuildError),
+    /// Failed to reach the registry
     #[error("Failed to reach artifactory. Please make sure the URL and credentials are correct and the instance is up and running")]
     Ping(registry::artifactory::PingError),
+    /// Failed to write to the credentials file
     #[error("Failed to update credentials: {0}")]
     Write(credentials::WriteError),
 }
@@ -406,8 +444,10 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Resul
     credentials.write().await.map_err(LoginError::Write)
 }
 
+/// Error produced by the logout command
 #[derive(Error, Debug)]
 pub enum LogoutError {
+    /// Failed to write to the credentials file
     #[error("Failed to update credentials: {0}")]
     Write(credentials::WriteError),
 }

@@ -26,10 +26,12 @@ pub struct Artifactory {
     client: reqwest::Client,
 }
 
+/// Error produced by the ping method
 #[derive(Error, Debug)]
 #[error(transparent)]
 pub struct PingError(#[from] reqwest::Error);
 
+/// Error produced when instantiating an Artifactory registry
 #[derive(Error, Debug)]
 #[error(transparent)]
 pub struct BuildError(#[from] reqwest::Error);

@@ -29,6 +29,7 @@ pub const BUILD_DIRECTORY: &str = "proto/build";
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
+    /// Rust language
     Rust,
 }
 
@@ -46,6 +47,7 @@ pub enum Generator {
 }
 
 impl Generator {
+    /// Tonic include file name
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path

@@ -28,6 +28,7 @@ use crate::{
     registry::RegistryUri,
 };
 
+/// The name of the manifest file
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
 /// A `buffrs` manifest format used for serialization and deserialization.
@@ -77,19 +78,25 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
 }
 
+/// Error produced when loading the manifest file
 #[derive(Error, Debug)]
 pub enum ReadError {
-    #[error("IO error. {0}")]
+    /// Could not read from the file
+    #[error("IO error: {0}")]
     Io(std::io::Error),
-    #[error("{0}")]
+    /// Could not parse the TOML payload
+    #[error("Could not deserialize the manifest. Cause: {0}")]
     Deserialize(toml::de::Error),
 }
 
+/// Error produced when updating the manifest file
 #[derive(Error, Debug)]
 pub enum WriteError {
-    #[error("IO error. {0}")]
+    /// Could not write to the file
+    #[error("IO error: {0}")]
     Io(std::io::Error),
-    #[error("{0}")]
+    /// Could not encode the data into a TOML payload
+    #[error("Could not serialize the manifest. Cause: {0}")]
     Serialize(toml::ser::Error),
 }
 
@@ -109,7 +116,7 @@ impl Manifest {
     /// Loads the manifest from the given path
     pub async fn read_from(path: impl AsRef<Path>) -> Result<Self, ReadError> {
         let toml = fs::read_to_string(path).await.map_err(ReadError::Io)?;
-        let raw: RawManifest = toml::from_str(&toml).map_err(|err| ReadError::Deserialize(err))?;
+        let raw: RawManifest = toml::from_str(&toml).map_err(ReadError::Deserialize)?;
         Ok(raw.into())
     }
 
@@ -120,7 +127,7 @@ impl Manifest {
         fs::write(
             MANIFEST_FILE,
             toml::to_string(&raw)
-                .map_err(|err| WriteError::Serialize(err))?
+                .map_err(WriteError::Serialize)?
                 .into_bytes(),
         )
         .await

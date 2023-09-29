@@ -31,36 +31,52 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
+/// Error produced when locating the credentials file
 #[derive(Error, Debug)]
 pub enum LocateError {
+    /// The home folder where the credentials file is stored could not be determined.
+    ///
+    /// This implies that BUFFRS_HOME is not set and that the user's home directory
+    /// could not be detected.
     #[error("BUFFRS_HOME unset and could not resolve user's home directory")]
     MissingHome,
 }
 
+/// Error produced when checking if the credentials file exists
 #[derive(Error, Debug)]
 pub enum ExistsError {
+    /// Could not locate the credentials file
     #[error("Failed to determine credentials location. {0}")]
     Locate(LocateError),
+    /// Could not access the filesystem
     #[error("IO error: {0}")]
     Io(std::io::Error),
 }
 
+/// Error produced when loading the credentials file
 #[derive(Error, Debug)]
 pub enum ReadError {
+    /// Could not locate the credentials file
     #[error("Failed to determine credentials location. {0}")]
     Locate(LocateError),
+    /// Could not read the file from the filesystem
     #[error("IO error: {0}")]
     Io(std::io::Error),
+    /// Could not parse the TOML credentials data
     #[error("Failed to deserialize credentials. Cause: {0}")]
     Toml(toml::de::Error),
 }
 
+/// Error produced when updating the credentials file
 #[derive(Error, Debug)]
 pub enum WriteError {
+    /// Could not locate the credentials file
     #[error("Failed to determine credentials location. {0}")]
     Locate(LocateError),
+    /// Could not write to the credentials file
     #[error("IO error: {0}")]
     Io(std::io::Error),
+    /// Could not encode the credentials data as TOML
     #[error("Failed to serialize credentials. Cause: {0}")]
     Toml(toml::ser::Error),
 }

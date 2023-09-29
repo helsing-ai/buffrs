@@ -81,6 +81,7 @@ impl PartialOrd for DigestAlgorithm {
     }
 }
 
+/// A representation of a cryptographic digest for data integrity validation
 #[derive(Clone, PartialEq, Eq)]
 pub struct Digest {
     bytes: Vec<u8>,
@@ -181,15 +182,25 @@ impl PartialOrd for Digest {
 /// It is used to ensure that future installations will use the exact same dependencies.
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockedPackage {
+    /// The name of the package
     pub name: PackageName,
+    /// The cryptographic digest of the package contents
     pub digest: Digest,
+    /// The URI of the registry that contains the package
     pub registry: RegistryUri,
+    /// The identifier of the repository where the package was published
     pub repository: String,
+    /// The exact version of the package
     pub version: Version,
+    /// Names of dependency packages
     pub dependencies: Vec<PackageName>,
+    /// Count of dependant packages in the current graph
+    ///
+    /// This is used to detect when an entry can be safely removed from the lockfile.
     pub dependants: usize,
 }
 
+/// Error that indicates a mismatch between a downloaded package and its lockfile metadata
 #[derive(Error, Debug)]
 #[error("{property} mismatch - expected {expected}, actual {actual}")]
 pub struct ValidationError {
@@ -274,18 +285,24 @@ pub struct Lockfile {
     packages: HashMap<PackageName, LockedPackage>,
 }
 
+/// Error produced when loading the lockfile from the filesystem
 #[derive(Error, Debug)]
 pub enum ReadError {
+    /// Could not read from the file
     #[error("{0}")]
     Io(IoError),
+    /// Could not parse the TOML payload
     #[error("Failed to decode lockfile. Cause: {0}")]
     Toml(toml::de::Error),
 }
 
+/// Error produced when updating the lockfile in the filesystem
 #[derive(Error, Debug)]
 pub enum WriteError {
+    /// Could not write to the file
     #[error("{0}")]
     Io(IoError),
+    /// Could not encode the data as a TOML payload
     #[error("Failed to serialize lockfile. Cause: {0}")]
     Toml(toml::ser::Error),
 }

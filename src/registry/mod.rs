@@ -20,6 +20,7 @@ use std::{
 
 use crate::{manifest::Dependency, package::Package};
 
+/// Submodule with the Artifactory implementation of a registry client
 pub mod artifactory;
 #[cfg(test)]
 mod local;
@@ -30,18 +31,24 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+/// Error produced when downloading a package from the registry
 #[derive(Error, Debug)]
 pub enum DownloadError {
+    /// Currently only pinned versions are supported
     #[error("{0} is not a supported version requirement")]
     UnsupportedVersionRequirement(VersionReq),
+    /// Opaque error when making a network request
     #[error("Download request failed - reason: {0}")]
     RequestFailed(String),
+    /// Opaque error when processing a server response
     #[error("Invalid server response. Cause: {0}")]
     InvalidResponse(String),
 }
 
+/// Error produced when publishing a package to the registry
 #[derive(Error, Debug)]
 pub enum PublishError {
+    /// Opaque error when making a network request
     #[error("Publish request failed - reason: {0}")]
     RequestFailed(String),
 }
@@ -55,6 +62,7 @@ pub trait Registry {
     async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError>;
 }
 
+/// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RegistryUri(Url);
 
@@ -84,14 +92,19 @@ impl Display for RegistryUri {
     }
 }
 
+/// Error produced when a URI fails to be validated
 #[derive(Error, Debug)]
 pub enum UriValidationError {
+    /// Underlying URL is not compliant to RFC 1738
     #[error("Not a valid URL: {0}")]
     InvalidUrl(String),
+    /// Unsupported scheme used
     #[error("Invalid URI scheme {0} - must be http or https")]
     InvalidScheme(String),
+    /// Missing a host part from the URI
     #[error("The URI must contain a host: {0}")]
     MissingHost(Url),
+    /// Not a valid Artifactory URL
     #[error("The url must end with '/artifactory' when using a *.jfrog.io host")]
     InvalidSuffix,
 }
