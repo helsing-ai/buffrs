@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::Context;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    path::Path,
 };
+use thiserror::Error;
 use tokio::fs;
 
 use crate::{
+    errors::IoError,
     package::{PackageName, PackageType},
     registry::RegistryUri,
 };
@@ -75,32 +77,54 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
 }
 
+#[derive(Error, Debug)]
+pub enum ReadError {
+    #[error("IO error. {0}")]
+    Io(std::io::Error),
+    #[error("{0}")]
+    Deserialize(toml::de::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum WriteError {
+    #[error("IO error. {0}")]
+    Io(std::io::Error),
+    #[error("{0}")]
+    Serialize(toml::ser::Error),
+}
+
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
-    pub async fn exists() -> eyre::Result<bool> {
+    pub async fn exists() -> Result<bool, IoError> {
         fs::try_exists(MANIFEST_FILE)
             .await
-            .wrap_err("Failed to detect manifest")
+            .map_err(|err| IoError::new(err, "Cannot re-initialize an existing project"))
     }
 
     /// Loads the manifest from the current directory
-    pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(MANIFEST_FILE)
-            .await
-            .wrap_err("Failed to read manifest")?;
+    pub async fn read() -> Result<Self, ReadError> {
+        Self::read_from(MANIFEST_FILE).await
+    }
 
-        let raw: RawManifest = toml::from_str(&toml).wrap_err("Failed to parse manifest")?;
-
+    /// Loads the manifest from the given path
+    pub async fn read_from(path: impl AsRef<Path>) -> Result<Self, ReadError> {
+        let toml = fs::read_to_string(path).await.map_err(ReadError::Io)?;
+        let raw: RawManifest = toml::from_str(&toml).map_err(|err| ReadError::Deserialize(err))?;
         Ok(raw.into())
     }
 
     /// Persists the manifest into the current directory
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> Result<(), WriteError> {
         let raw = RawManifest::from(self.to_owned());
 
-        fs::write(MANIFEST_FILE, toml::to_string(&raw)?.into_bytes())
-            .await
-            .wrap_err("Failed to write manifest")
+        fs::write(
+            MANIFEST_FILE,
+            toml::to_string(&raw)
+                .map_err(|err| WriteError::Serialize(err))?
+                .into_bytes(),
+        )
+        .await
+        .map_err(WriteError::Io)
     }
 }
 

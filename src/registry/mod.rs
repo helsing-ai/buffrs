@@ -20,27 +20,39 @@ use std::{
 
 use crate::{manifest::Dependency, package::Package};
 
-mod artifactory;
+pub mod artifactory;
 #[cfg(test)]
 mod local;
 
 pub use artifactory::Artifactory;
-use eyre::ensure;
+use semver::VersionReq;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use url::Url;
+
+#[derive(Error, Debug)]
+pub enum DownloadError {
+    #[error("{0} is not a supported version requirement")]
+    UnsupportedVersionRequirement(VersionReq),
+    #[error("Download request failed - reason: {0}")]
+    RequestFailed(String),
+    #[error("Invalid server response. Cause: {0}")]
+    InvalidResponse(String),
+}
+
+#[derive(Error, Debug)]
+pub enum PublishError {
+    #[error("Publish request failed - reason: {0}")]
+    RequestFailed(String),
+}
 
 /// A `buffrs` registry used for remote package management
 #[async_trait::async_trait]
 pub trait Registry {
     /// Downloads a package from the registry
-    async fn download(&self, dependency: Dependency) -> eyre::Result<Package>;
+    async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError>;
     /// Publishes a package to the registry
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()>;
-}
-
-/// An enum containing all supported registries
-pub enum RegistryType {
-    Artifactory,
+    async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError>;
 }
 
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,40 +84,41 @@ impl Display for RegistryUri {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum UriValidationError {
+    #[error("Not a valid URL: {0}")]
+    InvalidUrl(String),
+    #[error("Invalid URI scheme {0} - must be http or https")]
+    InvalidScheme(String),
+    #[error("The URI must contain a host: {0}")]
+    MissingHost(Url),
+    #[error("The url must end with '/artifactory' when using a *.jfrog.io host")]
+    InvalidSuffix,
+}
+
 impl FromStr for RegistryUri {
-    type Err = eyre::Error;
+    type Err = UriValidationError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let slf = Self(Url::from_str(value)?);
-        slf.sanity_check_url()?;
-        Ok(slf)
+        let url = Url::from_str(value).map_err(|_| UriValidationError::InvalidUrl(value.into()))?;
+        sanity_check_url(&url)?;
+        Ok(Self(url))
     }
 }
 
-impl RegistryUri {
-    pub fn sanity_check_url(&self) -> eyre::Result<()> {
-        tracing::debug!(
-            "checking that url begins with http or https: {}",
-            self.0.scheme()
-        );
-        ensure!(
-            self.0.scheme() == "http" || self.0.scheme() == "https",
-            "The self.0 must start with http:// or https://"
-        );
-
-        if let Some(host) = self.0.host_str() {
-            if host.ends_with(".jfrog.io") {
-                tracing::debug!(
-                    "checking that jfrog.io url ends with /artifactory: {}",
-                    self.0.path()
-                );
-                ensure!(
-                    self.0.path().ends_with("/artifactory"),
-                    "The url must end with '/artifactory' when using a *.jfrog.io host"
-                );
-            }
-        }
-
-        Ok(())
+fn sanity_check_url(url: &Url) -> Result<(), UriValidationError> {
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(UriValidationError::InvalidScheme(scheme.into()));
     }
+
+    if let Some(host) = url.host_str() {
+        if host.ends_with(".jfrog.io") && !url.path().ends_with("/artifactory") {
+            return Err(UriValidationError::InvalidSuffix);
+        }
+    } else {
+        return Err(UriValidationError::MissingHost(url.clone()));
+    }
+
+    Ok(())
 }

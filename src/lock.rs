@@ -14,23 +14,26 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use eyre::{ensure, Context};
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
+use thiserror::Error;
 use tokio::fs;
 
 use crate::{
+    errors::IoError,
     package::{Package, PackageName},
     registry::RegistryUri,
 };
 
+/// File name of the lockfile
 pub const LOCKFILE: &str = "Proto.lock";
-
 const SHA256_TAG: &str = "sha256";
 
+/// Supported types of digest algorithms
 #[derive(Clone, PartialEq, Eq)]
 pub enum DigestAlgorithm {
+    /// 256 bits variant of SHA-2
     SHA256,
 }
 
@@ -43,13 +46,21 @@ impl std::fmt::Display for DigestAlgorithm {
     }
 }
 
+/// Error produced when converting into the local digest representation
+#[derive(Error, Debug)]
+pub enum DigestConversionError {
+    /// Produced when the source digest uses an unsupported algorithm
+    #[error("Unsupported digest algorithm: {0}")]
+    UnsupportedAlgorithm(String),
+}
+
 impl FromStr for DigestAlgorithm {
-    type Err = eyre::Report;
+    type Err = DigestConversionError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             SHA256_TAG => Ok(Self::SHA256),
-            other => eyre::bail!("invalid digest algorithm: {other}"),
+            other => Err(DigestConversionError::UnsupportedAlgorithm(other.into())),
         }
     }
 }
@@ -77,13 +88,16 @@ pub struct Digest {
 }
 
 impl TryFrom<digest::Digest> for Digest {
-    type Error = eyre::Report;
+    type Error = DigestConversionError;
 
     fn try_from(value: digest::Digest) -> Result<Self, Self::Error> {
         let algorithm = if value.algorithm() == &digest::SHA256 {
             DigestAlgorithm::SHA256
         } else {
-            eyre::bail!("Unsupported digest algorithm: {:?}", value.algorithm())
+            return Err(DigestConversionError::UnsupportedAlgorithm(format!(
+                "{:?}",
+                value.algorithm()
+            )));
         };
 
         Ok(Self {
@@ -176,6 +190,14 @@ pub struct LockedPackage {
     pub dependants: usize,
 }
 
+#[derive(Error, Debug)]
+#[error("{property} mismatch - expected {expected}, actual {actual}")]
+pub struct ValidationError {
+    property: &'static str,
+    expected: String,
+    actual: String,
+}
+
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(
@@ -205,29 +227,34 @@ impl LockedPackage {
     }
 
     /// Validates if another LockedPackage matches this one
-    pub fn validate(&self, package: &Package) -> eyre::Result<()> {
+    pub fn validate(&self, package: &Package) -> Result<(), ValidationError> {
         let digest: Digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
             .unwrap();
 
-        ensure!(
-            &self.name == package.name(),
-            "Package name mismatch - expected {}, actual {}",
-            self.name,
-            package.name()
-        );
-        ensure!(
-            self.digest == digest,
-            "Digest mismatch - expected {}, actual {}",
-            self.digest,
-            digest
-        );
-        ensure!(
-            &self.version == package.version(),
-            "Version mismatch - expected {}, actual {}",
-            self.version,
-            package.version()
-        );
+        if &self.name != package.name() {
+            return Err(ValidationError {
+                property: "Name",
+                expected: self.name.to_string(),
+                actual: package.name().to_string(),
+            });
+        }
+
+        if &self.version != package.version() {
+            return Err(ValidationError {
+                property: "Version",
+                expected: self.version.to_string(),
+                actual: package.version().to_string(),
+            });
+        }
+
+        if self.digest != digest {
+            return Err(ValidationError {
+                property: "Digest",
+                expected: self.digest.to_string(),
+                actual: digest.to_string(),
+            });
+        }
 
         Ok(())
     }
@@ -247,28 +274,44 @@ pub struct Lockfile {
     packages: HashMap<PackageName, LockedPackage>,
 }
 
+#[derive(Error, Debug)]
+pub enum ReadError {
+    #[error("{0}")]
+    Io(IoError),
+    #[error("Failed to decode lockfile. Cause: {0}")]
+    Toml(toml::de::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum WriteError {
+    #[error("{0}")]
+    Io(IoError),
+    #[error("Failed to serialize lockfile. Cause: {0}")]
+    Toml(toml::ser::Error),
+}
+
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
-    pub async fn exists() -> eyre::Result<bool> {
+    pub async fn exists() -> Result<bool, IoError> {
         fs::try_exists(LOCKFILE)
             .await
-            .wrap_err("Failed to detect lockfile")
+            .map_err(|err| IoError::new(err, "Failed to detect lockfile"))
     }
 
     /// Loads the Lockfile from the current directory
-    pub async fn read() -> eyre::Result<Self> {
+    pub async fn read() -> Result<Self, ReadError> {
         let toml = fs::read_to_string(LOCKFILE)
             .await
-            .wrap_err("Failed to read lockfile")?;
+            .map_err(|err| ReadError::Io(IoError::new(err, "Failed to read lockfile")))?;
 
-        let raw: RawLockfile = toml::from_str(&toml).wrap_err("Failed to parse lockfile")?;
+        let raw: RawLockfile = toml::from_str(&toml).map_err(ReadError::Toml)?;
 
         Ok(Self::from_iter(raw.packages.into_iter()))
     }
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
-    pub async fn read_or_default() -> eyre::Result<Self> {
-        if Lockfile::exists().await? {
+    pub async fn read_or_default() -> Result<Self, ReadError> {
+        if Lockfile::exists().await.map_err(ReadError::Io)? {
             Lockfile::read().await
         } else {
             Ok(Lockfile::default())
@@ -276,7 +319,7 @@ impl Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> Result<(), WriteError> {
         let mut packages: Vec<_> = self
             .packages
             .values()
@@ -294,9 +337,14 @@ impl Lockfile {
             packages,
         };
 
-        fs::write(LOCKFILE, toml::to_string(&raw)?.into_bytes())
-            .await
-            .wrap_err("Failed to write lockfile")
+        fs::write(
+            LOCKFILE,
+            toml::to_string(&raw)
+                .map_err(WriteError::Toml)?
+                .into_bytes(),
+        )
+        .await
+        .map_err(|err| WriteError::Io(IoError::new(err, "Failed to write lockfile")))
     }
 
     /// Locates a given package in the Lockfile

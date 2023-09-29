@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
 /// CLI command implementations
 pub mod command;
 /// Credential management
 pub mod credentials;
+/// Common error types
+pub mod errors;
 /// Code generator
 #[cfg(feature = "build")]
 pub mod generator;
@@ -39,11 +42,14 @@ pub use generator::Language;
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
     use credentials::Credentials;
+    use eyre::Context;
     use package::PackageStore;
 
     async fn install() -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
-        command::install(credentials).await
+        command::install(credentials)
+            .await
+            .wrap_err("Installation failed.")
     }
 
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);

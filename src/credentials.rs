@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
+use thiserror::Error;
 use tokio::fs;
 
 use crate::registry::RegistryUri;
@@ -31,55 +31,94 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
-impl Credentials {
-    fn location() -> eyre::Result<PathBuf> {
-        let home = home::home_dir().wrap_err("Failed to locate home directory")?;
+#[derive(Error, Debug)]
+pub enum LocateError {
+    #[error("BUFFRS_HOME unset and could not resolve user's home directory")]
+    MissingHome,
+}
 
-        let home = env::var("BUFFRS_HOME").map(PathBuf::from).unwrap_or(home);
+#[derive(Error, Debug)]
+pub enum ExistsError {
+    #[error("Failed to determine credentials location. {0}")]
+    Locate(LocateError),
+    #[error("IO error: {0}")]
+    Io(std::io::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum ReadError {
+    #[error("Failed to determine credentials location. {0}")]
+    Locate(LocateError),
+    #[error("IO error: {0}")]
+    Io(std::io::Error),
+    #[error("Failed to deserialize credentials. Cause: {0}")]
+    Toml(toml::de::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum WriteError {
+    #[error("Failed to determine credentials location. {0}")]
+    Locate(LocateError),
+    #[error("IO error: {0}")]
+    Io(std::io::Error),
+    #[error("Failed to serialize credentials. Cause: {0}")]
+    Toml(toml::ser::Error),
+}
+
+impl Credentials {
+    fn location() -> Result<PathBuf, LocateError> {
+        let home = env::var("BUFFRS_HOME")
+            .map(PathBuf::from)
+            .or(home::home_dir().ok_or(LocateError::MissingHome))?;
 
         Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
     }
 
     /// Checks if the credentials exists
-    pub async fn exists() -> eyre::Result<bool> {
-        fs::try_exists(Self::location()?)
+    pub async fn exists() -> Result<bool, ExistsError> {
+        fs::try_exists(Self::location().map_err(ExistsError::Locate)?)
             .await
-            .wrap_err("Failed to detect credentials")
+            .map_err(ExistsError::Io)
     }
 
     /// Reads the credentials from the file system
-    pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(Self::location()?)
+    pub async fn read() -> Result<Self, ReadError> {
+        let toml = fs::read_to_string(Self::location().map_err(ReadError::Locate)?)
             .await
-            .wrap_err("Failed to read credentials")?;
+            .map_err(ReadError::Io)?;
 
-        let raw: RawCredentialCollection =
-            toml::from_str(&toml).wrap_err("Failed to parse credentials")?;
+        let raw: RawCredentialCollection = toml::from_str(&toml).map_err(ReadError::Toml)?;
 
         Ok(raw.into())
     }
 
     /// Writes the credentials to the file system
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> Result<(), WriteError> {
         fs::create_dir(
-            Self::location()?
+            Self::location()
+                .map_err(WriteError::Locate)?
                 .parent()
-                .wrap_err("Invalid credentials location")?,
+                .expect("Unexpected error: resolved credentials path has no parent"),
         )
         .await
         .ok();
 
         let data: RawCredentialCollection = self.clone().into();
 
-        fs::write(Self::location()?, toml::to_string(&data)?.into_bytes())
-            .await
-            .wrap_err("Failed to write credentials")
+        fs::write(
+            Self::location().map_err(WriteError::Locate)?,
+            toml::to_string(&data)
+                .map_err(WriteError::Toml)?
+                .into_bytes(),
+        )
+        .await
+        .map_err(WriteError::Io)
     }
 
     /// Loads the credentials from the file system
     ///
     /// Note: Initializes the credential file if its not present
-    pub async fn load() -> eyre::Result<Self> {
+    pub async fn load() -> Result<Self, WriteError> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
             credentials.write().await?;
