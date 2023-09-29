@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::path::PathBuf;
+
 use buffrs::command;
 use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
@@ -100,6 +102,9 @@ enum Command {
         #[clap(long = "lang")]
         #[arg(value_enum)]
         language: buffrs::generator::Language,
+        /// Directory where generated code should be created
+        #[clap(long = "out-dir")]
+        out_dir: PathBuf,
     },
 
     /// Logs you in for a registry
@@ -178,7 +183,7 @@ async fn main() -> eyre::Result<()> {
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err("Uninstall command failed"),
-        Command::Generate { language } => command::generate(language)
+        Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
             .wrap_err("Generate command failed"),
         Command::Login { registry } => command::login(credentials, registry)

@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fmt, path::Path};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+};
 
-use eyre::Context;
+use eyre::{ensure, Context, ContextCompat};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 
 use crate::{manifest::Manifest, package::PackageStore};
-
-/// The directory used for the generated code
-pub const BUILD_DIRECTORY: &str = "proto/build";
 
 /// The language used for code generation
 #[derive(
@@ -29,8 +29,7 @@ pub const BUILD_DIRECTORY: &str = "proto/build";
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Language {
-    /// Rust language
-    Rust,
+    Python,
 }
 
 impl fmt::Display for Language {
@@ -40,10 +39,15 @@ impl fmt::Display for Language {
 }
 
 /// Backend used to generate code bindings
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Generator {
     /// The tonic + prost stack
     Tonic,
+    /// The official `protoc` protobuf compiler
+    Protoc {
+        language: Language,
+        out_dir: PathBuf,
+    },
 }
 
 impl Generator {
@@ -69,48 +73,83 @@ impl Generator {
                     .include_file(Self::TONIC_INCLUDE_FILE)
                     .compile(&protos, includes)?;
             }
+            Generator::Protoc { language, out_dir } => {
+                let mut protoc_cmd = tokio::process::Command::new(protoc);
+
+                match language {
+                    Language::Python => {
+                        protoc_cmd.arg("--python_out").arg(out_dir);
+                    }
+                }
+
+                // Setting proto path causes protoc to replace occurrences of this string appearing in the
+                // path of the generated path with that provided by output path
+                // e.g. if input proto path is proto/vendor/units/units.proto and the proto path is 'proto'
+                // and the --python_out is 'proto/build/gen' then the file will be output to
+                // proto/build/gen/vendor/units/units.py
+
+                protoc_cmd.arg("--proto_path").arg("proto/vendor"); // We need both of these if we want "vendor" to be removed, and it has to come first
+                protoc_cmd.arg("--proto_path").arg("proto");
+
+                protoc_cmd.args(&protos);
+
+                tracing::debug!(":: running {protoc_cmd:?}");
+
+                let output = protoc_cmd
+                    .output()
+                    .await
+                    .wrap_err("failed to retrieve protoc output")?;
+
+                let exit = output
+                    .status
+                    .code()
+                    .wrap_err("failed to retrieve exit code of protoc")?;
+
+                ensure!(
+                    exit == 0,
+                    "protoc generation failed: {}",
+                    String::from_utf8(output.stderr)?,
+                );
+
+                tracing::info!(":: {language} code generated successfully");
+            }
         }
 
         Ok(())
     }
-}
 
-/// Generate the code bindings for a language
-pub async fn generate(language: Language) -> eyre::Result<()> {
-    let manifest = Manifest::read().await?;
+    pub async fn generate(&self) -> eyre::Result<()> {
+        let manifest = Manifest::read().await?;
 
-    tracing::info!(":: initializing code generator for {language}");
+        tracing::info!(":: initializing code generator");
 
-    eyre::ensure!(
-        manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
-        "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
-    );
-
-    // Only tonic is supported right now
-    let generator = Generator::Tonic;
-
-    generator
-        .run()
-        .await
-        .wrap_err_with(|| format!("Failed to generate bindings for {language}"))?;
-
-    if manifest.package.kind.compilable() {
-        let location = Path::new(PackageStore::PROTO_PATH);
-        tracing::info!(
-            ":: compiled {} [{}]",
-            manifest.package.name,
-            location.display()
+        eyre::ensure!(
+            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
+            "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
-    }
 
-    for dependency in manifest.dependencies {
-        let location = PackageStore::locate(&dependency.package);
-        tracing::info!(
-            ":: compiled {} [{}]",
-            dependency.package,
-            location.display()
-        );
-    }
+        self.run()
+            .await
+            .wrap_err_with(|| "Failed to generate bindings")?;
 
-    Ok(())
+        if manifest.package.kind.compilable() {
+            let location = Path::new(PackageStore::PROTO_PATH);
+            tracing::info!(
+                ":: compiled {} [{}]",
+                manifest.package.name,
+                location.display()
+            );
+        }
+
+        for dependency in manifest.dependencies {
+            let location = PackageStore::locate(&dependency.package);
+            tracing::info!(
+                ":: compiled {} [{}]",
+                dependency.package,
+                location.display()
+            );
+        }
+
+        Ok(())
+    }
 }

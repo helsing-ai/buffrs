@@ -33,9 +33,6 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
-#[cfg(feature = "build")]
-pub use generator::Language;
-
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
@@ -57,7 +54,7 @@ pub fn build() -> eyre::Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
 
     rt.block_on(install())?;
-    rt.block_on(generator::generate(Language::Rust))?;
+    rt.block_on(generator::Generator::Tonic.generate())?;
 
     Ok(())
 }
