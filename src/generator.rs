@@ -115,7 +115,7 @@ impl Generator {
                     String::from_utf8(output.stderr)?,
                 );
 
-                tracing::info!("{language} code generated successfully");
+                tracing::info!(":: {language} code generated successfully");
             }
         }
 
