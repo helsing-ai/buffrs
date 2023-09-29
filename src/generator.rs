@@ -46,7 +46,7 @@ impl fmt::Display for Language {
 pub enum Generator {
     /// The tonic + prost stack
     Tonic,
-    /// For protoc generator
+    /// The official `protoc` protobuf compiler
     Protoc {
         language: Language,
         out_dir: PathBuf,
