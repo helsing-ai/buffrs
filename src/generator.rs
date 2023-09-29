@@ -23,9 +23,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{manifest::Manifest, package::PackageStore};
 
-/// The directory used for the generated code
-pub const BUILD_DIRECTORY: &str = "proto/build";
-
 /// The language used for code generation
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
