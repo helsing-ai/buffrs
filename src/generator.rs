@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use eyre::Context;
+use eyre::{ensure, Context, ContextCompat};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +76,7 @@ impl Generator {
                     .compile(&protos, includes)?;
             }
             Generator::Protoc { language, out_dir } => {
-                let mut protoc_cmd = std::process::Command::new(protoc);
+                let mut protoc_cmd = tokio::process::Command::new(protoc);
 
                 match language {
                     Language::Python => {
@@ -97,21 +97,25 @@ impl Generator {
                 // Add the proto files we want code generated for
                 protoc_cmd.args(&protos);
 
-                tracing::info!(":: running {protoc_cmd:?}");
+                tracing::debug!(":: running {protoc_cmd:?}");
 
-                let result = protoc_cmd.output()?;
-                match result.status.code() {
-                    Some(0) => tracing::info!("{language} code generated successfully"),
-                    Some(_) => {
-                        if !result.stderr.is_empty() {
-                            tracing::error!("Error generating {language} code:");
-                            let stderr_str = String::from_utf8(result.stderr)?;
-                            tracing::error!(stderr_str);
-                        }
-                        eyre::bail!("Error generating {language} code:")
-                    }
-                    None => tracing::error!("Failed to retrieve exit code"),
-                }
+                // Run the command, displaying useful error messages for failures
+                let output = protoc_cmd
+                    .output()
+                    .await
+                    .wrap_err("failed to retrieve protoc output")?;
+                let exit = output
+                    .status
+                    .code()
+                    .wrap_err("failed to retrieve exit code of protoc")?;
+
+                ensure!(
+                    exit == 0,
+                    "protoc generation failed: {}",
+                    String::from_utf8(output.stderr)?,
+                );
+
+                tracing::info!("{language} code generated successfully");
             }
         }
 
