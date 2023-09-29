@@ -39,7 +39,7 @@ const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 #[derive(Error, Debug)]
 pub enum InitError {
     /// Repository was already initialized
-    #[error("A manifest file is already present in the current director and won't be overridden")]
+    #[error("A manifest file is already present in the current directory and won't be overridden")]
     ManifestExists,
     /// Failed to interface with filesystem
     #[error("{0}")]
