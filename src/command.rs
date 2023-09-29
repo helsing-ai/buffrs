@@ -392,17 +392,24 @@ pub async fn uninstall() -> Result<(), IoError> {
     PackageStore::clear().await
 }
 
+/// Error produced by the generate command
+#[derive(Error, Debug)]
+#[error("Failed to generate language bindings for {language}. Cause: {source}")]
+pub struct GenerateError {
+    source: generator::GenerateError,
+    language: Language,
+}
+
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
-    use eyre::Context; // temporary
-
+pub async fn generate(language: Language, out_dir: PathBuf) -> Result<(), GenerateError> {
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
-        .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
-
-    Ok(())
+        .map_err(|err| GenerateError {
+            source: err,
+            language,
+        })
 }
 
 /// Error produced by the login command
