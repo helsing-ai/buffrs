@@ -146,7 +146,7 @@ pub async fn publish(
     credentials: Credentials,
     registry: RegistryUri,
     repository: String,
-    #[cfg(feature = "build")] allow_dirty: bool,
+    #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
 ) -> eyre::Result<()> {
     #[cfg(feature = "git")]
