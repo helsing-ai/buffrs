@@ -19,8 +19,6 @@ use eyre::{ensure, ContextCompat};
 
 use crate::{manifest::Dependency, package::Package};
 
-use super::Registry;
-
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
 #[derive(Debug, Clone)]
@@ -33,11 +31,8 @@ impl LocalRegistry {
     pub fn new(base_dir: PathBuf) -> Self {
         LocalRegistry { base_dir }
     }
-}
 
-#[async_trait::async_trait]
-impl Registry for LocalRegistry {
-    async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
         ensure!(
             dependency.manifest.version.comparators.len() == 1,
@@ -80,7 +75,7 @@ impl Registry for LocalRegistry {
         Package::try_from(bytes)
     }
 
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
@@ -110,7 +105,7 @@ mod tests {
     use crate::manifest::{Dependency, Manifest, PackageManifest};
     use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
-    use crate::registry::{Registry, RegistryUri};
+    use crate::registry::RegistryUri;
     use bytes::Bytes;
     use std::path::PathBuf;
     use std::str::FromStr;
