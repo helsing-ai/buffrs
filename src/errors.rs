@@ -52,7 +52,7 @@ impl RequestError {
             (
                 k.as_str(),
                 v.to_str()
-                    .expect("Unexpected error: request header value contains opaque bytes"),
+                    .expect("unexpected error: request header value contains opaque bytes"),
             )
         })
     }

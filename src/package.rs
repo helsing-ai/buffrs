@@ -496,7 +496,7 @@ impl TryFrom<String> for PackageName {
         }
 
         const UNEXPECTED_MSG: &str =
-            "Unexpected error: package name length should be validated prior to first character check";
+            "unexpected error: package name length should be validated prior to first character check";
 
         if !value.chars().next().expect(UNEXPECTED_MSG).is_alphabetic() {
             return Err(InvalidPackageName::InvalidFirstCharacter);

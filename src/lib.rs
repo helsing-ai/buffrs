@@ -48,7 +48,7 @@ pub fn build() -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
         command::install(credentials)
             .await
-            .wrap_err("Installation failed.")
+            .wrap_err("installation failed")
     }
 
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);

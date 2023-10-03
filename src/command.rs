@@ -316,7 +316,7 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
     ) -> Result<(), InstallError> {
         let resolved = graph
             .get(name)
-            .expect("Unexpected error: missing dependency in dependency graph");
+            .expect("unexpected error: missing dependency in dependency graph");
 
         PackageStore::unpack(&resolved.package).await?;
 
@@ -426,12 +426,11 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Resul
     credentials.write().await.map_err(LoginError::from)
 }
 
-/// Error produced by the logout command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum LogoutError {
-    /// Failed to write to the credentials file
-    #[error("Failed to update credentials: {0}")]
-    Write(credentials::WriteError),
+    /// failed to write to the credentials file
+    Write(#[from] credentials::WriteError),
 }
 
 /// Logs you out from a registry
@@ -440,5 +439,5 @@ pub async fn logout(
     registry: RegistryUri,
 ) -> Result<(), LogoutError> {
     credentials.registry_tokens.remove(&registry);
-    credentials.write().await.map_err(LogoutError::Write)
+    credentials.write().await.map_err(LogoutError::from)
 }
