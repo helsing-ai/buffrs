@@ -1,3 +1,1 @@
-# buffrs yank
-
-Not currently implemented.
+## buffrs yank

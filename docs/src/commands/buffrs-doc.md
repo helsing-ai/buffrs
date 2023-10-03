@@ -1,3 +1,1 @@
-# buffrs doc
-
-Not currently implemented.
+## buffrs doc

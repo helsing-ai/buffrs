@@ -1,17 +1,18 @@
-# buffrs login
+## buffrs login
 
 Saves an authentication token in the credentials store.
 
-# Synopsis
+### Synopsis
 
 `buffrs login --registry <url>`
 
-# Description
+### Description
 
-This command prompts for an API or Identity token that can be used to authenticate with
-Artifactory for downloading and publishing packages.
+This command prompts for an API or Identity token that can be used to
+authenticate with Artifactory for downloading and publishing packages.
 
-The token is currently stored in `$HOME/.buffrs/credentials.toml` in the following format:
+The token is currently stored in `$HOME/.buffrs/credentials.toml` in the
+following format:
 
 ```toml
 [[credentials]]
