@@ -19,8 +19,12 @@ use crate::{
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
     registry::{Artifactory, Registry, RegistryUri},
 };
+
 #[cfg(feature = "build")]
-use crate::{generator, Language};
+use crate::{generator, generator::Language};
+#[cfg(feature = "build")]
+use std::path::PathBuf;
+
 use async_recursion::async_recursion;
 use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
@@ -259,8 +263,9 @@ pub async fn uninstall() -> eyre::Result<()> {
 
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
-pub async fn generate(language: Language) -> eyre::Result<()> {
-    generator::generate(language)
+pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
+    generator::Generator::Protoc { language, out_dir }
+        .generate()
         .await
         .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
 
