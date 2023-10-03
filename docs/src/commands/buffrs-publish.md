@@ -26,7 +26,7 @@ previously saved via a [`buffrs login`](buffrs-login.md) invocation.
 
 By default, Buffrs does not allow publishing packages from git repositories in a
 dirty state (note: this requires the `git` feature to be enabled). This
-behaviour can be overriden by passing the `--allow-dirty` flag.
+behaviour can be overridden by passing the `--allow-dirty` flag.
 
 #### Supported package types
 
