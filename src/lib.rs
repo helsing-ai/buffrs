@@ -32,8 +32,6 @@ pub mod manifest;
 pub mod package;
 /// Supported registries
 pub mod registry;
-/// Public Error implementation
-// pub use errors::Error;
 
 /// Cargo build integration for buffrs
 ///

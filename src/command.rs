@@ -77,7 +77,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), In
                 "current directory path is not valid utf-8",
             ))?
             .parse()
-            .map_err(InitError::InvalidName)
+            .map_err(InitError::from)
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
@@ -202,9 +202,7 @@ pub enum PackageError {
 
 /// Packages the api and writes it to the filesystem
 pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> Result<(), PackageError> {
-    let package = PackageStore::release()
-        .await
-        .map_err(PackageError::Release)?;
+    let package = PackageStore::release().await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",

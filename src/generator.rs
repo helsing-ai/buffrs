@@ -67,12 +67,7 @@ pub enum RunError {
     /// a signal interrupted the protoc subprocess before it could complete
     Interrupted,
     /// the protoc subprocess terminated with an error: {code}
-    NonZeroExitCode {
-        /// the exit code from the subprocess
-        code: i32,
-        /// the captured output from stderr
-        stderr: Vec<u8>,
-    },
+    NonZeroExitCode { code: i32, stderr: Vec<u8> },
 }
 
 impl Generator {
