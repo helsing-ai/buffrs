@@ -12,12 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use displaydoc::Display;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
 use thiserror::Error;
 use tokio::fs;
 
-use crate::registry::RegistryUri;
+use crate::{
+    errors::{DeserializationError, SerializationError},
+    registry::RegistryUri,
+};
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
@@ -31,79 +35,68 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
-/// Error produced when locating the credentials file
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum LocateError {
-    /// The home folder where the credentials file is stored could not be determined.
-    ///
-    /// This implies that BUFFRS_HOME is not set and that the user's home directory
-    /// could not be detected.
-    #[error("BUFFRS_HOME unset and could not resolve user's home directory")]
+    /// the home folder could not be determined
     MissingHome,
 }
 
-/// Error produced when checking if the credentials file exists
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum ExistsError {
-    /// Could not locate the credentials file
-    #[error("Failed to determine credentials location. {0}")]
-    Locate(LocateError),
-    /// Could not access the filesystem
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
+    /// could not locate the credentials file
+    Locate(#[from] LocateError),
+    /// could not access the filesystem
+    Io(#[from] std::io::Error),
 }
 
-/// Error produced when loading the credentials file
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum ReadError {
-    /// Could not locate the credentials file
-    #[error("Failed to determine credentials location. {0}")]
-    Locate(LocateError),
-    /// Could not read the file from the filesystem
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
-    /// Could not parse the TOML credentials data
-    #[error("Failed to deserialize credentials. Cause: {0}")]
-    Toml(toml::de::Error),
+    /// could not locate the credentials file
+    Locate(#[from] LocateError),
+    /// could not read the file
+    Io(#[from] std::io::Error),
+    /// could not deserialize the credentials
+    Deserialize(#[from] DeserializationError),
 }
 
-/// Error produced when updating the credentials file
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum WriteError {
-    /// Could not locate the credentials file
-    #[error("Failed to determine credentials location. {0}")]
-    Locate(LocateError),
-    /// Could not write to the credentials file
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
-    /// Could not encode the credentials data as TOML
-    #[error("Failed to serialize credentials. Cause: {0}")]
-    Toml(toml::ser::Error),
+    /// could not locate the credentials file
+    Locate(#[from] LocateError),
+    /// could not write to the file
+    Io(#[from] std::io::Error),
+    /// could not serialize the credentials
+    Serialize(#[from] SerializationError),
 }
 
 impl Credentials {
     fn location() -> Result<PathBuf, LocateError> {
-        let home = env::var("BUFFRS_HOME")
+        env::var("BUFFRS_HOME")
             .map(PathBuf::from)
-            .or(home::home_dir().ok_or(LocateError::MissingHome))?;
-
-        Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
+            .or(home::home_dir().ok_or(LocateError::MissingHome))
+            .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
     }
 
     /// Checks if the credentials exists
     pub async fn exists() -> Result<bool, ExistsError> {
-        fs::try_exists(Self::location().map_err(ExistsError::Locate)?)
+        fs::try_exists(Self::location()?)
             .await
-            .map_err(ExistsError::Io)
+            .map_err(ExistsError::from)
     }
 
     /// Reads the credentials from the file system
     pub async fn read() -> Result<Self, ReadError> {
-        let toml = fs::read_to_string(Self::location().map_err(ReadError::Locate)?)
-            .await
-            .map_err(ReadError::Io)?;
-
-        let raw: RawCredentialCollection = toml::from_str(&toml).map_err(ReadError::Toml)?;
+        let raw: RawCredentialCollection =
+            toml::from_str(&fs::read_to_string(Self::location()?).await?)
+                .map_err(DeserializationError::from)?;
 
         Ok(raw.into())
     }
@@ -114,7 +107,7 @@ impl Credentials {
             Self::location()
                 .map_err(WriteError::Locate)?
                 .parent()
-                .expect("Unexpected error: resolved credentials path has no parent"),
+                .expect("unexpected error: resolved credentials path has no parent"),
         )
         .await
         .ok();
@@ -122,13 +115,13 @@ impl Credentials {
         let data: RawCredentialCollection = self.clone().into();
 
         fs::write(
-            Self::location().map_err(WriteError::Locate)?,
+            Self::location()?,
             toml::to_string(&data)
-                .map_err(WriteError::Toml)?
+                .map_err(SerializationError::from)?
                 .into_bytes(),
         )
         .await
-        .map_err(WriteError::Io)
+        .map_err(WriteError::from)
     }
 
     /// Loads the credentials from the file system

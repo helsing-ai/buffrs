@@ -13,9 +13,14 @@
 // limitations under the License.
 
 use super::{DownloadError, PublishError, Registry, RegistryUri};
-use crate::{credentials::Credentials, manifest::Dependency, package::Package};
-use reqwest::Response;
-use thiserror::Error;
+use crate::{
+    credentials::Credentials,
+    errors::{ConfigError, HttpError, RequestError, ResponseError},
+    manifest::Dependency,
+    package::Package,
+};
+use bytes::Bytes;
+use reqwest::{Method, Response};
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -26,30 +31,74 @@ pub struct Artifactory {
     client: reqwest::Client,
 }
 
-/// Error produced by the ping method
-#[derive(Error, Debug)]
-#[error(transparent)]
-pub struct PingError(#[from] reqwest::Error);
-
-/// Error produced when instantiating an Artifactory registry
-#[derive(Error, Debug)]
-#[error(transparent)]
-pub struct BuildError(#[from] reqwest::Error);
-
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> Result<Self, BuildError> {
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> Result<Self, ConfigError> {
         Ok(Self {
             registry: registry.clone(),
             token: credentials.registry_tokens.get(&registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
-                .build()?,
+                .build()
+                .map_err(|_| ConfigError::Unknown)?,
         })
     }
 
+    async fn make_auth_request(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<Bytes>,
+    ) -> Result<Response, HttpError> {
+        let mut request_builder = self.client.request(method.clone(), url.clone());
+
+        if let Some(token) = &self.token {
+            request_builder = request_builder.bearer_auth(token);
+        }
+
+        if let Some(body) = body {
+            request_builder = request_builder.body(body);
+        }
+
+        let request = request_builder.build().map_err(|err| {
+            HttpError::Request(RequestError::create(
+                method.clone(),
+                url.clone(),
+                err,
+                Default::default(),
+            ))
+        })?;
+
+        let headers = request.headers().clone();
+
+        let convert_err = |err: reqwest::Error| {
+            let status = err.status();
+            let request_ctx =
+                RequestError::create(method.clone(), url.clone(), err, headers.clone());
+            match status {
+                None => HttpError::Request(request_ctx),
+                Some(status) => HttpError::Response(ResponseError::new(request_ctx, status)),
+            }
+        };
+
+        let response: Response = self.client.execute(request).await.map_err(convert_err)?;
+
+        if response.status().is_redirection() {
+            return Err(HttpError::Other(format!(
+                "remote server attempted to redirect request - is this registry URL valid? {}",
+                self.registry
+            )));
+        }
+
+        if response.status() == 401 {
+            return Err(HttpError::Unauthorized);
+        }
+
+        response.error_for_status().map_err(convert_err)
+    }
+
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self) -> Result<(), PingError> {
+    pub async fn ping(&self) -> Result<(), HttpError> {
         let repositories_url: Url = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
@@ -57,38 +106,9 @@ impl Artifactory {
             uri.into()
         };
 
-        let mut request = self.client.get(repositories_url);
-
-        if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
-        }
-
-        let response: Response = request.send().await?;
-
-        let _ = response.error_for_status()?;
-
-        Ok(())
-    }
-
-    fn validate_status(&self, response: &Response) -> Result<(), String> {
-        if response.status().is_redirection() {
-            return Err(format!(
-                "remote server attempted to redirect request - is this registry URL valid? {}",
-                self.registry
-            ));
-        }
-
-        if response.status() == 401 {
-            return Err(
-                "unauthorized - please provide registry credentials with `buffrs login`".into(),
-            );
-        }
-
-        if !response.status().is_success() {
-            return Err(response.status().to_string());
-        }
-
-        Ok(())
+        self.make_auth_request(Method::GET, repositories_url, None)
+            .await
+            .map(|_| ())
     }
 }
 
@@ -108,7 +128,7 @@ impl Registry for Artifactory {
             .comparators
             .first()
             // validated above
-            .expect("Unexpected error: empty comparators vector in VersionReq");
+            .expect("unexpected error: empty comparators vector in VersionReq");
 
         if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
             return Err(DownloadError::UnsupportedVersionRequirement(
@@ -121,10 +141,10 @@ impl Registry for Artifactory {
             version.major,
             version
                 .minor
-                .expect("Unexpected error: minor number missing"), // validated above
+                .expect("unexpected error: minor number missing"), // validated above
             version
                 .patch
-                .expect("Unexpected error: patch number missing"), // validated above
+                .expect("unexpected error: patch number missing"), // validated above
             if version.pre.is_empty() {
                 "".to_owned()
             } else {
@@ -150,32 +170,20 @@ impl Registry for Artifactory {
 
         tracing::debug!("Hitting download URL: {artifact_url}");
 
-        let mut request = self.client.get(artifact_url);
-
-        if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|err| DownloadError::RequestFailed(err.to_string()))?;
-
-        self.validate_status(&response)
-            .map_err(DownloadError::RequestFailed)?;
+        let response = self
+            .make_auth_request(Method::GET, artifact_url, None)
+            .await?;
 
         let headers = response.headers();
-        let content_type =
-            headers
-                .get(&reqwest::header::CONTENT_TYPE)
-                .ok_or(DownloadError::InvalidResponse(
-                    "missing content-type header".into(),
-                ))?;
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .ok_or_else(|| HttpError::Other("missing content-type header".into()))?;
 
         if content_type != reqwest::header::HeaderValue::from_static("application/x-gzip") {
-            return Err(DownloadError::InvalidResponse(format!(
-                "Server response has incorrect mime type: {content_type:?}"
-            )));
+            return Err(HttpError::Other(format!(
+                "server response has incorrect mime type: {content_type:?}"
+            ))
+            .into());
         }
 
         tracing::debug!("downloaded dependency {dependency}");
@@ -183,10 +191,9 @@ impl Registry for Artifactory {
         let data = response
             .bytes()
             .await
-            .map_err(|_| DownloadError::RequestFailed("failed to download data".into()))?;
+            .map_err(|_| HttpError::Other("failed to download data".into()))?;
 
-        Package::try_from(data)
-            .map_err(|_| DownloadError::InvalidResponse("failed to decode tarball".into()))
+        Package::try_from(data).map_err(DownloadError::DecodePackage)
     }
 
     /// Publishes a package to artifactory
@@ -200,21 +207,11 @@ impl Registry for Artifactory {
             package.version(),
         )
         .parse()
-        .map_err(|_| PublishError::RequestFailed("failed to construct artifact uri".into()))?;
+        .expect("unexpected error: failed to construct artifact URL");
 
-        let mut request = self.client.put(artifact_uri).body(package.tgz.clone());
-
-        if let Some(token) = &self.token {
-            request = request.bearer_auth(token);
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|err| PublishError::RequestFailed(err.to_string()))?;
-
-        self.validate_status(&response)
-            .map_err(PublishError::RequestFailed)?;
+        let _ = self
+            .make_auth_request(Method::PUT, artifact_uri, Some(package.tgz.clone()))
+            .await?;
 
         tracing::info!(
             ":: published {}/{}@{}",

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use displaydoc::Display;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -23,7 +24,7 @@ use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::IoError,
+    errors::{DeserializationError, SerializationError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
 };
@@ -58,10 +59,10 @@ impl From<Manifest> for RawManifest {
 }
 
 impl TryFrom<String> for RawManifest {
-    type Error = toml::de::Error;
+    type Error = DeserializationError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        toml::from_str::<RawManifest>(&value)
+        toml::from_str::<RawManifest>(&value).map_err(Self::Error::from)
     }
 }
 
@@ -78,34 +79,28 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
 }
 
-/// Error produced when loading the manifest file
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum ReadError {
-    /// Could not read from the file
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
-    /// Could not parse the TOML payload
-    #[error("Could not deserialize the manifest. Cause: {0}")]
-    Deserialize(toml::de::Error),
+    /// could not read the manifest file
+    Io(#[from] std::io::Error),
+    /// could not deserialize the manifest
+    Deserialize(#[from] DeserializationError),
 }
 
-/// Error produced when updating the manifest file
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum WriteError {
-    /// Could not write to the file
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
-    /// Could not encode the data into a TOML payload
-    #[error("Could not serialize the manifest. Cause: {0}")]
-    Serialize(toml::ser::Error),
+    /// could not write to the manifest file
+    Io(#[from] std::io::Error),
+    /// could not serialize the manifest
+    Serialize(#[from] SerializationError),
 }
 
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
-    pub async fn exists() -> Result<bool, IoError> {
-        fs::try_exists(MANIFEST_FILE)
-            .await
-            .map_err(|err| IoError::new(err, "Cannot re-initialize an existing project"))
+    pub async fn exists() -> Result<bool, std::io::Error> {
+        fs::try_exists(MANIFEST_FILE).await
     }
 
     /// Loads the manifest from the current directory
@@ -115,8 +110,8 @@ impl Manifest {
 
     /// Loads the manifest from the given path
     pub async fn read_from(path: impl AsRef<Path>) -> Result<Self, ReadError> {
-        let toml = fs::read_to_string(path).await.map_err(ReadError::Io)?;
-        let raw: RawManifest = toml::from_str(&toml).map_err(ReadError::Deserialize)?;
+        let toml = fs::read_to_string(path).await?;
+        let raw: RawManifest = toml::from_str(&toml).map_err(DeserializationError::from)?;
         Ok(raw.into())
     }
 
@@ -127,7 +122,7 @@ impl Manifest {
         fs::write(
             MANIFEST_FILE,
             toml::to_string(&raw)
-                .map_err(WriteError::Serialize)?
+                .map_err(SerializationError::from)?
                 .into_bytes(),
         )
         .await
@@ -154,7 +149,7 @@ impl From<RawManifest> for Manifest {
 }
 
 impl TryFrom<String> for Manifest {
-    type Error = toml::de::Error;
+    type Error = DeserializationError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(RawManifest::try_from(value)?.into())
@@ -162,10 +157,10 @@ impl TryFrom<String> for Manifest {
 }
 
 impl TryInto<String> for Manifest {
-    type Error = toml::ser::Error;
+    type Error = SerializationError;
 
     fn try_into(self) -> Result<String, Self::Error> {
-        toml::to_string_pretty(&RawManifest::from(self))
+        toml::to_string_pretty(&RawManifest::from(self)).map_err(Self::Error::from)
     }
 }
 

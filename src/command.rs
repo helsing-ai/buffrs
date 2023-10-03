@@ -14,12 +14,10 @@
 
 use crate::{
     credentials::{self, Credentials},
-    errors::IoError,
+    errors::{ConfigError, HttpError},
     lock::{self, LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, PackageManifest},
-    package::{
-        self, DependencyGraph, PackageName, PackageNameValidationError, PackageStore, PackageType,
-    },
+    package::{self, DependencyGraph, InvalidPackageName, PackageName, PackageStore, PackageType},
     registry::{self, Artifactory, Registry, RegistryUri},
 };
 
@@ -29,47 +27,57 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
+use displaydoc::Display;
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 use thiserror::Error;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
-/// Error produced when initializing a Buffrs project
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum InitError {
-    /// Repository was already initialized
-    #[error("A manifest file is already present in the current directory and won't be overridden")]
-    ManifestExists,
-    /// Failed to interface with filesystem
-    #[error("{0}")]
-    Io(IoError),
-    /// Failed to write the manifest to the filesystem
-    #[error("Failed to write manifest. Cause: {0}")]
-    ManifestWrite(manifest::WriteError),
-    /// System path contains non-unicode data
-    #[error("Path is not valid a UTF-8 string")]
-    Utf8Error,
-    /// Package name contains invalid characters
-    #[error("Invalid package name. {0}")]
-    PackageNameValidation(PackageNameValidationError),
+    /// a manifest file was found, project is already initialized
+    AlreadyInitialized,
+    /// invalid package name
+    InvalidName(#[from] InvalidPackageName),
+    /// io error: {message}
+    Io {
+        message: String,
+        source: std::io::Error,
+    },
+    /// failed to create manifest file
+    ManifestWrite(#[from] manifest::WriteError),
+    /// failed to create package store
+    PackageStore(#[from] package::CreateStoreError),
+    /// {0}
+    Other(&'static str),
 }
 
 /// Initializes the project
 pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), InitError> {
-    if Manifest::exists().await.map_err(InitError::Io)? {
-        return Err(InitError::ManifestExists);
+    if Manifest::exists().await.map_err(|source| InitError::Io {
+        message: "failed to access filesystem".into(),
+        source,
+    })? {
+        return Err(InitError::AlreadyInitialized);
     }
 
     fn curr_dir_name() -> Result<PackageName, InitError> {
         std::env::current_dir()
-            .map_err(|err| InitError::Io(IoError::new(err, "Failed to read current directory")))?
+            .map_err(|source| InitError::Io {
+                message: "failed to access current directory".into(),
+                source,
+            })?
             .file_name()
-            .expect("Unexpected error: current directory path terminates in ..")
+            .expect("unexpected error: current directory path terminates in ..")
             .to_str()
-            .ok_or(InitError::Utf8Error)?
+            .ok_or(InitError::Other(
+                "current directory path is not valid utf-8",
+            ))?
             .parse()
-            .map_err(InitError::PackageNameValidation)
+            .map_err(InitError::InvalidName)
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
@@ -84,40 +92,34 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), In
         dependencies: vec![],
     };
 
-    manifest.write().await.map_err(InitError::ManifestWrite)?;
+    manifest.write().await?;
 
-    PackageStore::create().await.map_err(InitError::Io)
+    PackageStore::create().await.map_err(InitError::from)
 }
 
-/// Error produced by the add command
+/// Wrapper for a semantic version validation error
 #[derive(Error, Debug)]
+#[error(transparent)]
+pub struct SemVerError(#[from] semver::Error);
+
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum AddError {
-    /// A repository component could not be extracted
-    #[error("Locator {0} is missing a repository delimiter")]
+    /// locator {0} is missing a repository delimiter
     MissingRepository(String),
-    /// Repository name not in kebab case
-    #[error("Repository {0} is not in kebab case")]
+    /// repository {0} is not in kebab case
     NotKebabCase(String),
-    /// No version could be extracted
-    #[error("Dependency specification is missing version part: {0}")]
+    /// dependency specification is missing version part: {0}
     MissingVersion(String),
-    /// Dependency name contains invalid characters
-    #[error("Failed to validate dependency name. {0}")]
-    InvalidName(package::PackageNameValidationError),
-    /// Version does not follow SemVer spec
-    #[error("Not a valid version requirement: {given}. Cause: {source}")]
-    InvalidVersionReq {
-        /// The raw specification provided by the user
-        given: String,
-        /// The original validation error produced by the semver crate
-        source: semver::Error,
-    },
-    /// Manifest file could not be read
-    #[error("Failed to read manifest. {0}")]
-    ManifestRead(manifest::ReadError),
-    /// Manifest file could not be written to
-    #[error("Failed to write manifest. {0}")]
-    ManifestWrite(manifest::WriteError),
+    /// dependency name is not a valid package name
+    InvalidName(#[from] package::InvalidPackageName),
+    /// not a valid version requirement: {given}
+    InvalidVersionReq { given: String, source: SemVerError },
+    /// failed to read the manifest file
+    ManifestRead(#[from] manifest::ReadError),
+    /// failed to write to manifest file
+    ManifestWrite(#[from] manifest::WriteError),
 }
 
 /// Adds a dependency to this project
@@ -139,43 +141,38 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> Result<(), AddError
         .split_once('@')
         .ok_or(AddError::MissingVersion(dependency.into()))?;
 
-    let package = package
-        .parse::<PackageName>()
-        .map_err(AddError::InvalidName)?;
+    let package = package.parse::<PackageName>()?;
 
     let version = version
         .parse::<VersionReq>()
-        .map_err(|err| AddError::InvalidVersionReq {
+        .map_err(|source| AddError::InvalidVersionReq {
             given: version.into(),
-            source: err,
+            source: source.into(),
         })?;
 
-    let mut manifest = Manifest::read().await.map_err(AddError::ManifestRead)?;
+    let mut manifest = Manifest::read().await?;
 
     manifest
         .dependencies
         .push(Dependency::new(registry, repository, package, version));
 
-    manifest.write().await.map_err(AddError::ManifestWrite)
+    manifest.write().await.map_err(AddError::from)
 }
 
-/// Error produced by the remove command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum RemoveError {
-    /// Failed to read the manifest file
-    #[error("Failed to read manifest. {0}")]
-    ManifestRead(manifest::ReadError),
-    /// Package not present in manifest
-    #[error("Package {0} not in manifest")]
+    /// package {0} not in manifest
     PackageNotFound(PackageName),
-    /// Failed to write to the manifest file
-    #[error("Failed to write manifest. {0}")]
-    ManifestWrite(manifest::WriteError),
+    /// failed to read the manifest file
+    ManifestRead(#[from] manifest::ReadError),
+    /// failed to write to the manifest file
+    ManifestWrite(#[from] manifest::WriteError),
 }
 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> Result<(), RemoveError> {
-    let mut manifest = Manifest::read().await.map_err(RemoveError::ManifestRead)?;
+    let mut manifest = Manifest::read().await?;
 
     let match_idx = manifest
         .dependencies
@@ -185,20 +182,22 @@ pub async fn remove(package: PackageName) -> Result<(), RemoveError> {
 
     let dependency = manifest.dependencies.remove(match_idx);
 
-    PackageStore::uninstall(&dependency.package).await.ok();
+    // if PackageStore::uninstall(&dependency.package).await.is_err() {
+    //     tracing::warn!("failed to uninstall package {}", dependency.package);
+    // }
 
-    manifest.write().await.map_err(RemoveError::ManifestWrite)
+    PackageStore::uninstall(&dependency.package).await.ok(); // temporary due to broken test
+
+    manifest.write().await.map_err(RemoveError::from)
 }
 
-/// Error produced by the package command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum PackageError {
-    /// Could not generate a package release from the project
-    #[error("Failed to release package. {0}")]
-    Release(package::ReleaseError),
-    /// Could not write the package to the filesystem
-    #[error("Failed to write package to filesystem. {0}")]
-    Io(std::io::Error),
+    /// failed to release package
+    Release(#[from] package::ReleaseError),
+    /// could not write the package to the filesystem
+    Write(#[source] std::io::Error),
 }
 
 /// Packages the api and writes it to the filesystem
@@ -213,32 +212,27 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> Result<(), P
     ));
 
     if !dry_run {
-        std::fs::write(path, package.tgz).map_err(PackageError::Io)?;
+        std::fs::write(path, package.tgz).map_err(PackageError::Write)?;
     }
 
     Ok(())
 }
 
-/// Error produced by the publish command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum PublishError {
-    /// Failed to fetch repository status from git
+    /// failed to determine repository status
     #[cfg(feature = "build")]
-    #[error("Failed to get repository status: {0}")]
-    RepositoryStatus(git2::Error),
-    /// Attempted to publish a dirty repository
+    RepositoryStatus(#[source] git2::Error),
+    /// attempted to publish a dirty repository
     #[cfg(feature = "build")]
-    #[error("Cannot publish dirty repository")]
     DirtyRepository,
-    /// Failed to generate a package release
-    #[error("Cannot release package. {0}")]
-    Release(package::ReleaseError),
-    /// Failed to instantiate the registry client
-    #[error("Cannot instance registry client. {0}")]
-    Registry(registry::artifactory::BuildError),
-    /// Some other error produced by the registry client
-    #[error(transparent)]
-    Internal(registry::PublishError),
+    /// configuration error
+    Config(#[from] ConfigError),
+    /// failed to generate a package release
+    Release(#[from] package::ReleaseError),
+    /// failed to publish release
+    Publish(#[from] registry::PublishError),
 }
 
 /// Publishes the api package to the registry
@@ -268,7 +262,7 @@ pub async fn publish(
         }
     }
 
-    let artifactory = Artifactory::new(registry, &credentials).map_err(PublishError::Registry)?;
+    let artifactory = Artifactory::new(registry, &credentials)?;
 
     let package = PackageStore::release()
         .await
@@ -282,44 +276,34 @@ pub async fn publish(
     artifactory
         .publish(package, repository)
         .await
-        .map_err(PublishError::Internal)?;
-
-    Ok(())
+        .map_err(PublishError::from)
 }
 
-/// Error produced by the install command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum InstallError {
-    /// Could not read the manifest file
-    #[error("Failed to read manifest. {0}")]
-    ReadManifest(manifest::ReadError),
-    /// Could not read the lockfile
-    #[error("Failed to read lockfile. {0}")]
-    ReadLockfile(lock::ReadError),
-    /// Could not generate the dependency graph
-    #[error("Dependency resolution failed. {0}")]
-    BuildDependencyGraph(package::DependencyGraphBuildError),
-    /// Could not write to the lockfile
-    #[error("Failed to write lockfile. {0}")]
-    WriteLockfile(lock::WriteError),
-    /// Could not extract the package to the local fs store
-    #[error("Failed to unpack dependency. {0}")]
-    UnpackError(package::UnpackError),
+    /// could not read the manifest file
+    ReadManifest(#[from] manifest::ReadError),
+    /// could not read the lockfile
+    ReadLockfile(#[from] lock::ReadError),
+    /// dependency resolution failed
+    BuildDependencyGraph(#[from] package::DependencyGraphBuildError),
+    /// could not write to the lockfile
+    WriteLockfile(#[from] lock::WriteError),
+    /// could not extract the package
+    UnpackError(#[from] package::UnpackError),
 }
 
 /// Installs dependencies
 pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
     let credentials = Arc::new(credentials);
 
-    let manifest = Manifest::read().await.map_err(InstallError::ReadManifest)?;
+    let manifest = Manifest::read().await?;
 
-    let lockfile = Lockfile::read_or_default()
-        .await
-        .map_err(InstallError::ReadLockfile)?;
+    let lockfile = Lockfile::read_or_default().await?;
 
-    let dependency_graph = DependencyGraph::from_manifest(&manifest, &lockfile, &credentials)
-        .await
-        .map_err(InstallError::BuildDependencyGraph)?;
+    let dependency_graph =
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
 
     let mut locked = Vec::new();
 
@@ -334,9 +318,7 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
             .get(name)
             .expect("Unexpected error: missing dependency in dependency graph");
 
-        PackageStore::unpack(&resolved.package)
-            .await
-            .map_err(InstallError::UnpackError)?;
+        PackageStore::unpack(&resolved.package).await?;
 
         tracing::info!(
             "{} installed {}@{}",
@@ -378,23 +360,19 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
         .await?;
     }
 
-    let lockfile = Lockfile::from_iter(locked.into_iter());
-    lockfile
+    Lockfile::from_iter(locked.into_iter())
         .write()
         .await
-        .map_err(InstallError::WriteLockfile)?;
-
-    Ok(())
+        .map_err(InstallError::from)
 }
 
 /// Uninstalls dependencies
-pub async fn uninstall() -> Result<(), IoError> {
+pub async fn uninstall() -> Result<(), std::io::Error> {
     PackageStore::clear().await
 }
 
-/// Error produced by the generate command
-#[derive(Error, Debug)]
-#[error("Failed to generate language bindings for {language}. Cause: {source}")]
+/// failed to generate {language} bindings
+#[derive(Error, Display, Debug)]
 pub struct GenerateError {
     source: generator::GenerateError,
     language: Language,
@@ -406,27 +384,20 @@ pub async fn generate(language: Language, out_dir: PathBuf) -> Result<(), Genera
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
-        .map_err(|err| GenerateError {
-            source: err,
-            language,
-        })
+        .map_err(|source| GenerateError { source, language })
 }
 
-/// Error produced by the login command
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum LoginError {
-    /// Failed to read the token from the user
-    #[error("Failed to read token: {0}")]
-    Input(std::io::Error),
-    /// Failed to instantiate the registry client
-    #[error("Failed to instantiate an Artifactory client. {0}")]
-    Registry(registry::artifactory::BuildError),
-    /// Failed to reach the registry
-    #[error("Failed to reach artifactory. Please make sure the URL and credentials are correct and the instance is up and running")]
-    Ping(registry::artifactory::PingError),
-    /// Failed to write to the credentials file
-    #[error("Failed to update credentials: {0}")]
-    Write(credentials::WriteError),
+    /// failed to read the token from the user
+    Input(#[source] std::io::Error),
+    /// failed to instantiate the registry client
+    Config(#[from] ConfigError),
+    /// failed to reach artifactory
+    Ping(#[source] HttpError),
+    /// failed to write to the credentials file
+    WriteCredentials(#[from] credentials::WriteError),
 }
 
 /// Logs you in for a registry
@@ -446,14 +417,13 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Resul
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var("BUFFRS_TESTSUITE").is_err() {
-        Artifactory::new(registry, &credentials)
-            .map_err(LoginError::Registry)?
+        Artifactory::new(registry, &credentials)?
             .ping()
             .await
             .map_err(LoginError::Ping)?;
     }
 
-    credentials.write().await.map_err(LoginError::Write)
+    credentials.write().await.map_err(LoginError::from)
 }
 
 /// Error produced by the logout command

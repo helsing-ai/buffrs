@@ -152,23 +152,23 @@ async fn main() -> eyre::Result<()> {
 
             command::init(kind, package)
                 .await
-                .wrap_err("Init command failed")
+                .wrap_err("init command failed")
         }
         Command::Add {
             registry,
             dependency,
         } => command::add(registry, &dependency)
             .await
-            .wrap_err("Add command failed"),
+            .wrap_err("add command failed"),
         Command::Remove { package } => command::remove(package)
             .await
-            .wrap_err("Remove command failed"),
+            .wrap_err("remove command failed"),
         Command::Package {
             output_directory,
             dry_run,
         } => command::package(output_directory, dry_run)
             .await
-            .wrap_err("Package command failed"),
+            .wrap_err("package command failed"),
         Command::Publish {
             registry,
             repository,
@@ -176,21 +176,21 @@ async fn main() -> eyre::Result<()> {
             dry_run,
         } => command::publish(credentials, registry, repository, allow_dirty, dry_run)
             .await
-            .wrap_err("Publish command failed"),
+            .wrap_err("publish command failed"),
         Command::Install => command::install(credentials)
             .await
-            .wrap_err("Install command failed"),
+            .wrap_err("install command failed"),
         Command::Uninstall => command::uninstall()
             .await
-            .wrap_err("Uninstall command failed"),
+            .wrap_err("uninstall command failed"),
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
-            .wrap_err("Generate command failed"),
+            .wrap_err("generate command failed"),
         Command::Login { registry } => command::login(credentials, registry)
             .await
-            .wrap_err("Login command failed"),
+            .wrap_err("login command failed"),
         Command::Logout { registry } => command::logout(credentials, registry)
             .await
-            .wrap_err("Logout command failed"),
+            .wrap_err("logout command failed"),
     }
 }

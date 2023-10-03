@@ -14,6 +14,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
+use displaydoc::Display;
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -21,7 +22,7 @@ use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::IoError,
+    errors::{DeserializationError, SerializationError},
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -46,21 +47,17 @@ impl std::fmt::Display for DigestAlgorithm {
     }
 }
 
-/// Error produced when converting into the local digest representation
-#[derive(Error, Debug)]
-pub enum DigestConversionError {
-    /// Produced when the source digest uses an unsupported algorithm
-    #[error("Unsupported digest algorithm: {0}")]
-    UnsupportedAlgorithm(String),
-}
+/// unsupported digest algorithm: {0}
+#[derive(Error, Display, Debug)]
+pub struct UnsupportedAlgorithm(String);
 
 impl FromStr for DigestAlgorithm {
-    type Err = DigestConversionError;
+    type Err = UnsupportedAlgorithm;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             SHA256_TAG => Ok(Self::SHA256),
-            other => Err(DigestConversionError::UnsupportedAlgorithm(other.into())),
+            other => Err(UnsupportedAlgorithm(other.into())),
         }
     }
 }
@@ -89,16 +86,13 @@ pub struct Digest {
 }
 
 impl TryFrom<digest::Digest> for Digest {
-    type Error = DigestConversionError;
+    type Error = UnsupportedAlgorithm;
 
     fn try_from(value: digest::Digest) -> Result<Self, Self::Error> {
         let algorithm = if value.algorithm() == &digest::SHA256 {
             DigestAlgorithm::SHA256
         } else {
-            return Err(DigestConversionError::UnsupportedAlgorithm(format!(
-                "{:?}",
-                value.algorithm()
-            )));
+            return Err(UnsupportedAlgorithm(format!("{:?}", value.algorithm())));
         };
 
         Ok(Self {
@@ -200,13 +194,29 @@ pub struct LockedPackage {
     pub dependants: usize,
 }
 
-/// Error that indicates a mismatch between a downloaded package and its lockfile metadata
-#[derive(Error, Debug)]
-#[error("{property} mismatch - expected {expected}, actual {actual}")]
+/// {property} mismatch - expected {expected}, actual {actual}
+#[derive(Error, Display, Debug)]
 pub struct ValidationError {
     property: &'static str,
     expected: String,
     actual: String,
+}
+
+impl ValidationError {
+    /// The name of the property that didn't match
+    pub fn property(&self) -> &'static str {
+        self.property
+    }
+
+    /// The expected value of the property
+    pub fn expected(&self) -> &str {
+        &self.expected
+    }
+
+    /// The actual value of the property
+    pub fn actual(&self) -> &str {
+        &self.actual
+    }
 }
 
 impl LockedPackage {
@@ -219,7 +229,7 @@ impl LockedPackage {
     ) -> Self {
         let digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
-            .expect("Unexpected error: only SHA256 is supported");
+            .expect("unexpected error: only SHA256 is supported");
 
         Self {
             name: package.name().to_owned(),
@@ -285,50 +295,42 @@ pub struct Lockfile {
     packages: HashMap<PackageName, LockedPackage>,
 }
 
-/// Error produced when loading the lockfile from the filesystem
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum ReadError {
-    /// Could not read from the file
-    #[error("{0}")]
-    Io(IoError),
-    /// Could not parse the TOML payload
-    #[error("Failed to decode lockfile. Cause: {0}")]
-    Toml(toml::de::Error),
+    /// io error
+    Io(#[from] std::io::Error),
+    /// failed to parse lockfile
+    Deserialize(#[from] DeserializationError),
 }
 
-/// Error produced when updating the lockfile in the filesystem
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum WriteError {
-    /// Could not write to the file
-    #[error("{0}")]
-    Io(IoError),
-    /// Could not encode the data as a TOML payload
-    #[error("Failed to serialize lockfile. Cause: {0}")]
-    Toml(toml::ser::Error),
+    /// io error
+    Io(#[from] std::io::Error),
+    /// failed to parse lockfile
+    Serialize(#[from] SerializationError),
 }
 
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
-    pub async fn exists() -> Result<bool, IoError> {
-        fs::try_exists(LOCKFILE)
-            .await
-            .map_err(|err| IoError::new(err, "Failed to detect lockfile"))
+    pub async fn exists() -> Result<bool, std::io::Error> {
+        fs::try_exists(LOCKFILE).await
     }
 
     /// Loads the Lockfile from the current directory
     pub async fn read() -> Result<Self, ReadError> {
-        let toml = fs::read_to_string(LOCKFILE)
-            .await
-            .map_err(|err| ReadError::Io(IoError::new(err, "Failed to read lockfile")))?;
+        let toml = fs::read_to_string(LOCKFILE).await?;
 
-        let raw: RawLockfile = toml::from_str(&toml).map_err(ReadError::Toml)?;
+        let raw: RawLockfile = toml::from_str(&toml).map_err(DeserializationError::from)?;
 
         Ok(Self::from_iter(raw.packages.into_iter()))
     }
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
     pub async fn read_or_default() -> Result<Self, ReadError> {
-        if Lockfile::exists().await.map_err(ReadError::Io)? {
+        if Lockfile::exists().await? {
             Lockfile::read().await
         } else {
             Ok(Lockfile::default())
@@ -357,11 +359,11 @@ impl Lockfile {
         fs::write(
             LOCKFILE,
             toml::to_string(&raw)
-                .map_err(WriteError::Toml)?
+                .map_err(SerializationError::from)?
                 .into_bytes(),
         )
         .await
-        .map_err(|err| WriteError::Io(IoError::new(err, "Failed to write lockfile")))
+        .map_err(WriteError::from)
     }
 
     /// Locates a given package in the Lockfile

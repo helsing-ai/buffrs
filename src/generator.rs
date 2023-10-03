@@ -17,6 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use displaydoc::Display;
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -56,24 +57,20 @@ pub enum Generator {
     },
 }
 
-/// Error produced when running the code generator
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum RunError {
-    /// The protoc binary could not be located in the local filesystem
-    #[error("Unable to locate vendored protoc")]
+    /// unable to locate vendored protoc
     Locate,
-    /// A generic input/output error
-    #[error("IO error: {0}")]
-    Io(std::io::Error),
-    /// Subprocess terminated by process signal
-    #[error("A signal interrupted the protoc subprocess before it could complete")]
+    /// io error
+    Io(#[from] std::io::Error),
+    /// a signal interrupted the protoc subprocess before it could complete
     Interrupted,
-    /// Subprocess returned non-zero exit code indicating error during execution
-    #[error("The protoc subprocess terminated with an error: {code}. Error output:\n{}", String::from_utf8_lossy(.stderr))]
+    /// the protoc subprocess terminated with an error: {code}
     NonZeroExitCode {
-        /// The exit code from the subprocess
+        /// the exit code from the subprocess
         code: i32,
-        /// The captured output from stderr
+        /// the captured output from stderr
         stderr: Vec<u8>,
     },
 }
@@ -99,8 +96,7 @@ impl Generator {
                     .build_server(true)
                     .build_transport(true)
                     .include_file(Self::TONIC_INCLUDE_FILE)
-                    .compile(&protos, includes)
-                    .map_err(RunError::Io)?;
+                    .compile(&protos, includes)?;
             }
             Generator::Protoc { language, out_dir } => {
                 let mut protoc_cmd = tokio::process::Command::new(protoc);
@@ -124,7 +120,7 @@ impl Generator {
 
                 tracing::debug!(":: running {protoc_cmd:?}");
 
-                let output = protoc_cmd.output().await.map_err(RunError::Io)?;
+                let output = protoc_cmd.output().await?;
 
                 let exit = output.status.code().ok_or(RunError::Interrupted)?;
 
@@ -143,26 +139,21 @@ impl Generator {
     }
 }
 
-/// Error produced when generating code
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
 pub enum GenerateError {
-    /// Could not load the manifest file from the filesystem
-    #[error("Failed to read the manifest. {0}")]
-    ManifestRead(manifest::ReadError),
-    /// No proto files to compile
-    #[error("Either a compilable package (library or api) or at least one dependency is needed to generate code bindings.")]
+    /// failed to read the manifest
+    ManifestRead(#[from] manifest::ReadError),
+    /// either a compilable package (library or api) or at least one dependency is needed to generate code bindings
     NothingToGenerate,
-    /// Error when executing an external code generator
-    #[error("Failed to generate bindings. {0}")]
-    RunFailed(RunError),
+    /// failed to generate bindings
+    RunFailed(#[from] RunError),
 }
 
 impl Generator {
     /// Execute code generation with pre-configured parameters
     pub async fn generate(&self) -> Result<(), GenerateError> {
-        let manifest = Manifest::read()
-            .await
-            .map_err(GenerateError::ManifestRead)?;
+        let manifest = Manifest::read().await?;
 
         tracing::info!(":: initializing code generator");
 
@@ -170,7 +161,7 @@ impl Generator {
             return Err(GenerateError::NothingToGenerate);
         }
 
-        self.run().await.map_err(GenerateError::RunFailed)?;
+        self.run().await?;
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);

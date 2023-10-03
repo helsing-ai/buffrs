@@ -18,39 +18,41 @@ use std::{
     str::FromStr,
 };
 
-use crate::{manifest::Dependency, package::Package};
+use crate::{
+    errors::HttpError,
+    manifest::Dependency,
+    package::{DecodePackageError, Package},
+};
 
-/// Submodule with the Artifactory implementation of a registry client
-pub mod artifactory;
+mod artifactory;
 #[cfg(test)]
 mod local;
 
 pub use artifactory::Artifactory;
+use displaydoc::Display;
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
-/// Error produced when downloading a package from the registry
-#[derive(Error, Debug)]
+#[derive(Display, Error, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum DownloadError {
-    /// Currently only pinned versions are supported
-    #[error("{0} is not a supported version requirement")]
+    /// {0} is not a supported version requirement
     UnsupportedVersionRequirement(VersionReq),
-    /// Opaque error when making a network request
-    #[error("Download request failed - reason: {0}")]
-    RequestFailed(String),
-    /// Opaque error when processing a server response
-    #[error("Invalid server response. Cause: {0}")]
-    InvalidResponse(String),
+    /// http error downloading a dependency
+    Http(#[from] HttpError),
+    /// failed to decode downloaded package
+    DecodePackage(#[from] DecodePackageError),
 }
 
-/// Error produced when publishing a package to the registry
-#[derive(Error, Debug)]
+#[derive(Error, Display, Debug)]
+#[non_exhaustive]
+#[allow(missing_docs)]
 pub enum PublishError {
-    /// Opaque error when making a network request
-    #[error("Publish request failed - reason: {0}")]
-    RequestFailed(String),
+    /// http error uploading a dependency
+    Http(#[from] HttpError),
 }
 
 /// A `buffrs` registry used for remote package management
@@ -93,19 +95,16 @@ impl Display for RegistryUri {
 }
 
 /// Error produced when a URI fails to be validated
-#[derive(Error, Debug)]
+#[derive(Display, Error, Debug)]
+#[non_exhaustive]
 pub enum UriValidationError {
-    /// Underlying URL is not compliant to RFC 1738
-    #[error("Not a valid URL: {0}")]
+    /// Not a valid URL: {0}
     InvalidUrl(String),
-    /// Unsupported scheme used
-    #[error("Invalid URI scheme {0} - must be http or https")]
+    /// Invalid URI scheme {0} - must be http or https
     InvalidScheme(String),
-    /// Missing a host part from the URI
-    #[error("The URI must contain a host: {0}")]
+    /// The URI must contain a host: {0}
     MissingHost(Url),
-    /// Not a valid Artifactory URL
-    #[error("The url must end with '/artifactory' when using a *.jfrog.io host")]
+    /// The url must end with '/artifactory' when using a *.jfrog.io host
     InvalidSuffix,
 }
 
@@ -127,11 +126,11 @@ fn sanity_check_url(url: &Url) -> Result<(), UriValidationError> {
 
     if let Some(host) = url.host_str() {
         if host.ends_with(".jfrog.io") && !url.path().ends_with("/artifactory") {
-            return Err(UriValidationError::InvalidSuffix);
+            Err(UriValidationError::InvalidSuffix)
+        } else {
+            Ok(())
         }
     } else {
-        return Err(UriValidationError::MissingHost(url.clone()));
+        Err(UriValidationError::MissingHost(url.clone()))
     }
-
-    Ok(())
 }

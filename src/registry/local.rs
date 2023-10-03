@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 
-use crate::{manifest::Dependency, package::Package};
+use crate::{errors::HttpError, manifest::Dependency, package::Package};
 
 use super::{DownloadError, PublishError, Registry};
 
@@ -50,7 +50,7 @@ impl Registry for LocalRegistry {
             .comparators
             .first()
             // validated above
-            .expect("Unexpected error: empty comparators vector in VersionReq");
+            .expect("unexpected error: empty comparators vector in VersionReq");
 
         if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
             return Err(DownloadError::UnsupportedVersionRequirement(
@@ -63,10 +63,10 @@ impl Registry for LocalRegistry {
             version.major,
             version
                 .minor
-                .expect("Unexpected error: minor number missing"), // validated above
+                .expect("unexpected error: minor number missing"), // validated above
             version
                 .patch
-                .expect("Unexpected error: patch number missing"), // validated above
+                .expect("unexpected error: patch number missing"), // validated above
             if version.pre.is_empty() {
                 "".to_owned()
             } else {
@@ -82,12 +82,10 @@ impl Registry for LocalRegistry {
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
         let bytes = Bytes::from(
-            std::fs::read(path)
-                .map_err(|_| DownloadError::RequestFailed("Could not read file".into()))?,
+            std::fs::read(path).map_err(|_| HttpError::Other("could not read file".into()))?,
         );
 
-        Package::try_from(bytes)
-            .map_err(|_| DownloadError::InvalidResponse("failed to decode tarball".into()))
+        Package::try_from(bytes).map_err(DownloadError::DecodePackage)
     }
 
     async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
@@ -101,9 +99,8 @@ impl Registry for LocalRegistry {
 
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        std::fs::write(&path, &package.tgz).map_err(|err| {
-            PublishError::RequestFailed(format!("Could not write to file: {err}"))
-        })?;
+        std::fs::write(&path, &package.tgz)
+            .map_err(|err| HttpError::Other(format!("Could not write to file: {err}")))?;
 
         tracing::info!(
             ":: published {}/{}@{} to {:?}",
