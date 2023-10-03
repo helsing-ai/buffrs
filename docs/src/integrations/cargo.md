@@ -23,9 +23,11 @@ the box build script which utilizes tonic and prost.
 
 ```rust
 fn main() {
-    buffrs::build(buffrs::Language::Rust).unwrap();
+    buffrs::build().unwrap();
 }
 ```
+
+**Note**: from buffrs 0.6.4 you should not specify `buffrs::Language::Rust` in `build()`
 
 Invoking `buffrs::build` will:
 
