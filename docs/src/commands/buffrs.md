@@ -11,7 +11,10 @@ The official Buffrs command-line interface.
 When invoked without any arguments, the Buffrs binary defaults to printing out
 help information to the standard output.
 
-This is equivalent to [`buffrs help`](buffrs-help.md).
+This is equivalent to [`buffrs help`](buffrs-help.md), or invoking with the `-h`
+or `--help` flags.
+
+Providing the `-V` or `--version` flags is also equivalent to `buffrs version`.
 
 ### Output
 

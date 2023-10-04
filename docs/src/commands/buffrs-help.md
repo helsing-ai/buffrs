@@ -4,11 +4,22 @@ Prints out information about how to use the CLI.
 
 ### Synopsis
 
-`buffrs help`
+`buffrs help [command]`
 
-### Output
+### Description
+
+When called by itself, this command lists all the supported commands along with
+a brief description.
+
+When called with a command argument, it will provide specific help for that
+command.
+
+Passing the `-h` or `--help` flags is equivalent to invoking this command.
+
+### Examples
 
 ```
+> buffrs help
 Modern protobuf package management
 
 Usage: buffrs <COMMAND>
@@ -27,6 +38,22 @@ Commands:
   help       Print this message or the help of the given subcommand(s)
 
 Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
+
+```
+> buffrs help init
+Initializes a buffrs setup
+
+Usage: buffrs init [OPTIONS] [PACKAGE]
+
+Arguments:
+  [PACKAGE]  The package name used for initialization
+
+Options:
+      --lib      Sets up the package as lib
+      --api      Sets up the package as api
   -h, --help     Print help
   -V, --version  Print version
 ```
