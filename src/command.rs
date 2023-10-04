@@ -17,7 +17,7 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
-    registry::{Artifactory,  RegistryUri},
+    registry::{Artifactory, RegistryUri},
 };
 
 #[cfg(feature = "build")]
