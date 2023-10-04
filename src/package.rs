@@ -37,7 +37,7 @@ use crate::{
     errors::{DeserializationError, SerializationError},
     lock::{self, LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, MANIFEST_FILE},
-    registry::{Artifactory, Registry, RegistryUri},
+    registry::{Artifactory, RegistryUri},
 };
 
 /// IO abstraction layer over local `buffrs` package store

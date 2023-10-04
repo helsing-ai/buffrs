@@ -18,11 +18,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::{
-    errors::HttpError,
-    manifest::Dependency,
-    package::{DecodePackageError, Package},
-};
+use crate::{errors::HttpError, package::DecodePackageError};
 
 mod artifactory;
 #[cfg(test)]
@@ -53,15 +49,6 @@ pub enum DownloadError {
 pub enum PublishError {
     /// http error uploading a dependency
     Http(#[from] HttpError),
-}
-
-/// A `buffrs` registry used for remote package management
-#[async_trait::async_trait]
-pub trait Registry {
-    /// Downloads a package from the registry
-    async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError>;
-    /// Publishes a package to the registry
-    async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError>;
 }
 
 /// A representation of a registry URI

@@ -18,7 +18,7 @@ use crate::{
     lock::{self, LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, PackageManifest},
     package::{self, DependencyGraph, InvalidPackageName, PackageName, PackageStore, PackageType},
-    registry::{self, Artifactory, Registry, RegistryUri},
+    registry::{self, Artifactory, RegistryUri},
 };
 
 #[cfg(feature = "build")]
@@ -238,7 +238,7 @@ pub async fn publish(
     credentials: Credentials,
     registry: RegistryUri,
     repository: String,
-    #[cfg(feature = "build")] allow_dirty: bool,
+    #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
 ) -> Result<(), PublishError> {
     #[cfg(feature = "build")]

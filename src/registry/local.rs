@@ -18,7 +18,7 @@ use bytes::Bytes;
 
 use crate::{errors::HttpError, manifest::Dependency, package::Package};
 
-use super::{DownloadError, PublishError, Registry};
+use super::{DownloadError, PublishError};
 
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
@@ -32,11 +32,8 @@ impl LocalRegistry {
     pub fn new(base_dir: PathBuf) -> Self {
         LocalRegistry { base_dir }
     }
-}
 
-#[async_trait::async_trait]
-impl Registry for LocalRegistry {
-    async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
+    pub async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
         if dependency.manifest.version.comparators.len() != 1 {
             return Err(DownloadError::UnsupportedVersionRequirement(
@@ -88,7 +85,7 @@ impl Registry for LocalRegistry {
         Package::try_from(bytes).map_err(DownloadError::DecodePackage)
     }
 
-    async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
+    pub async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
@@ -119,7 +116,7 @@ mod tests {
     use crate::manifest::{Dependency, Manifest, PackageManifest};
     use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
-    use crate::registry::{Registry, RegistryUri};
+    use crate::registry::RegistryUri;
     use bytes::Bytes;
     use std::path::PathBuf;
     use std::str::FromStr;

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{DownloadError, PublishError, Registry, RegistryUri};
+use super::{DownloadError, PublishError, RegistryUri};
 use crate::{
     credentials::Credentials,
     errors::{ConfigError, HttpError, RequestError, ResponseError},
@@ -110,12 +110,9 @@ impl Artifactory {
             .await
             .map(|_| ())
     }
-}
 
-#[async_trait::async_trait]
-impl Registry for Artifactory {
     /// Downloads a package from artifactory
-    async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
+    pub async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
         if dependency.manifest.version.comparators.len() != 1 {
             return Err(DownloadError::UnsupportedVersionRequirement(
                 dependency.manifest.version,
@@ -197,7 +194,7 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
+    pub async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
