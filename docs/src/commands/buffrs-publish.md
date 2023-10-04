@@ -28,7 +28,7 @@ By default, Buffrs does not allow publishing packages from git repositories in a
 dirty state (note: this requires the `git` feature to be enabled). This
 behaviour can be overridden by passing the `--allow-dirty` flag.
 
-#### Supported package types
+#### Supported project types
 
 Both library and API packages can be published -- the only exception is
 implementation packages, which are deemed to be terminal packages in the
