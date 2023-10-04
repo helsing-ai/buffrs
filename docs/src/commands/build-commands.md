@@ -5,6 +5,4 @@ documentation from Buffrs-managed protocol buffer files.
 
 ## Index
 
-* buffrs clean
-* buffrs doc
 * [buffrs generate](buffrs-generate.md)

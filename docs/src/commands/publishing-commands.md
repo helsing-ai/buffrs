@@ -10,4 +10,3 @@ Also in this category are commands to manage locally saved registry credentials.
 * [buffrs login](buffrs-login.md)
 * [buffrs logout](buffrs-logout.md)
 * [buffrs publish](buffrs-publish.md)
-* buffrs yank

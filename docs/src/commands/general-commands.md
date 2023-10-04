@@ -8,4 +8,3 @@ information.
 
 * [buffrs](buffrs.md)
 * [buffrs help](buffrs-help.md)
-* buffrs version

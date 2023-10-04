@@ -9,7 +9,4 @@ keeping the lockfile in sync.
 ## Index
 
 * [buffrs add](buffrs-add.md)
-* buffrs lock
 * [buffrs remove](buffrs-remove.md)
-* buffrs tree
-* buffrs update
