@@ -19,5 +19,3 @@ following format:
 uri = "https://example.com/artifactory"
 token = "<secret>"
 ```
-
-In the future this may change to use system native keychains.
