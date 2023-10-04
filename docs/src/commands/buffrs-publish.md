@@ -30,10 +30,7 @@ behaviour can be overridden by passing the `--allow-dirty` flag.
 
 #### Supported project types
 
-Both library and API packages can be published -- the only exception is
-implementation packages, which are deemed to be terminal packages in the
-dependency graph. This may change in the future. More details in [Package
-Types](../guide/package-types.md).
+Only Buffrs libraries and API packages can be packaged and published. More details in [Package Types](../guide/package-types.md).
 
 Library packages cannot have dependencies, so releasing this kind of package may
 fail if any are provided in the manifest. API dependencies on library packages
