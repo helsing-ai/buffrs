@@ -1,6 +1,6 @@
 ## buffrs uninstall
 
-Deletes all dependencies from the local store.
+Deletes all installed dependencies from the local filesystem.
 
 ### Synopsis
 
