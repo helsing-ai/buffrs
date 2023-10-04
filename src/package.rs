@@ -69,10 +69,27 @@ impl PackageStore {
 
         Ok(())
     }
+}
 
+#[derive(Error, Display, Debug)]
+#[allow(missing_docs)]
+pub enum ClearError {
+    /// directory not found: `{0}`
+    DirectoryNotFound(PathBuf),
+    /// io error
+    Io(std::io::Error),
+}
+
+impl PackageStore {
     /// Clears all packages from the file system
-    pub async fn clear() -> Result<(), std::io::Error> {
-        fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await
+    pub async fn clear() -> Result<(), ClearError> {
+        match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
+            Ok(()) => Ok(()),
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => Err(
+                ClearError::DirectoryNotFound(Self::PROTO_VENDOR_PATH.into()),
+            ),
+            Err(err) => Err(ClearError::Io(err)),
+        }
     }
 }
 

@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    path::Path,
+    path::{Path, PathBuf},
 };
 use thiserror::Error;
 use tokio::fs;
@@ -82,8 +82,10 @@ pub struct Manifest {
 #[derive(Error, Display, Debug)]
 #[allow(missing_docs)]
 pub enum ReadError {
-    /// could not read the manifest file
+    /// io error
     Io(#[from] std::io::Error),
+    /// failed to find file `{0}`
+    FileNotFound(PathBuf),
     /// could not deserialize the manifest
     Deserialize(#[from] DeserializationError),
 }
@@ -91,7 +93,7 @@ pub enum ReadError {
 #[derive(Error, Display, Debug)]
 #[allow(missing_docs)]
 pub enum WriteError {
-    /// could not write to the manifest file
+    /// io error
     Io(#[from] std::io::Error),
     /// could not serialize the manifest
     Serialize(#[from] SerializationError),
@@ -110,9 +112,19 @@ impl Manifest {
 
     /// Loads the manifest from the given path
     pub async fn read_from(path: impl AsRef<Path>) -> Result<Self, ReadError> {
-        let toml = fs::read_to_string(path).await?;
-        let raw: RawManifest = toml::from_str(&toml).map_err(DeserializationError::from)?;
-        Ok(raw.into())
+        let path_ref = path.as_ref();
+
+        match fs::read_to_string(&path_ref).await {
+            Ok(contents) => {
+                let raw: RawManifest =
+                    toml::from_str(&contents).map_err(DeserializationError::from)?;
+                Ok(raw.into())
+            }
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
+                Err(ReadError::FileNotFound(path_ref.into()))
+            }
+            Err(err) => Err(ReadError::Io(err)),
+        }
     }
 
     /// Persists the manifest into the current directory

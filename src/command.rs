@@ -17,7 +17,10 @@ use crate::{
     errors::{ConfigError, HttpError},
     lock::{self, LockedPackage, Lockfile},
     manifest::{self, Dependency, Manifest, PackageManifest},
-    package::{self, DependencyGraph, InvalidPackageName, PackageName, PackageStore, PackageType},
+    package::{
+        self, ClearError, DependencyGraph, InvalidPackageName, PackageName, PackageStore,
+        PackageType,
+    },
     registry::{self, Artifactory, RegistryUri},
 };
 
@@ -364,9 +367,14 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
         .map_err(InstallError::from)
 }
 
+/// Opaque error defined for future compatibility
+#[derive(Error, Debug)]
+#[error(transparent)]
+pub struct UninstallError(#[from] ClearError);
+
 /// Uninstalls dependencies
-pub async fn uninstall() -> Result<(), std::io::Error> {
-    PackageStore::clear().await
+pub async fn uninstall() -> Result<(), UninstallError> {
+    PackageStore::clear().await.map_err(UninstallError::from)
 }
 
 /// failed to generate {language} bindings

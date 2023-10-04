@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use displaydoc::Display;
 use ring::digest;
@@ -300,6 +300,8 @@ pub struct Lockfile {
 pub enum ReadError {
     /// io error
     Io(#[from] std::io::Error),
+    /// failed to find file `{0}`
+    FileNotFound(PathBuf),
     /// failed to parse lockfile
     Deserialize(#[from] DeserializationError),
 }
@@ -321,11 +323,17 @@ impl Lockfile {
 
     /// Loads the Lockfile from the current directory
     pub async fn read() -> Result<Self, ReadError> {
-        let toml = fs::read_to_string(LOCKFILE).await?;
-
-        let raw: RawLockfile = toml::from_str(&toml).map_err(DeserializationError::from)?;
-
-        Ok(Self::from_iter(raw.packages.into_iter()))
+        match fs::read_to_string(LOCKFILE).await {
+            Ok(contents) => {
+                let raw: RawLockfile =
+                    toml::from_str(&contents).map_err(DeserializationError::from)?;
+                Ok(Self::from_iter(raw.packages.into_iter()))
+            }
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
+                Err(ReadError::FileNotFound(LOCKFILE.into()))
+            }
+            Err(err) => Err(ReadError::Io(err)),
+        }
     }
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
