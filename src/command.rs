@@ -17,7 +17,7 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
-    registry::{Artifactory, Registry, RegistryUri},
+    registry::{Artifactory, RegistryUri},
 };
 
 #[cfg(feature = "build")]
@@ -146,10 +146,10 @@ pub async fn publish(
     credentials: Credentials,
     registry: RegistryUri,
     repository: String,
-    #[cfg(feature = "build")] allow_dirty: bool,
+    #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
 ) -> eyre::Result<()> {
-    #[cfg(feature = "build")]
+    #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)

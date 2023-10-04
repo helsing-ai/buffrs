@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{Registry, RegistryUri};
+use super::RegistryUri;
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use eyre::{ensure, Context, ContextCompat};
 use url::Url;
@@ -65,12 +65,9 @@ impl Artifactory {
 
         Ok(())
     }
-}
 
-#[async_trait::async_trait]
-impl Registry for Artifactory {
     /// Downloads a package from artifactory
-    async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
         ensure!(
             dependency.manifest.version.comparators.len() == 1,
             "{} uses unsupported semver comparators",
@@ -167,7 +164,7 @@ impl Registry for Artifactory {
     }
 
     /// Publishes a package to artifactory
-    async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
