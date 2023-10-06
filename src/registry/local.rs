@@ -19,7 +19,7 @@ use eyre::Context;
 use semver::VersionReq;
 use thiserror::Error;
 
-use crate::{errors::HttpError, manifest::Dependency, package::Package};
+use crate::{manifest::Dependency, package::Package};
 
 #[derive(Error, Debug)]
 #[error("{0} is not a supported version requirement")]
@@ -79,9 +79,7 @@ impl LocalRegistry {
 
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
-        let bytes = Bytes::from(
-            std::fs::read(path).map_err(|_| HttpError::Other("could not read file".into()))?,
-        );
+        let bytes = Bytes::from(std::fs::read(path).wrap_err("could not read file")?);
 
         Package::try_from(bytes)
             .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
@@ -99,7 +97,7 @@ impl LocalRegistry {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
         std::fs::write(&path, &package.tgz)
-            .map_err(|err| HttpError::Other(format!("Could not write to file: {err}")))?;
+            .wrap_err_with(|| format!("could not write to file: {}", path.display()))?;
 
         tracing::info!(
             ":: published {}/{}@{} to {:?}",

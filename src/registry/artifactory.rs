@@ -13,12 +13,7 @@
 // limitations under the License.
 
 use super::RegistryUri;
-use crate::{
-    credentials::Credentials,
-    errors::{HttpError, RequestError, ResponseError},
-    manifest::Dependency,
-    package::Package,
-};
+use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use bytes::Bytes;
 use eyre::Context;
 use reqwest::{Method, Response};
@@ -55,7 +50,7 @@ impl Artifactory {
         method: Method,
         url: Url,
         body: Option<Bytes>,
-    ) -> eyre::Result<Response, HttpError> {
+    ) -> eyre::Result<Response, eyre::Report> {
         let mut request_builder = self.client.request(method.clone(), url.clone());
 
         if let Some(token) = &self.token {
@@ -66,41 +61,20 @@ impl Artifactory {
             request_builder = request_builder.body(body);
         }
 
-        let request = request_builder.build().map_err(|err| {
-            HttpError::Request(RequestError::create(
-                method.clone(),
-                url.clone(),
-                err,
-                Default::default(),
-            ))
-        })?;
-
-        let headers = request.headers().clone();
-
-        let convert_err = |err: reqwest::Error| {
-            let status = err.status();
-            let request_ctx =
-                RequestError::create(method.clone(), url.clone(), err, headers.clone());
-            match status {
-                None => HttpError::Request(request_ctx),
-                Some(status) => HttpError::Response(ResponseError::new(request_ctx, status)),
-            }
-        };
-
-        let response: Response = self.client.execute(request).await.map_err(convert_err)?;
+        let response = request_builder.send().await?;
 
         if response.status().is_redirection() {
-            return Err(HttpError::Other(format!(
+            eyre::bail!(
                 "remote server attempted to redirect request - is this registry URL valid? {}",
                 self.registry
-            )));
+            );
         }
 
         if response.status() == 401 {
-            return Err(HttpError::Unauthorized);
+            eyre::bail!("unauthorized - please provide registry credentials with `buffrs login`");
         }
 
-        response.error_for_status().map_err(convert_err)
+        response.error_for_status().map_err(eyre::Report::from)
     }
 
     /// Pings artifactory to ensure registry access is working
@@ -177,22 +151,19 @@ impl Artifactory {
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
-            .ok_or_else(|| HttpError::Other("missing content-type header".into()))?;
+            .ok_or_else(|| eyre::eyre!("missing content-type header"))?;
 
         if content_type != reqwest::header::HeaderValue::from_static("application/x-gzip") {
-            return Err(HttpError::Other(format!(
-                "server response has incorrect mime type: {content_type:?}"
-            ))
-            .into());
+            eyre::bail!("server response has incorrect mime type: {content_type:?}");
         }
 
         tracing::debug!("downloaded dependency {dependency}");
 
-        let data = response.bytes().await.map_err(|_| {
-            HttpError::Other(format!(
+        let data = response.bytes().await.wrap_err_with(|| {
+            format!(
                 "failed to download data for dependency {}",
                 dependency.package
-            ))
+            )
         })?;
 
         Package::try_from(data)
