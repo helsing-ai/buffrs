@@ -13,15 +13,11 @@
 // limitations under the License.
 
 use crate::{
-    credentials::{self, Credentials},
-    errors::{ConfigError, HttpError},
-    lock::{self, LockedPackage, Lockfile},
-    manifest::{self, Dependency, Manifest, PackageManifest},
-    package::{
-        self, ClearError, DependencyGraph, InvalidPackageName, PackageName, PackageStore,
-        PackageType,
-    },
-    registry::{self, Artifactory, RegistryUri},
+    credentials::Credentials,
+    lock::{LockedPackage, Lockfile},
+    manifest::{Dependency, Manifest, PackageManifest},
+    package::{DependencyGraph, PackageName, PackageStore, PackageType},
+    registry::{Artifactory, RegistryUri},
 };
 
 #[cfg(feature = "build")]
@@ -30,57 +26,29 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
-use displaydoc::Display;
+use eyre::{Context, ContextCompat};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
-use thiserror::Error;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum InitError {
-    /// a manifest file was found, project is already initialized
-    AlreadyInitialized,
-    /// invalid package name
-    InvalidName(#[from] InvalidPackageName),
-    /// io error: {message}
-    Io {
-        message: String,
-        source: std::io::Error,
-    },
-    /// failed to create manifest file
-    ManifestWrite(#[from] manifest::WriteError),
-    /// failed to create package store
-    PackageStore(#[from] package::CreateStoreError),
-    /// {0}
-    Other(&'static str),
-}
-
 /// Initializes the project
-pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), InitError> {
-    if Manifest::exists().await.map_err(|source| InitError::Io {
-        message: "failed to access filesystem".into(),
-        source,
-    })? {
-        return Err(InitError::AlreadyInitialized);
+pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
+    if Manifest::exists()
+        .await
+        .wrap_err("failed to access filesystem")?
+    {
+        eyre::bail!("a manifest file was found, project is already initialized");
     }
 
-    fn curr_dir_name() -> Result<PackageName, InitError> {
+    fn curr_dir_name() -> eyre::Result<PackageName> {
         std::env::current_dir()
-            .map_err(|source| InitError::Io {
-                message: "failed to access current directory".into(),
-                source,
-            })?
+            .wrap_err("failed to access current directory")?
             .file_name()
             .expect("unexpected error: current directory path terminates in ..")
             .to_str()
-            .ok_or(InitError::Other(
-                "current directory path is not valid utf-8",
-            ))?
+            .wrap_err("current directory path is not valid utf-8")?
             .parse()
-            .map_err(InitError::from)
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
@@ -95,93 +63,68 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> Result<(), In
         dependencies: vec![],
     };
 
-    manifest.write().await?;
+    manifest
+        .write()
+        .await
+        .wrap_err("failed to write manifest file")?;
 
-    PackageStore::create().await.map_err(InitError::from)
-}
-
-/// Wrapper for a semantic version validation error
-#[derive(Error, Debug)]
-#[error(transparent)]
-pub struct SemVerError(#[from] semver::Error);
-
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum AddError {
-    /// locator {0} is missing a repository delimiter
-    MissingRepository(String),
-    /// repository {0} is not in kebab case
-    NotKebabCase(String),
-    /// dependency specification is missing version part: {0}
-    MissingVersion(String),
-    /// dependency name is not a valid package name
-    InvalidName(#[from] package::InvalidPackageName),
-    /// not a valid version requirement: {given}
-    InvalidVersionReq { given: String, source: SemVerError },
-    /// failed to read the manifest file
-    ManifestRead(#[from] manifest::ReadError),
-    /// failed to write to manifest file
-    ManifestWrite(#[from] manifest::WriteError),
+    PackageStore::create()
+        .await
+        .wrap_err("failed to create buffrs project directories")
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: RegistryUri, dependency: &str) -> Result<(), AddError> {
+pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
     let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
     let (repository, dependency) = dependency
         .trim()
         .split_once('/')
-        .ok_or(AddError::MissingRepository(dependency.into()))?;
+        .wrap_err_with(|| format!("locator {dependency} is missing a repository delimiter"))?;
 
     if !repository.chars().all(lower_kebab) {
-        return Err(AddError::NotKebabCase(repository.into()));
+        eyre::bail!("repository {repository} is not in kebab case");
     }
 
     let repository = repository.into();
 
-    let (package, version) = dependency
-        .split_once('@')
-        .ok_or(AddError::MissingVersion(dependency.into()))?;
+    let (package, version) = dependency.split_once('@').wrap_err_with(|| {
+        format!("dependency specification is missing version part: {dependency}")
+    })?;
 
-    let package = package.parse::<PackageName>()?;
+    let package = package
+        .parse::<PackageName>()
+        .wrap_err_with(|| format!("invalid package name: {package}"))?;
 
     let version = version
         .parse::<VersionReq>()
-        .map_err(|source| AddError::InvalidVersionReq {
-            given: version.into(),
-            source: source.into(),
-        })?;
+        .wrap_err_with(|| format!("not a valid version requirement: {version}"))?;
 
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = Manifest::read()
+        .await
+        .wrap_err("failed to read manifest file")?;
 
     manifest
         .dependencies
         .push(Dependency::new(registry, repository, package, version));
 
-    manifest.write().await.map_err(AddError::from)
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum RemoveError {
-    /// package {0} not in manifest
-    PackageNotFound(PackageName),
-    /// failed to read the manifest file
-    ManifestRead(#[from] manifest::ReadError),
-    /// failed to write to the manifest file
-    ManifestWrite(#[from] manifest::WriteError),
+    manifest
+        .write()
+        .await
+        .wrap_err("failed to write manifest file")
 }
 
 /// Removes a dependency from this project
-pub async fn remove(package: PackageName) -> Result<(), RemoveError> {
-    let mut manifest = Manifest::read().await?;
+pub async fn remove(package: PackageName) -> eyre::Result<()> {
+    let mut manifest = Manifest::read()
+        .await
+        .wrap_err("failed to read manifest file")?;
 
     let match_idx = manifest
         .dependencies
         .iter()
         .position(|d| d.package == package)
-        .ok_or(RemoveError::PackageNotFound(package))?;
+        .wrap_err_with(|| format!("package {package} not in manifest"))?;
 
     let dependency = manifest.dependencies.remove(match_idx);
 
@@ -191,21 +134,17 @@ pub async fn remove(package: PackageName) -> Result<(), RemoveError> {
 
     PackageStore::uninstall(&dependency.package).await.ok(); // temporary due to broken test
 
-    manifest.write().await.map_err(RemoveError::from)
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum PackageError {
-    /// failed to release package
-    Release(#[from] package::ReleaseError),
-    /// could not write the package to the filesystem
-    Write(#[source] std::io::Error),
+    manifest
+        .write()
+        .await
+        .wrap_err("failed to write manifest file")
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> Result<(), PackageError> {
-    let package = PackageStore::release().await?;
+pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result<()> {
+    let package = PackageStore::release()
+        .await
+        .wrap_err("failed to release package")?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -213,27 +152,11 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> Result<(), P
     ));
 
     if !dry_run {
-        std::fs::write(path, package.tgz).map_err(PackageError::Write)?;
+        std::fs::write(path, package.tgz)
+            .wrap_err("failed to write package release to the current directory")?;
     }
 
     Ok(())
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum PublishError {
-    /// failed to determine repository status
-    #[cfg(feature = "build")]
-    RepositoryStatus(#[source] git2::Error),
-    /// attempted to publish a dirty repository
-    #[cfg(feature = "build")]
-    DirtyRepository,
-    /// configuration error
-    Config(#[from] ConfigError),
-    /// failed to generate a package release
-    Release(#[from] package::ReleaseError),
-    /// failed to publish release
-    Publish(#[from] registry::PublishError),
 }
 
 /// Publishes the api package to the registry
@@ -243,12 +166,12 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
-) -> Result<(), PublishError> {
+) -> eyre::Result<()> {
     #[cfg(feature = "build")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
-            .map_err(PublishError::RepositoryStatus)?;
+            .wrap_err("failed to determine repository status")?;
 
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
@@ -259,7 +182,7 @@ pub async fn publish(
 
             tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
 
-            return Err(PublishError::DirtyRepository);
+            eyre::bail!("attempted to publish a dirty repository");
         }
     }
 
@@ -267,7 +190,7 @@ pub async fn publish(
 
     let package = PackageStore::release()
         .await
-        .map_err(PublishError::Release)?;
+        .wrap_err("failed to release package")?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -277,34 +200,24 @@ pub async fn publish(
     artifactory
         .publish(package, repository)
         .await
-        .map_err(PublishError::from)
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum InstallError {
-    /// could not read the manifest file
-    ReadManifest(#[from] manifest::ReadError),
-    /// could not read the lockfile
-    ReadLockfile(#[from] lock::ReadError),
-    /// dependency resolution failed
-    BuildDependencyGraph(#[from] package::DependencyGraphBuildError),
-    /// could not write to the lockfile
-    WriteLockfile(#[from] lock::WriteError),
-    /// could not extract the package
-    UnpackError(#[from] package::UnpackError),
+        .wrap_err("failed to publish package")
 }
 
 /// Installs dependencies
-pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
+pub async fn install(credentials: Credentials) -> eyre::Result<()> {
     let credentials = Arc::new(credentials);
 
-    let manifest = Manifest::read().await?;
+    let manifest = Manifest::read()
+        .await
+        .wrap_err("manifest file could not be read")?;
 
-    let lockfile = Lockfile::read_or_default().await?;
+    let lockfile = Lockfile::read_or_default()
+        .await
+        .wrap_err("lockfile could not be read")?;
 
-    let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
+    let dependency_graph = DependencyGraph::from_manifest(&manifest, &lockfile, &credentials)
+        .await
+        .wrap_err("dependency resolution failed")?;
 
     let mut locked = Vec::new();
 
@@ -314,12 +227,14 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
         graph: &DependencyGraph,
         locked: &mut Vec<LockedPackage>,
         prefix: String,
-    ) -> Result<(), InstallError> {
+    ) -> eyre::Result<()> {
         let resolved = graph
             .get(name)
             .expect("unexpected error: missing dependency in dependency graph");
 
-        PackageStore::unpack(&resolved.package).await?;
+        PackageStore::unpack(&resolved.package)
+            .await
+            .wrap_err_with(|| format!("failed to unpack package {}", &resolved.package.name()))?;
 
         tracing::info!(
             "{} installed {}@{}",
@@ -361,53 +276,27 @@ pub async fn install(credentials: Credentials) -> Result<(), InstallError> {
         .await?;
     }
 
-    Lockfile::from_iter(locked.into_iter())
-        .write()
-        .await
-        .map_err(InstallError::from)
+    Lockfile::from_iter(locked.into_iter()).write().await
 }
-
-/// Opaque error defined for future compatibility
-#[derive(Error, Debug)]
-#[error(transparent)]
-pub struct UninstallError(#[from] ClearError);
 
 /// Uninstalls dependencies
-pub async fn uninstall() -> Result<(), UninstallError> {
-    PackageStore::clear().await.map_err(UninstallError::from)
-}
-
-/// failed to generate {language} bindings
-#[derive(Error, Display, Debug)]
-pub struct GenerateError {
-    source: generator::GenerateError,
-    language: Language,
+pub async fn uninstall() -> eyre::Result<()> {
+    PackageStore::clear()
+        .await
+        .wrap_err("failed to clear packages directory")
 }
 
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> Result<(), GenerateError> {
+pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
-        .map_err(|source| GenerateError { source, language })
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum LoginError {
-    /// failed to read the token from the user
-    Input(#[source] std::io::Error),
-    /// failed to instantiate the registry client
-    Config(#[from] ConfigError),
-    /// failed to reach artifactory
-    Ping(#[source] HttpError),
-    /// failed to write to the credentials file
-    WriteCredentials(#[from] credentials::WriteError),
+        .wrap_err_with(|| format!("failed to generate {language} bindings"))
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Result<(), LoginError> {
+pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
     let token = {
         tracing::info!("Please enter your artifactory token:");
 
@@ -415,7 +304,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Resul
 
         std::io::stdin()
             .read_line(&mut raw)
-            .map_err(LoginError::Input)?;
+            .wrap_err("failed to read the token from the user")?;
 
         raw.trim().into()
     };
@@ -426,24 +315,17 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> Resul
         Artifactory::new(registry, &credentials)?
             .ping()
             .await
-            .map_err(LoginError::Ping)?;
+            .wrap_err("failed to validate token")?;
     }
 
-    credentials.write().await.map_err(LoginError::from)
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum LogoutError {
-    /// failed to write to the credentials file
-    Write(#[from] credentials::WriteError),
+    credentials.write().await.wrap_err("failed to save token")
 }
 
 /// Logs you out from a registry
-pub async fn logout(
-    mut credentials: Credentials,
-    registry: RegistryUri,
-) -> Result<(), LogoutError> {
+pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
     credentials.registry_tokens.remove(&registry);
-    credentials.write().await.map_err(LogoutError::from)
+    credentials
+        .write()
+        .await
+        .wrap_err("failed to write to the credentials file")
 }

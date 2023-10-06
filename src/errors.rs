@@ -1,15 +1,4 @@
-use displaydoc::Display;
 use url::Url;
-
-/// Wrapper for a generic serialization error
-#[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct DeserializationError(#[from] toml::de::Error);
-
-/// Wrapper for a generic serialization error
-#[derive(thiserror::Error, Debug)]
-#[error(transparent)]
-pub struct SerializationError(#[from] toml::ser::Error);
 
 /// Request failure context
 #[derive(thiserror::Error, Debug)]
@@ -88,22 +77,38 @@ impl ResponseError {
     }
 }
 
-#[derive(thiserror::Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum ConfigError {
-    /// unknown error
-    Unknown,
-}
-
-#[derive(thiserror::Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum HttpError {
-    /// failed to make an http request
+#[derive(thiserror::Error, Debug)]
+pub(crate) enum HttpError {
+    #[error("failed to make an http request")]
     Request(#[from] RequestError),
-    /// remote produced an error response
+    #[error("remote produced an error response")]
     Response(#[from] ResponseError),
-    /// unauthorized - please provide registry credentials with `buffrs login`
+    #[error("unauthorized - please provide registry credentials with `buffrs login`")]
     Unauthorized,
-    /// {0}
+    #[error("{0}")]
     Other(String),
 }
+
+#[derive(thiserror::Error, Debug)]
+#[error("environment variable {0} is not set")]
+pub(crate) struct EnvVarNotSet(pub &'static str);
+
+#[derive(thiserror::Error, Debug)]
+#[error("could not write to {0} file")]
+pub(crate) struct WriteError(pub &'static str);
+
+#[derive(thiserror::Error, Debug)]
+#[error("could not read from {0} file")]
+pub(crate) struct ReadError(pub &'static str);
+
+#[derive(thiserror::Error, Debug)]
+#[error("could not deserialize {0}")]
+pub(crate) struct DeserializationError(pub &'static str);
+
+#[derive(thiserror::Error, Debug)]
+#[error("could not serialize {0}")]
+pub(crate) struct SerializationError(pub &'static str);
+
+#[derive(thiserror::Error, Debug)]
+#[error("file `{0}` is missing")]
+pub(crate) struct FileNotFound(pub String);

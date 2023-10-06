@@ -17,23 +17,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use displaydoc::Display;
+use eyre::Context;
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
-use crate::{
-    manifest::{self, Manifest},
-    package::PackageStore,
-};
+use crate::{manifest::Manifest, package::PackageStore};
 
 /// The language used for code generation
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
 )]
 #[serde(rename_all = "kebab-case")]
+#[allow(missing_docs)] // trivial enum
 pub enum Language {
-    /// The Python language
     Python,
 }
 
@@ -57,26 +53,13 @@ pub enum Generator {
     },
 }
 
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum RunError {
-    /// unable to locate vendored protoc
-    Locate,
-    /// io error
-    Io(#[from] std::io::Error),
-    /// a signal interrupted the protoc subprocess before it could complete
-    Interrupted,
-    /// the protoc subprocess terminated with an error: {code}
-    NonZeroExitCode { code: i32, stderr: Vec<u8> },
-}
-
 impl Generator {
     /// Tonic include file name
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> Result<(), RunError> {
-        let protoc = protoc_bin_path().map_err(|_| RunError::Locate)?;
+    pub async fn run(&self) -> eyre::Result<()> {
+        let protoc = protoc_bin_path().wrap_err("unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
@@ -117,13 +100,12 @@ impl Generator {
 
                 let output = protoc_cmd.output().await?;
 
-                let exit = output.status.code().ok_or(RunError::Interrupted)?;
+                let exit = output.status.code().ok_or(eyre::eyre!(
+                    "a signal interrupted the protoc subprocess before it could complete"
+                ))?;
 
                 if exit != 0 {
-                    return Err(RunError::NonZeroExitCode {
-                        code: exit,
-                        stderr: output.stderr,
-                    });
+                    eyre::bail!("the protoc subprocess terminated with an error: {exit}");
                 }
 
                 tracing::info!(":: {language} code generated successfully");
@@ -134,29 +116,18 @@ impl Generator {
     }
 }
 
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum GenerateError {
-    /// failed to read the manifest
-    ManifestRead(#[from] manifest::ReadError),
-    /// either a compilable package (library or api) or at least one dependency is needed to generate code bindings
-    NothingToGenerate,
-    /// failed to generate bindings
-    RunFailed(#[from] RunError),
-}
-
 impl Generator {
     /// Execute code generation with pre-configured parameters
-    pub async fn generate(&self) -> Result<(), GenerateError> {
+    pub async fn generate(&self) -> eyre::Result<()> {
         let manifest = Manifest::read().await?;
 
         tracing::info!(":: initializing code generator");
 
         if !manifest.package.kind.compilable() && manifest.dependencies.is_empty() {
-            return Err(GenerateError::NothingToGenerate);
+            eyre::bail!("either a compilable package (library or api) or at least one dependency is needed to generate code bindings");
         }
 
-        self.run().await?;
+        self.run().await.wrap_err("failed to generate bindings")?;
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);

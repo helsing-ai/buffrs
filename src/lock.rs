@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
-use displaydoc::Display;
+use eyre::Context;
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -22,7 +22,7 @@ use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, SerializationError},
+    errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -47,8 +47,9 @@ impl std::fmt::Display for DigestAlgorithm {
     }
 }
 
-/// unsupported digest algorithm: {0}
-#[derive(Error, Display, Debug)]
+/// Represents a ring digest algorithm that isn't supported by Buffrs
+#[derive(Error, Debug)]
+#[error("unsupported digest algorithm: {0}")]
 pub struct UnsupportedAlgorithm(String);
 
 impl FromStr for DigestAlgorithm {
@@ -194,29 +195,12 @@ pub struct LockedPackage {
     pub dependants: usize,
 }
 
-/// {property} mismatch - expected {expected}, actual {actual}
-#[derive(Error, Display, Debug)]
-pub struct ValidationError {
+#[derive(Error, Debug)]
+#[error("{property} mismatch - expected {expected}, actual {actual}")]
+struct ValidationError {
     property: &'static str,
     expected: String,
     actual: String,
-}
-
-impl ValidationError {
-    /// The name of the property that didn't match
-    pub fn property(&self) -> &'static str {
-        self.property
-    }
-
-    /// The expected value of the property
-    pub fn expected(&self) -> &str {
-        &self.expected
-    }
-
-    /// The actual value of the property
-    pub fn actual(&self) -> &str {
-        &self.actual
-    }
 }
 
 impl LockedPackage {
@@ -248,13 +232,13 @@ impl LockedPackage {
     }
 
     /// Validates if another LockedPackage matches this one
-    pub fn validate(&self, package: &Package) -> Result<(), ValidationError> {
+    pub fn validate(&self, package: &Package) -> eyre::Result<()> {
         let digest: Digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
             .unwrap();
 
         if &self.name != package.name() {
-            return Err(ValidationError {
+            eyre::bail!(ValidationError {
                 property: "Name",
                 expected: self.name.to_string(),
                 actual: package.name().to_string(),
@@ -262,7 +246,7 @@ impl LockedPackage {
         }
 
         if &self.version != package.version() {
-            return Err(ValidationError {
+            eyre::bail!(ValidationError {
                 property: "Version",
                 expected: self.version.to_string(),
                 actual: package.version().to_string(),
@@ -270,7 +254,7 @@ impl LockedPackage {
         }
 
         if self.digest != digest {
-            return Err(ValidationError {
+            eyre::bail!(ValidationError {
                 property: "Digest",
                 expected: self.digest.to_string(),
                 actual: digest.to_string(),
@@ -295,26 +279,6 @@ pub struct Lockfile {
     packages: HashMap<PackageName, LockedPackage>,
 }
 
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum ReadError {
-    /// io error
-    Io(#[from] std::io::Error),
-    /// failed to find file `{0}`
-    FileNotFound(PathBuf),
-    /// failed to parse lockfile
-    Deserialize(#[from] DeserializationError),
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum WriteError {
-    /// io error
-    Io(#[from] std::io::Error),
-    /// failed to parse lockfile
-    Serialize(#[from] SerializationError),
-}
-
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
     pub async fn exists() -> Result<bool, std::io::Error> {
@@ -322,22 +286,22 @@ impl Lockfile {
     }
 
     /// Loads the Lockfile from the current directory
-    pub async fn read() -> Result<Self, ReadError> {
+    pub async fn read() -> eyre::Result<Self> {
         match fs::read_to_string(LOCKFILE).await {
             Ok(contents) => {
                 let raw: RawLockfile =
-                    toml::from_str(&contents).map_err(DeserializationError::from)?;
+                    toml::from_str(&contents).wrap_err_with(|| DeserializationError("lockfile"))?;
                 Ok(Self::from_iter(raw.packages.into_iter()))
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(ReadError::FileNotFound(LOCKFILE.into()))
+                Err(FileNotFound(LOCKFILE.into()).into())
             }
-            Err(err) => Err(ReadError::Io(err)),
+            Err(err) => Err(err.into()),
         }
     }
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
-    pub async fn read_or_default() -> Result<Self, ReadError> {
+    pub async fn read_or_default() -> eyre::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
         } else {
@@ -346,7 +310,7 @@ impl Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    pub async fn write(&self) -> Result<(), WriteError> {
+    pub async fn write(&self) -> eyre::Result<()> {
         let mut packages: Vec<_> = self
             .packages
             .values()
@@ -367,11 +331,11 @@ impl Lockfile {
         fs::write(
             LOCKFILE,
             toml::to_string(&raw)
-                .map_err(SerializationError::from)?
+                .wrap_err_with(|| SerializationError("lockfile"))?
                 .into_bytes(),
         )
         .await
-        .map_err(WriteError::from)
+        .wrap_err_with(|| WriteError(LOCKFILE))
     }
 
     /// Locates a given package in the Lockfile

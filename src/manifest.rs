@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use displaydoc::Display;
+use eyre::Context;
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    path::{Path, PathBuf},
+    path::Path,
 };
-use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, SerializationError},
+    errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
 };
@@ -59,7 +58,7 @@ impl From<Manifest> for RawManifest {
 }
 
 impl TryFrom<String> for RawManifest {
-    type Error = DeserializationError;
+    type Error = eyre::Report;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         toml::from_str::<RawManifest>(&value).map_err(Self::Error::from)
@@ -79,26 +78,6 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
 }
 
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum ReadError {
-    /// io error
-    Io(#[from] std::io::Error),
-    /// failed to find file `{0}`
-    FileNotFound(PathBuf),
-    /// could not deserialize the manifest
-    Deserialize(#[from] DeserializationError),
-}
-
-#[derive(Error, Display, Debug)]
-#[allow(missing_docs)]
-pub enum WriteError {
-    /// io error
-    Io(#[from] std::io::Error),
-    /// could not serialize the manifest
-    Serialize(#[from] SerializationError),
-}
-
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
     pub async fn exists() -> Result<bool, std::io::Error> {
@@ -106,39 +85,42 @@ impl Manifest {
     }
 
     /// Loads the manifest from the current directory
-    pub async fn read() -> Result<Self, ReadError> {
+    pub async fn read() -> eyre::Result<Self> {
         Self::read_from(MANIFEST_FILE).await
     }
 
     /// Loads the manifest from the given path
-    pub async fn read_from(path: impl AsRef<Path>) -> Result<Self, ReadError> {
+    pub async fn read_from(path: impl AsRef<Path>) -> eyre::Result<Self> {
         let path_ref = path.as_ref();
 
         match fs::read_to_string(&path_ref).await {
             Ok(contents) => {
                 let raw: RawManifest =
-                    toml::from_str(&contents).map_err(DeserializationError::from)?;
+                    toml::from_str(&contents).wrap_err_with(|| DeserializationError("manifest"))?;
                 Ok(raw.into())
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(ReadError::FileNotFound(path_ref.into()))
+                Err(FileNotFound(path_ref.display().to_string()).into())
             }
-            Err(err) => Err(ReadError::Io(err)),
+            Err(_) => Err(eyre::eyre!(
+                "failed to read manifest from `{}`",
+                path_ref.display()
+            )),
         }
     }
 
     /// Persists the manifest into the current directory
-    pub async fn write(&self) -> Result<(), WriteError> {
+    pub async fn write(&self) -> eyre::Result<()> {
         let raw = RawManifest::from(self.to_owned());
 
         fs::write(
             MANIFEST_FILE,
             toml::to_string(&raw)
-                .map_err(SerializationError::from)?
+                .wrap_err_with(|| SerializationError("manifest"))?
                 .into_bytes(),
         )
         .await
-        .map_err(WriteError::Io)
+        .wrap_err_with(|| WriteError(MANIFEST_FILE))
     }
 }
 
@@ -161,7 +143,7 @@ impl From<RawManifest> for Manifest {
 }
 
 impl TryFrom<String> for Manifest {
-    type Error = DeserializationError;
+    type Error = eyre::Report;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(RawManifest::try_from(value)?.into())
@@ -169,7 +151,7 @@ impl TryFrom<String> for Manifest {
 }
 
 impl TryInto<String> for Manifest {
-    type Error = SerializationError;
+    type Error = eyre::Report;
 
     fn try_into(self) -> Result<String, Self::Error> {
         toml::to_string_pretty(&RawManifest::from(self)).map_err(Self::Error::from)

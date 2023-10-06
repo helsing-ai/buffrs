@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{DownloadError, PublishError, RegistryUri};
+use super::RegistryUri;
 use crate::{
     credentials::Credentials,
-    errors::{ConfigError, HttpError, RequestError, ResponseError},
+    errors::{HttpError, RequestError, ResponseError},
     manifest::Dependency,
     package::Package,
 };
 use bytes::Bytes;
+use eyre::Context;
 use reqwest::{Method, Response};
+use semver::VersionReq;
+use thiserror::Error;
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -31,16 +34,19 @@ pub struct Artifactory {
     client: reqwest::Client,
 }
 
+#[derive(Error, Debug)]
+#[error("{0} is not a supported version requirement")]
+struct UnsupportedVersionRequirement(VersionReq);
+
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> Result<Self, ConfigError> {
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
             token: credentials.registry_tokens.get(&registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .map_err(|_| ConfigError::Unknown)?,
+                .build()?,
         })
     }
 
@@ -49,7 +55,7 @@ impl Artifactory {
         method: Method,
         url: Url,
         body: Option<Bytes>,
-    ) -> Result<Response, HttpError> {
+    ) -> eyre::Result<Response, HttpError> {
         let mut request_builder = self.client.request(method.clone(), url.clone());
 
         if let Some(token) = &self.token {
@@ -98,7 +104,7 @@ impl Artifactory {
     }
 
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self) -> Result<(), HttpError> {
+    pub async fn ping(&self) -> eyre::Result<()> {
         let repositories_url: Url = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
@@ -109,14 +115,13 @@ impl Artifactory {
         self.make_auth_request(Method::GET, repositories_url, None)
             .await
             .map(|_| ())
+            .map_err(eyre::Report::from)
     }
 
     /// Downloads a package from artifactory
-    pub async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
+    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
         if dependency.manifest.version.comparators.len() != 1 {
-            return Err(DownloadError::UnsupportedVersionRequirement(
-                dependency.manifest.version,
-            ));
+            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version,));
         }
 
         let version = dependency
@@ -128,9 +133,7 @@ impl Artifactory {
             .expect("unexpected error: empty comparators vector in VersionReq");
 
         if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
-            return Err(DownloadError::UnsupportedVersionRequirement(
-                dependency.manifest.version,
-            ));
+            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version,));
         }
 
         let version = format!(
@@ -185,16 +188,19 @@ impl Artifactory {
 
         tracing::debug!("downloaded dependency {dependency}");
 
-        let data = response
-            .bytes()
-            .await
-            .map_err(|_| HttpError::Other("failed to download data".into()))?;
+        let data = response.bytes().await.map_err(|_| {
+            HttpError::Other(format!(
+                "failed to download data for dependency {}",
+                dependency.package
+            ))
+        })?;
 
-        Package::try_from(data).map_err(DownloadError::DecodePackage)
+        Package::try_from(data)
+            .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
     }
 
     /// Publishes a package to artifactory
-    pub async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
+    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,

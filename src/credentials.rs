@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use displaydoc::Display;
+use eyre::Context;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
 use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, SerializationError},
+    errors::{DeserializationError, ReadError, SerializationError, WriteError},
     registry::RegistryUri,
 };
 
@@ -35,99 +35,68 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum LocateError {
-    /// the home folder could not be determined
-    MissingHome,
-}
+const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
 
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum ExistsError {
-    /// could not locate the credentials file
-    Locate(#[from] LocateError),
-    /// could not access the filesystem
-    Io(#[from] std::io::Error),
-}
-
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum ReadError {
-    /// could not locate the credentials file
-    Locate(#[from] LocateError),
-    /// could not read the file
-    Io(#[from] std::io::Error),
-    /// could not deserialize the credentials
-    Deserialize(#[from] DeserializationError),
-}
-
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum WriteError {
-    /// could not locate the credentials file
-    Locate(#[from] LocateError),
-    /// could not write to the file
-    Io(#[from] std::io::Error),
-    /// could not serialize the credentials
-    Serialize(#[from] SerializationError),
-}
+#[derive(Error, Debug)]
+#[error("could not determine credentials location")]
+struct LocateError(#[from] eyre::Report);
 
 impl Credentials {
     fn location() -> Result<PathBuf, LocateError> {
-        env::var("BUFFRS_HOME")
+        env::var(BUFFRS_HOME_VAR)
             .map(PathBuf::from)
-            .or(home::home_dir().ok_or(LocateError::MissingHome))
-            .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
+            .or_else(|_| {
+                home::home_dir()
+                    .ok_or_else(|| eyre::eyre!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+            })
+            .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError::from)
     }
 
     /// Checks if the credentials exists
-    pub async fn exists() -> Result<bool, ExistsError> {
+    pub async fn exists() -> eyre::Result<bool> {
         fs::try_exists(Self::location()?)
             .await
-            .map_err(ExistsError::from)
+            .wrap_err_with(|| format!("failed to determine if {CREDENTIALS_FILE} file exists"))
     }
 
     /// Reads the credentials from the file system
-    pub async fn read() -> Result<Self, ReadError> {
-        let raw: RawCredentialCollection =
-            toml::from_str(&fs::read_to_string(Self::location()?).await?)
-                .map_err(DeserializationError::from)?;
+    pub async fn read() -> eyre::Result<Self> {
+        let raw: RawCredentialCollection = toml::from_str(
+            &fs::read_to_string(Self::location()?)
+                .await
+                .wrap_err_with(|| ReadError(CREDENTIALS_FILE))?,
+        )
+        .wrap_err_with(|| DeserializationError("credentials"))?;
 
         Ok(raw.into())
     }
 
     /// Writes the credentials to the file system
-    pub async fn write(&self) -> Result<(), WriteError> {
+    pub async fn write(&self) -> eyre::Result<()> {
         fs::create_dir(
-            Self::location()
-                .map_err(WriteError::Locate)?
+            Self::location()?
                 .parent()
                 .expect("unexpected error: resolved credentials path has no parent"),
         )
         .await
-        .ok();
+        .ok(); // ok to ignore if parent already exists (other failure modes covered by expect above)
 
         let data: RawCredentialCollection = self.clone().into();
 
         fs::write(
             Self::location()?,
             toml::to_string(&data)
-                .map_err(SerializationError::from)?
+                .wrap_err_with(|| SerializationError("credentials"))?
                 .into_bytes(),
         )
         .await
-        .map_err(WriteError::from)
+        .wrap_err_with(|| WriteError(CREDENTIALS_FILE))
     }
 
     /// Loads the credentials from the file system
     ///
     /// Note: Initializes the credential file if its not present
-    pub async fn load() -> Result<Self, WriteError> {
+    pub async fn load() -> eyre::Result<Self> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
             credentials.write().await?;

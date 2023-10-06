@@ -18,38 +18,14 @@ use std::{
     str::FromStr,
 };
 
-use crate::{errors::HttpError, package::DecodePackageError};
-
 mod artifactory;
 #[cfg(test)]
 mod local;
 
 pub use artifactory::Artifactory;
-use displaydoc::Display;
-use semver::VersionReq;
+use eyre::Context;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use url::Url;
-
-#[derive(Display, Error, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum DownloadError {
-    /// {0} is not a supported version requirement
-    UnsupportedVersionRequirement(VersionReq),
-    /// http error downloading a dependency
-    Http(#[from] HttpError),
-    /// failed to decode downloaded package
-    DecodePackage(#[from] DecodePackageError),
-}
-
-#[derive(Error, Display, Debug)]
-#[non_exhaustive]
-#[allow(missing_docs)]
-pub enum PublishError {
-    /// http error uploading a dependency
-    Http(#[from] HttpError),
-}
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -81,43 +57,31 @@ impl Display for RegistryUri {
     }
 }
 
-/// Error produced when a URI fails to be validated
-#[derive(Display, Error, Debug)]
-#[non_exhaustive]
-pub enum UriValidationError {
-    /// Not a valid URL: {0}
-    InvalidUrl(String),
-    /// Invalid URI scheme {0} - must be http or https
-    InvalidScheme(String),
-    /// The URI must contain a host: {0}
-    MissingHost(Url),
-    /// The url must end with '/artifactory' when using a *.jfrog.io host
-    InvalidSuffix,
-}
-
 impl FromStr for RegistryUri {
-    type Err = UriValidationError;
+    type Err = eyre::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::from_str(value).map_err(|_| UriValidationError::InvalidUrl(value.into()))?;
+        let url = Url::from_str(value).wrap_err_with(|| format!("not a valid URL: {value}"))?;
         sanity_check_url(&url)?;
         Ok(Self(url))
     }
 }
 
-fn sanity_check_url(url: &Url) -> Result<(), UriValidationError> {
+fn sanity_check_url(url: &Url) -> eyre::Result<()> {
     let scheme = url.scheme();
     if scheme != "http" && scheme != "https" {
-        return Err(UriValidationError::InvalidScheme(scheme.into()));
+        eyre::bail!("invalid URI scheme {scheme} - must be http or https");
     }
 
     if let Some(host) = url.host_str() {
         if host.ends_with(".jfrog.io") && !url.path().ends_with("/artifactory") {
-            Err(UriValidationError::InvalidSuffix)
+            Err(eyre::eyre!(
+                "the url must end with '/artifactory' when using a *.jfrog.io host"
+            ))
         } else {
             Ok(())
         }
     } else {
-        Err(UriValidationError::MissingHost(url.clone()))
+        Err(eyre::eyre!("the URI must contain a host component: {url}"))
     }
 }

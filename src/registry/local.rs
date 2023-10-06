@@ -15,10 +15,15 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
+use eyre::Context;
+use semver::VersionReq;
+use thiserror::Error;
 
 use crate::{errors::HttpError, manifest::Dependency, package::Package};
 
-use super::{DownloadError, PublishError};
+#[derive(Error, Debug)]
+#[error("{0} is not a supported version requirement")]
+struct UnsupportedVersionRequirement(VersionReq);
 
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
@@ -33,12 +38,10 @@ impl LocalRegistry {
         LocalRegistry { base_dir }
     }
 
-    pub async fn download(&self, dependency: Dependency) -> Result<Package, DownloadError> {
+    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
         if dependency.manifest.version.comparators.len() != 1 {
-            return Err(DownloadError::UnsupportedVersionRequirement(
-                dependency.manifest.version,
-            ));
+            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version));
         }
 
         let version = dependency
@@ -50,9 +53,7 @@ impl LocalRegistry {
             .expect("unexpected error: empty comparators vector in VersionReq");
 
         if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
-            return Err(DownloadError::UnsupportedVersionRequirement(
-                dependency.manifest.version,
-            ));
+            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version));
         }
 
         let version = format!(
@@ -82,10 +83,11 @@ impl LocalRegistry {
             std::fs::read(path).map_err(|_| HttpError::Other("could not read file".into()))?,
         );
 
-        Package::try_from(bytes).map_err(DownloadError::DecodePackage)
+        Package::try_from(bytes)
+            .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
     }
 
-    pub async fn publish(&self, package: Package, repository: String) -> Result<(), PublishError> {
+    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
