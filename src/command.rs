@@ -26,7 +26,7 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
-use eyre::{Context, ContextCompat};
+use eyre::Context;
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
@@ -47,7 +47,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<
             .file_name()
             .expect("unexpected error: current directory path terminates in ..")
             .to_str()
-            .wrap_err("current directory path is not valid utf-8")?
+            .ok_or_else(|| eyre::eyre!("current directory path is not valid utf-8"))?
             .parse()
     }
 
@@ -80,7 +80,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
     let (repository, dependency) = dependency
         .trim()
         .split_once('/')
-        .wrap_err_with(|| format!("locator {dependency} is missing a repository delimiter"))?;
+        .ok_or_else(|| eyre::eyre!("locator {dependency} is missing a repository delimiter"))?;
 
     if !repository.chars().all(lower_kebab) {
         eyre::bail!("repository {repository} is not in kebab case");
@@ -88,8 +88,8 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 
     let repository = repository.into();
 
-    let (package, version) = dependency.split_once('@').wrap_err_with(|| {
-        format!("dependency specification is missing version part: {dependency}")
+    let (package, version) = dependency.split_once('@').ok_or_else(|| {
+        eyre::eyre!("dependency specification is missing version part: {dependency}")
     })?;
 
     let package = package
@@ -124,7 +124,7 @@ pub async fn remove(package: PackageName) -> eyre::Result<()> {
         .dependencies
         .iter()
         .position(|d| d.package == package)
-        .wrap_err_with(|| format!("package {package} not in manifest"))?;
+        .ok_or_else(|| eyre::eyre!("package {package} not in manifest"))?;
 
     let dependency = manifest.dependencies.remove(match_idx);
 
