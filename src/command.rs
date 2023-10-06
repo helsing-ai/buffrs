@@ -167,7 +167,7 @@ pub async fn publish(
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
 ) -> eyre::Result<()> {
-    #[cfg(feature = "build")]
+    #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
