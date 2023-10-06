@@ -43,6 +43,7 @@ Commands:
   init       Initializes a buffrs setup
   add        Adds dependencies to a manifest file
   remove     Removes dependencies from a manifest file
+  package    Exports the current package into a distributable tgz archive
   publish    Packages and uploads this api to the registry
   install    Installs dependencies
   uninstall  Uninstalls dependencies
