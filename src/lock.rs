@@ -237,29 +237,32 @@ impl LockedPackage {
             .try_into()
             .unwrap();
 
-        if &self.name != package.name() {
-            eyre::bail!(ValidationError {
+        eyre::ensure!(
+            &self.name == package.name(),
+            ValidationError {
                 property: "Name",
                 expected: self.name.to_string(),
                 actual: package.name().to_string(),
-            });
-        }
+            }
+        );
 
-        if &self.version != package.version() {
-            eyre::bail!(ValidationError {
+        eyre::ensure!(
+            &self.version == package.version(),
+            ValidationError {
                 property: "Version",
                 expected: self.version.to_string(),
                 actual: package.version().to_string(),
-            });
-        }
+            }
+        );
 
-        if self.digest != digest {
-            eyre::bail!(ValidationError {
+        eyre::ensure!(
+            self.digest == digest,
+            ValidationError {
                 property: "Digest",
                 expected: self.digest.to_string(),
                 actual: digest.to_string(),
-            });
-        }
+            }
+        );
 
         Ok(())
     }

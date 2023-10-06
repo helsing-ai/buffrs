@@ -123,9 +123,10 @@ impl Generator {
 
         tracing::info!(":: initializing code generator");
 
-        if !manifest.package.kind.compilable() && manifest.dependencies.is_empty() {
-            eyre::bail!("either a compilable package (library or api) or at least one dependency is needed to generate code bindings");
-        }
+        eyre::ensure!(	   
+            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),	         
+            "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."	     
+        );
 
         self.run().await.wrap_err("failed to generate bindings")?;
 

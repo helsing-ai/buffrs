@@ -39,14 +39,11 @@ pub mod registry;
 #[cfg(feature = "build")]
 pub fn build() -> eyre::Result<()> {
     use credentials::Credentials;
-    use eyre::Context;
     use package::PackageStore;
 
     async fn install() -> eyre::Result<()> {
         let credentials = Credentials::read().await?;
-        command::install(credentials)
-            .await
-            .wrap_err("installation failed")
+        command::install(credentials).await
     }
 
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
