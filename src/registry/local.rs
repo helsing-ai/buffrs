@@ -53,9 +53,10 @@ impl LocalRegistry {
             // validated above
             .expect("unexpected error: empty comparators vector in VersionReq");
 
-        if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
-            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version));
-        }
+        eyre::ensure!(
+            version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
+            UnsupportedVersionRequirement(dependency.manifest.version,)
+        );
 
         let version = format!(
             "{}.{}.{}{}",

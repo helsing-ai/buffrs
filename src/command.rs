@@ -82,9 +82,10 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
         .split_once('/')
         .ok_or_else(|| eyre::eyre!("locator {dependency} is missing a repository delimiter"))?;
 
-    if !repository.chars().all(lower_kebab) {
-        eyre::bail!("repository {repository} is not in kebab case");
-    }
+    eyre::ensure!(
+        repository.chars().all(lower_kebab),
+        "repository {repository} is not in kebab case"
+    );
 
     let repository = repository.into();
 

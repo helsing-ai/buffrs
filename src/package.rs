@@ -147,23 +147,24 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        if manifest.package.kind == PackageType::Impl {
-            eyre::bail!("packages with type `impl` cannot be published");
-        }
+        eyre::ensure!(
+            manifest.package.kind != PackageType::Impl,
+            "packages with type `impl` cannot be published"
+        );
 
-        if matches!(manifest.package.kind, PackageType::Lib) && !manifest.dependencies.is_empty() {
-            eyre::bail!("library packages cannot have any dependencies");
-        }
+        eyre::ensure!(
+            !matches!(manifest.package.kind, PackageType::Lib) || manifest.dependencies.is_empty(),
+            "library packages cannot have any dependencies"
+        );
 
         for dependency in manifest.dependencies.iter() {
             let resolved = Self::resolve(&dependency.package).await?;
 
-            if resolved.package.kind != PackageType::Lib {
-                eyre::bail!(
-                    "depending on API packages is not allowed for {} packages",
-                    manifest.package.kind
-                );
-            }
+            eyre::ensure!(
+                resolved.package.kind == PackageType::Lib,
+                "depending on API packages is not allowed for {} packages",
+                manifest.package.kind
+            );
         }
 
         let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
@@ -412,23 +413,24 @@ impl TryFrom<String> for PackageName {
     type Error = eyre::Report;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.len() < 3 {
-            eyre::bail!("package names must be at least three chars long");
-        }
+        eyre::ensure!(
+            value.len() >= 3,
+            "package names must be at least three chars long"
+        );
 
-        if !value
+        let all_lower_alphanum = value
             .chars()
-            .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-')
-        {
-            eyre::bail!("invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
-        }
+            .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-');
+
+        eyre::ensure!(all_lower_alphanum, "invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
 
         const UNEXPECTED_MSG: &str =
             "unexpected error: package name length should be validated prior to first character check";
 
-        if !value.chars().next().expect(UNEXPECTED_MSG).is_alphabetic() {
-            eyre::bail!("package names must begin with an alphabetic letter");
-        }
+        eyre::ensure!(
+            value.chars().next().expect(UNEXPECTED_MSG).is_alphabetic(),
+            "package names must begin with an alphabetic letter"
+        );
 
         Ok(Self(value))
     }
@@ -557,15 +559,15 @@ impl DependencyGraph {
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
         if let Some(entry) = entries.get_mut(&dependency.package) {
-            if !version_req.matches(entry.package.version()) {
-                eyre::bail!("a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
+            eyre::ensure!(
+                version_req.matches(entry.package.version()),
+                "a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
                     dependency.package,
                     dependency.manifest.version,
                     entry.dependants[0].name.clone(),
                     dependency.manifest.version,
                     entry.package.manifest.package.version.clone(),
-                );
-            }
+            );
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
@@ -613,22 +615,21 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
     ) -> eyre::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
-            if !dependency.manifest.version.matches(&local_locked.version) {
-                eyre::bail!(
-                    "dependency {} cannot be satisfied - requested {}, but version {} is locked",
-                    dependency.package,
-                    dependency.manifest.version,
-                    local_locked.version.clone(),
-                );
-            }
+            eyre::ensure!(
+                dependency.manifest.version.matches(&local_locked.version),
+                "dependency {} cannot be satisfied - requested {}, but version {} is locked",
+                dependency.package,
+                dependency.manifest.version,
+                local_locked.version.clone(),
+            );
 
-            if !is_root && dependency.manifest.registry == local_locked.registry {
-                eyre::bail!("mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
+            eyre::ensure!(
+                is_root || dependency.manifest.registry == local_locked.registry,
+                "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                     dependency.package,
                     dependency.manifest.registry,
                     local_locked.registry.clone(),
-                );
-            }
+            );
 
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
                 .wrap_err_with(|| DownloadError {

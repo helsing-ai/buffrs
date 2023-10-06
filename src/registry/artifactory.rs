@@ -63,16 +63,16 @@ impl Artifactory {
 
         let response = request_builder.send().await?;
 
-        if response.status().is_redirection() {
-            eyre::bail!(
-                "remote server attempted to redirect request - is this registry URL valid? {}",
-                self.registry
-            );
-        }
+        eyre::ensure!(
+            !response.status().is_redirection(),
+            "remote server attempted to redirect request - is this registry URL valid? {}",
+            self.registry
+        );
 
-        if response.status() == 401 {
-            eyre::bail!("unauthorized - please provide registry credentials with `buffrs login`");
-        }
+        eyre::ensure!(
+            response.status() != 401,
+            "unauthorized - please provide registry credentials with `buffrs login`"
+        );
 
         response.error_for_status().map_err(eyre::Report::from)
     }
@@ -107,9 +107,10 @@ impl Artifactory {
             // validated above
             .expect("unexpected error: empty comparators vector in VersionReq");
 
-        if version.op != semver::Op::Exact || version.minor.is_none() || version.patch.is_none() {
-            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version,));
-        }
+        eyre::ensure!(
+            version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
+            UnsupportedVersionRequirement(dependency.manifest.version,)
+        );
 
         let version = format!(
             "{}.{}.{}{}",
@@ -154,9 +155,10 @@ impl Artifactory {
             .get(&reqwest::header::CONTENT_TYPE)
             .ok_or_else(|| eyre::eyre!("missing content-type header"))?;
 
-        if content_type != reqwest::header::HeaderValue::from_static("application/x-gzip") {
-            eyre::bail!("server response has incorrect mime type: {content_type:?}");
-        }
+        eyre::ensure!(
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            "server response has incorrect mime type: {content_type:?}"
+        );
 
         tracing::debug!("downloaded dependency {dependency}");
 
