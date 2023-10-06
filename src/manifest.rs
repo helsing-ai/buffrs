@@ -58,10 +58,10 @@ impl From<Manifest> for RawManifest {
 }
 
 impl TryFrom<String> for RawManifest {
-    type Error = eyre::Report;
+    type Error = toml::de::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        toml::from_str::<RawManifest>(&value).map_err(Self::Error::from)
+        toml::from_str::<RawManifest>(&value)
     }
 }
 
@@ -145,7 +145,7 @@ impl From<RawManifest> for Manifest {
 }
 
 impl TryFrom<String> for Manifest {
-    type Error = eyre::Report;
+    type Error = toml::de::Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Ok(RawManifest::try_from(value)?.into())
@@ -153,10 +153,10 @@ impl TryFrom<String> for Manifest {
 }
 
 impl TryInto<String> for Manifest {
-    type Error = eyre::Report;
+    type Error = toml::ser::Error;
 
     fn try_into(self) -> Result<String, Self::Error> {
-        toml::to_string_pretty(&RawManifest::from(self)).map_err(Self::Error::from)
+        toml::to_string_pretty(&RawManifest::from(self))
     }
 }
 
