@@ -23,7 +23,7 @@ use std::{
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
+    errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
 };
@@ -80,8 +80,10 @@ pub struct Manifest {
 
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
-    pub async fn exists() -> Result<bool, std::io::Error> {
-        fs::try_exists(MANIFEST_FILE).await
+    pub async fn exists() -> eyre::Result<bool> {
+        fs::try_exists(MANIFEST_FILE)
+            .await
+            .wrap_err_with(|| FileExistsError(MANIFEST_FILE))
     }
 
     /// Loads the manifest from the current directory

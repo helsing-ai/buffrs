@@ -22,7 +22,7 @@ use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
+    errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -284,8 +284,10 @@ pub struct Lockfile {
 
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
-    pub async fn exists() -> Result<bool, std::io::Error> {
-        fs::try_exists(LOCKFILE).await
+    pub async fn exists() -> eyre::Result<bool> {
+        fs::try_exists(LOCKFILE)
+            .await
+            .wrap_err_with(|| FileExistsError(LOCKFILE))
     }
 
     /// Loads the Lockfile from the current directory

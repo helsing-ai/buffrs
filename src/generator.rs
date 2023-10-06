@@ -104,9 +104,10 @@ impl Generator {
                     "a signal interrupted the protoc subprocess before it could complete"
                 ))?;
 
-                if exit != 0 {
-                    eyre::bail!("the protoc subprocess terminated with an error: {exit}");
-                }
+                eyre::ensure!(
+                    exit == 0,
+                    "the protoc subprocess terminated with an error: {exit}"
+                );
 
                 tracing::info!(":: {language} code generated successfully");
             }
@@ -123,9 +124,9 @@ impl Generator {
 
         tracing::info!(":: initializing code generator");
 
-        eyre::ensure!(	   
-            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),	         
-            "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."	     
+        eyre::ensure!(
+            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
+            "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
 
         self.run().await.wrap_err("failed to generate bindings")?;

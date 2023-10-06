@@ -19,7 +19,7 @@ use thiserror::Error;
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, ReadError, SerializationError, WriteError},
+    errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
     registry::RegistryUri,
 };
 
@@ -56,7 +56,7 @@ impl Credentials {
     pub async fn exists() -> eyre::Result<bool> {
         fs::try_exists(Self::location()?)
             .await
-            .wrap_err_with(|| format!("failed to determine if {CREDENTIALS_FILE} file exists"))
+            .wrap_err_with(|| FileExistsError(CREDENTIALS_FILE))
     }
 
     /// Reads the credentials from the file system
