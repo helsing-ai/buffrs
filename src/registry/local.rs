@@ -40,9 +40,10 @@ impl LocalRegistry {
 
     pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
-        if dependency.manifest.version.comparators.len() != 1 {
-            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version));
-        }
+        eyre::ensure!(
+            dependency.manifest.version.comparators.len() == 1,
+            UnsupportedVersionRequirement(dependency.manifest.version)
+        );
 
         let version = dependency
             .manifest

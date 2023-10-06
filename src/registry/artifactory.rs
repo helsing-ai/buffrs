@@ -94,9 +94,10 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        if dependency.manifest.version.comparators.len() != 1 {
-            eyre::bail!(UnsupportedVersionRequirement(dependency.manifest.version,));
-        }
+        eyre::ensure!(
+            dependency.manifest.version.comparators.len() == 1,
+            UnsupportedVersionRequirement(dependency.manifest.version)
+        );
 
         let version = dependency
             .manifest

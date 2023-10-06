@@ -69,18 +69,17 @@ impl FromStr for RegistryUri {
 
 fn sanity_check_url(url: &Url) -> eyre::Result<()> {
     let scheme = url.scheme();
-    if scheme != "http" && scheme != "https" {
-        eyre::bail!("invalid URI scheme {scheme} - must be http or https");
-    }
+    eyre::ensure!(
+        scheme == "http" || scheme == "https",
+        "invalid URI scheme {scheme} - must be http or https"
+    );
 
     if let Some(host) = url.host_str() {
-        if host.ends_with(".jfrog.io") && !url.path().ends_with("/artifactory") {
-            Err(eyre::eyre!(
-                "the url must end with '/artifactory' when using a *.jfrog.io host"
-            ))
-        } else {
-            Ok(())
-        }
+        eyre::ensure!(
+            !host.ends_with(".jfrog.io") || url.path().ends_with("/artifactory"),
+            "the url must end with '/artifactory' when using a *.jfrog.io host"
+        );
+        Ok(())
     } else {
         Err(eyre::eyre!("the URI must contain a host component: {url}"))
     }
