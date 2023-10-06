@@ -106,7 +106,8 @@ impl Generator {
 
                 eyre::ensure!(
                     exit == 0,
-                    "the protoc subprocess terminated with an error: {exit}"
+                    "the protoc subprocess terminated with an error: {exit}. stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
                 );
 
                 tracing::info!(":: {language} code generated successfully");

@@ -620,7 +620,7 @@ impl DependencyGraph {
                 "dependency {} cannot be satisfied - requested {}, but version {} is locked",
                 dependency.package,
                 dependency.manifest.version,
-                local_locked.version.clone(),
+                local_locked.version,
             );
 
             eyre::ensure!(
@@ -628,7 +628,7 @@ impl DependencyGraph {
                 "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                     dependency.package,
                     dependency.manifest.registry,
-                    local_locked.registry.clone(),
+                    local_locked.registry,
             );
 
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
