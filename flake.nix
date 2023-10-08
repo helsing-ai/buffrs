@@ -12,21 +12,20 @@
           inherit system;
         };
         naersk' = pkgs.callPackage naersk {};
+        nativeBuildInputs = with pkgs; [ pkg-config ];
       in rec {
-        defaultPackage = naersk'.buildPackage {
+        packages.default = naersk'.buildPackage {
+          inherit nativeBuildInputs;
           src = ./.;
           buildInputs = with pkgs; [ openssl ];
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-          ];
         };
-        devShell = pkgs.mkShell {
-          nativeBuildInputs = with pkgs; defaultPackage.nativeBuildInputs ++ [
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; nativeBuildInputs ++ [
             cargo
             rustc
           ];
         };
-        checks.builds = defaultPackage;
+        checks.builds = packages.default;
       }
     );
 }
