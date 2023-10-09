@@ -14,13 +14,19 @@
 
 use eyre::{Context, ContextCompat};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env::{var, VarError},
+    io::ErrorKind,
+    path::PathBuf,
+};
 use tokio::fs;
 
 use crate::registry::RegistryUri;
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
+pub const BUFFRS_DIR: &str = "buffrs";
 /// Filename of the credential store
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
@@ -32,46 +38,72 @@ pub struct Credentials {
 }
 
 impl Credentials {
-    fn location() -> eyre::Result<PathBuf> {
-        let home = home::home_dir().wrap_err("Failed to locate home directory")?;
+    /// Get buffrs config directory.
+    fn buffrs_home() -> Result<PathBuf, VarError> {
+        var("BUFFRS_HOME").map(PathBuf::from)
+    }
 
-        let home = env::var("BUFFRS_HOME").map(PathBuf::from).unwrap_or(home);
+    /// XDG path: uses whichever config directory is appropriate for the platform.
+    ///
+    /// For example, on Linux this might be `~/.config/buffrs/credentials.toml`.
+    fn xdg_path() -> PathBuf {
+        Self::buffrs_home()
+            .unwrap_or_else(|_| dirs::config_dir().expect("get config dir").join(BUFFRS_DIR))
+            .join(CREDENTIALS_FILE)
+    }
 
-        Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
+    /// Legacy path: hard-coded to `~/.buffrs/credentials.toml`.
+    fn legacy_path() -> PathBuf {
+        Self::buffrs_home()
+            .unwrap_or_else(|_| dirs::home_dir().expect("get home dir").join(BUFFRS_HOME))
+            .join(CREDENTIALS_FILE)
+    }
+
+    /// Possible locations for the credentials file
+    fn possible_locations() -> Vec<PathBuf> {
+        vec![Self::xdg_path(), Self::legacy_path()]
     }
 
     /// Checks if the credentials exists
     pub async fn exists() -> eyre::Result<bool> {
-        fs::try_exists(Self::location()?)
-            .await
-            .wrap_err("Failed to detect credentials")
+        for location in &Self::possible_locations() {
+            if fs::try_exists(&location).await? {
+                return Ok(true);
+            }
+        }
+
+        return Ok(false);
     }
 
     /// Reads the credentials from the file system
     pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(Self::location()?)
-            .await
-            .wrap_err("Failed to read credentials")?;
+        for location in &Self::possible_locations() {
+            let contents = match fs::read_to_string(location).await {
+                Ok(string) => string,
+                Err(error) if error.kind() == ErrorKind::NotFound => continue,
+                Err(error) => return Err(error).wrap_err("opening credentials file"),
+            };
 
-        let raw: RawCredentialCollection =
-            toml::from_str(&toml).wrap_err("Failed to parse credentials")?;
+            let raw: RawCredentialCollection =
+                toml::from_str(&contents).wrap_err("Failed to parse credentials")?;
 
-        Ok(raw.into())
+            return Ok(raw.into());
+        }
+
+        eyre::bail!("cannot parse credentials")
     }
 
     /// Writes the credentials to the file system
     pub async fn write(&self) -> eyre::Result<()> {
-        fs::create_dir(
-            Self::location()?
-                .parent()
-                .wrap_err("Invalid credentials location")?,
-        )
-        .await
-        .ok();
+        let location = Self::xdg_path();
+
+        fs::create_dir(location.parent().wrap_err("Invalid credentials location")?)
+            .await
+            .ok();
 
         let data: RawCredentialCollection = self.clone().into();
 
-        fs::write(Self::location()?, toml::to_string(&data)?.into_bytes())
+        fs::write(location, toml::to_string(&data)?.into_bytes())
             .await
             .wrap_err("Failed to write credentials")
     }
