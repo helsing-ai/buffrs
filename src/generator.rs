@@ -20,6 +20,7 @@ use std::{
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
 
 use crate::{manifest::Manifest, package::PackageStore};
 
@@ -99,7 +100,7 @@ impl Generator {
 
                 protoc_cmd.args(&protos);
 
-                tracing::debug!(":: running {protoc_cmd:?}");
+                debug!(":: running {protoc_cmd:?}");
 
                 let output = protoc_cmd.output().await.into_diagnostic()?;
 
@@ -113,7 +114,7 @@ impl Generator {
                     String::from_utf8_lossy(&output.stderr)
                 );
 
-                tracing::info!(":: {language} code generated successfully");
+                info!(":: {language} code generated successfully");
             }
         }
 
@@ -126,7 +127,7 @@ impl Generator {
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
 
-        tracing::info!(":: initializing code generator");
+        info!(":: initializing code generator");
 
         ensure!(
             manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
@@ -139,7 +140,7 @@ impl Generator {
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);
-            tracing::info!(
+            info!(
                 ":: compiled {} [{}]",
                 manifest.package.name,
                 location.display()
@@ -148,7 +149,7 @@ impl Generator {
 
         for dependency in manifest.dependencies {
             let location = PackageStore::locate(&dependency.package);
-            tracing::info!(
+            info!(
                 ":: compiled {} [{}]",
                 dependency.package,
                 location.display()

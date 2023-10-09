@@ -32,8 +32,9 @@ use crate::{
 pub const LOCKFILE: &str = "Proto.lock";
 
 /// Supported types of digest algorithms
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DigestAlgorithm {
+    // Do not reorder variants: the ordering is significant, see #38 and #106.
     /// 256 bits variant of SHA-2
     #[serde(rename = "sha256")]
     SHA256,
@@ -64,27 +65,12 @@ impl fmt::Display for DigestAlgorithm {
     }
 }
 
-impl Ord for DigestAlgorithm {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self {
-            DigestAlgorithm::SHA256 => match other {
-                DigestAlgorithm::SHA256 => std::cmp::Ordering::Equal,
-            },
-        }
-    }
-}
-
-impl PartialOrd for DigestAlgorithm {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 /// A representation of a cryptographic digest for data integrity validation
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Digest {
-    bytes: Vec<u8>,
+    // Do not reorder fields: the ordering is significant, see #38 and #106.
     algorithm: DigestAlgorithm,
+    bytes: Vec<u8>,
 }
 
 impl TryFrom<digest::Digest> for Digest {
@@ -104,13 +90,9 @@ impl TryFrom<digest::Digest> for Digest {
     }
 }
 
-impl std::fmt::Display for Digest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}:{}",
-            self.algorithm,
-            hex::encode(&self.bytes)
-        ))
+impl fmt::Display for Digest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.algorithm, hex::encode(&self.bytes))
     }
 }
 
@@ -128,7 +110,7 @@ struct DigestVisitor;
 impl<'de> Visitor<'de> for DigestVisitor {
     type Value = Digest;
 
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter.write_str("a hexadecimal encoded cryptographic digest")
     }
 
@@ -155,21 +137,6 @@ impl<'de> Deserialize<'de> for Digest {
         D: serde::Deserializer<'de>,
     {
         deserializer.deserialize_str(DigestVisitor)
-    }
-}
-
-impl Ord for Digest {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.algorithm.cmp(&other.algorithm) {
-            std::cmp::Ordering::Equal => self.bytes.cmp(&other.bytes),
-            other => other,
-        }
-    }
-}
-
-impl PartialOrd for Digest {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 
