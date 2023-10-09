@@ -14,7 +14,7 @@
 
 use std::{
     fmt::{self, Display},
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
@@ -41,7 +41,7 @@ impl From<RegistryUri> for Url {
     }
 }
 
-impl std::ops::Deref for RegistryUri {
+impl Deref for RegistryUri {
     type Target = Url;
 
     fn deref(&self) -> &Self::Target {

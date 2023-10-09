@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[cfg(feature = "build")]
-use crate::{generator, generator::Language};
+use crate::generator::{Generator, Language};
 #[cfg(feature = "build")]
 use std::path::PathBuf;
 
@@ -281,7 +281,7 @@ pub async fn uninstall() -> miette::Result<()> {
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
 pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
-    generator::Generator::Protoc { language, out_dir }
+    Generator::Protoc { language, out_dir }
         .generate()
         .await
         .wrap_err(miette!("failed to generate {language} bindings"))
