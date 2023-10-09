@@ -137,7 +137,7 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let credentials = Credentials::load().await?;
+    let credentials = Credentials::load_or_init().await?;
 
     match cli.command {
         Command::Init { lib, api, package } => {

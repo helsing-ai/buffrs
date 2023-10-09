@@ -76,10 +76,8 @@ impl Credentials {
             .wrap_err("Failed to write credentials")
     }
 
-    /// Loads the credentials from the file system
-    ///
-    /// Note: Initializes the credential file if its not present
-    pub async fn load() -> eyre::Result<Self> {
+    /// Loads the credentials from the file system, or creates default if not present.
+    pub async fn load_or_init() -> eyre::Result<Self> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
             credentials.write().await?;
