@@ -121,7 +121,7 @@ impl PackageStore {
             "Failed to locate local manifest for package: {package}"
         ))?;
 
-        Manifest::try_from(manifest)
+        Manifest::from_str(&manifest)
             .wrap_err(format!("Malformed manifest of package {package}"))
             .map(Manifest::from)
     }
@@ -334,7 +334,7 @@ impl TryFrom<Bytes> for Package {
             .wrap_err("Failed to find manifest in package")?;
 
         let manifest = manifest.bytes().collect::<io::Result<Vec<_>>>()?;
-        let manifest = Manifest::try_from(String::from_utf8(manifest)?)
+        let manifest = Manifest::from_str(&String::from_utf8(manifest)?)
             .wrap_err("Failed to parse manifest")?;
 
         Ok(Self { manifest, tgz })
