@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt, str::FromStr};
 
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use ring::digest;
@@ -30,22 +30,13 @@ use crate::{
 
 /// File name of the lockfile
 pub const LOCKFILE: &str = "Proto.lock";
-const SHA256_TAG: &str = "sha256";
 
 /// Supported types of digest algorithms
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DigestAlgorithm {
     /// 256 bits variant of SHA-2
+    #[serde(rename = "sha256")]
     SHA256,
-}
-
-impl std::fmt::Display for DigestAlgorithm {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            Self::SHA256 => SHA256_TAG,
-        };
-        f.write_str(s)
-    }
 }
 
 /// Represents a ring digest algorithm that isn't supported by Buffrs
@@ -56,10 +47,19 @@ pub struct UnsupportedAlgorithm(String);
 impl FromStr for DigestAlgorithm {
     type Err = UnsupportedAlgorithm;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            SHA256_TAG => Ok(Self::SHA256),
-            other => Err(UnsupportedAlgorithm(other.into())),
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match serde_typename::from_str(input) {
+            Ok(value) => Ok(value),
+            _other => Err(UnsupportedAlgorithm(input.into())),
+        }
+    }
+}
+
+impl fmt::Display for DigestAlgorithm {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match serde_typename::to_str(self) {
+            Ok(name) => fmt.write_str(name),
+            Err(error) => unreachable!("cannot convert DigestAlgorithm to string: {error}"),
         }
     }
 }
