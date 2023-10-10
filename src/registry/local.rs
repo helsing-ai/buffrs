@@ -105,10 +105,8 @@ mod tests {
     use crate::manifest::{Dependency, Manifest, PackageManifest};
     use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
-    use crate::registry::RegistryUri;
     use bytes::Bytes;
     use std::path::PathBuf;
-    use std::str::FromStr;
     use std::{env, fs};
 
     #[tokio::test]
@@ -145,7 +143,8 @@ mod tests {
             package_bytes
         );
 
-        let registry_uri = RegistryUri::from_str("http://some-registry/artifactory")
+        let registry_uri = "http://some-registry/artifactory"
+            .parse()
             .expect("Failed to parse registry URL");
 
         // Download package from local registry and assert the tgz bytes and the metadata match what we

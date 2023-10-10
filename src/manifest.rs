@@ -90,7 +90,7 @@ impl Manifest {
             .await
             .wrap_err("Failed to read manifest")?;
 
-        let raw: RawManifest = toml::from_str(&toml).wrap_err("Failed to parse manifest")?;
+        let raw: RawManifest = toml.parse().wrap_err("Failed to parse manifest")?;
 
         Ok(raw.into())
     }
@@ -127,7 +127,7 @@ impl FromStr for Manifest {
     type Err = toml::de::Error;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        RawManifest::from_str(input).map(Self::from)
+        input.parse::<RawManifest>().map(Self::from)
     }
 }
 
