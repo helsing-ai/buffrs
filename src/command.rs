@@ -97,12 +97,12 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     let package = package
         .parse::<PackageName>()
-        .wrap_err_with(|| format!("invalid package name: {package}"))?;
+        .wrap_err_with(|| miette!("invalid package name: {package}"))?;
 
     let version = version
         .parse::<VersionReq>()
         .into_diagnostic()
-        .wrap_err_with(|| format!("not a valid version requirement: {version}"))?;
+        .wrap_err_with(|| miette!("not a valid version requirement: {version}"))?;
 
     let mut manifest = Manifest::read()
         .await
@@ -115,7 +115,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     manifest
         .write()
         .await
-        .wrap_err("failed to write manifest file")
+        .wrap_err_with(|| miette!("failed to write manifest file"))
 }
 
 /// Removes a dependency from this project
