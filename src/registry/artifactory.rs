@@ -52,7 +52,7 @@ impl Artifactory {
         url: Url,
         body: Option<Bytes>,
     ) -> miette::Result<Response> {
-        let mut request_builder = self.client.request(method.clone(), url.clone());
+        let mut request_builder = self.client.request(method, url);
 
         if let Some(token) = &self.token {
             request_builder = request_builder.bearer_auth(token);
