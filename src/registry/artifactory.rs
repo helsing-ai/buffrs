@@ -95,33 +95,32 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
-        ensure!(
-            dependency.manifest.version.comparators.len() == 1,
-            UnsupportedVersionRequirement(dependency.manifest.version)
-        );
-
         let version = dependency
             .manifest
             .version
             .comparators
             .first()
-            // validated above
-            .expect("unexpected error: empty comparators vector in VersionReq");
+            .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
+            .into_diagnostic()?;
 
         ensure!(
-            version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
+            version.op == semver::Op::Exact,
             UnsupportedVersionRequirement(dependency.manifest.version,)
         );
+
+        let minor_version = version
+            .minor
+            .ok_or_else(|| miette!("version missing minor number"))?;
+
+        let patch_version = version
+            .patch
+            .ok_or_else(|| miette!("version missing patch number"))?;
 
         let version = format!(
             "{}.{}.{}{}",
             version.major,
-            version
-                .minor
-                .expect("unexpected error: minor number missing"), // validated above
-            version
-                .patch
-                .expect("unexpected error: patch number missing"), // validated above
+            minor_version,
+            patch_version,
             if version.pre.is_empty() {
                 "".to_owned()
             } else {
