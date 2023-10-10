@@ -40,7 +40,7 @@ const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
 
 #[derive(Error, Diagnostic, Debug)]
 #[error("could not determine credentials location")]
-struct LocateError(miette::Report);
+struct LocateError(#[diagnostic_source] miette::Report);
 
 fn location() -> Result<PathBuf, LocateError> {
     env::var(BUFFRS_HOME_VAR)

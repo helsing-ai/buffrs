@@ -34,17 +34,13 @@ const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
 /// Initializes the project
 pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
-    if Manifest::exists()
-        .await
-        .wrap_err("failed to access filesystem")?
-    {
+    if Manifest::exists().await? {
         bail!("a manifest file was found, project is already initialized");
     }
 
     fn curr_dir_name() -> miette::Result<PackageName> {
         std::env::current_dir()
-            .into_diagnostic()
-            .wrap_err("failed to access current directory")?
+            .into_diagnostic()?
             .file_name()
             // because the path originates from the current directory, this condition is never met
             .expect("unexpected error: current directory path terminates in ..")
@@ -65,10 +61,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
         dependencies: vec![],
     };
 
-    manifest
-        .write()
-        .await
-        .wrap_err("failed to write manifest file")?;
+    manifest.write().await?;
 
     PackageStore::create()
         .await
@@ -104,9 +97,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         .into_diagnostic()
         .wrap_err_with(|| miette!("not a valid version requirement: {version}"))?;
 
-    let mut manifest = Manifest::read()
-        .await
-        .wrap_err("failed to read manifest file")?;
+    let mut manifest = Manifest::read().await?;
 
     manifest
         .dependencies
@@ -120,9 +111,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> miette::Result<()> {
-    let mut manifest = Manifest::read()
-        .await
-        .wrap_err("failed to read manifest file")?;
+    let mut manifest = Manifest::read().await?;
 
     let match_idx = manifest
         .dependencies
@@ -138,17 +127,12 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     PackageStore::uninstall(&dependency.package).await.ok(); // temporary due to broken test
 
-    manifest
-        .write()
-        .await
-        .wrap_err("failed to write manifest file")
+    manifest.write().await
 }
 
 /// Packages the api and writes it to the filesystem
 pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
-    let package = PackageStore::release()
-        .await
-        .wrap_err("failed to release package")?;
+    let package = PackageStore::release().await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -194,32 +178,23 @@ pub async fn publish(
 
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    let package = PackageStore::release()
-        .await
-        .wrap_err("failed to release package")?;
+    let package = PackageStore::release().await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
         return Ok(());
     }
 
-    artifactory
-        .publish(package, repository)
-        .await
-        .wrap_err("failed to publish package")
+    artifactory.publish(package, repository).await
 }
 
 /// Installs dependencies
 pub async fn install(credentials: Credentials) -> miette::Result<()> {
     let credentials = Arc::new(credentials);
 
-    let manifest = Manifest::read()
-        .await
-        .wrap_err("manifest file could not be read")?;
+    let manifest = Manifest::read().await?;
 
-    let lockfile = Lockfile::read_or_default()
-        .await
-        .wrap_err("lockfile could not be read")?;
+    let lockfile = Lockfile::read_or_default().await?;
 
     let dependency_graph = DependencyGraph::from_manifest(&manifest, &lockfile, &credentials)
         .await
@@ -287,9 +262,7 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
 
 /// Uninstalls dependencies
 pub async fn uninstall() -> miette::Result<()> {
-    PackageStore::clear()
-        .await
-        .wrap_err("failed to clear packages directory")
+    PackageStore::clear().await
 }
 
 /// Generate bindings for a given language
@@ -331,8 +304,5 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
 /// Logs you out from a registry
 pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.remove(&registry);
-    credentials
-        .write()
-        .await
-        .wrap_err("failed to write to the credentials file")
+    credentials.write().await
 }
