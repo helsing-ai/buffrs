@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    str::FromStr,
 };
 use tokio::fs;
 
@@ -54,11 +55,11 @@ impl From<Manifest> for RawManifest {
     }
 }
 
-impl TryFrom<String> for RawManifest {
-    type Error = toml::de::Error;
+impl FromStr for RawManifest {
+    type Err = toml::de::Error;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        toml::from_str::<RawManifest>(&value)
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        toml::from_str(input)
     }
 }
 
@@ -89,7 +90,7 @@ impl Manifest {
             .await
             .wrap_err("Failed to read manifest")?;
 
-        let raw: RawManifest = toml::from_str(&toml).wrap_err("Failed to parse manifest")?;
+        let raw: RawManifest = toml.parse().wrap_err("Failed to parse manifest")?;
 
         Ok(raw.into())
     }
@@ -122,11 +123,11 @@ impl From<RawManifest> for Manifest {
     }
 }
 
-impl TryFrom<String> for Manifest {
-    type Error = toml::de::Error;
+impl FromStr for Manifest {
+    type Err = toml::de::Error;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(RawManifest::try_from(value)?.into())
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        input.parse::<RawManifest>().map(Self::from)
     }
 }
 
