@@ -26,14 +26,14 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
-use eyre::{bail, ensure, eyre, Context};
+use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
 /// Initializes the project
-pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
+pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
     if Manifest::exists()
         .await
         .wrap_err("failed to access filesystem")?
@@ -41,13 +41,15 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<
         bail!("a manifest file was found, project is already initialized");
     }
 
-    fn curr_dir_name() -> eyre::Result<PackageName> {
+    fn curr_dir_name() -> miette::Result<PackageName> {
         std::env::current_dir()
+            .into_diagnostic()
             .wrap_err("failed to access current directory")?
             .file_name()
+            // because the path originates from the current directory, this condition is never met
             .expect("unexpected error: current directory path terminates in ..")
             .to_str()
-            .ok_or_else(|| eyre!("current directory path is not valid utf-8"))?
+            .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
     }
 
@@ -74,13 +76,13 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
+pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
     let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
     let (repository, dependency) = dependency
         .trim()
         .split_once('/')
-        .ok_or_else(|| eyre!("locator {dependency} is missing a repository delimiter"))?;
+        .ok_or_else(|| miette!("locator {dependency} is missing a repository delimiter"))?;
 
     ensure!(
         repository.chars().all(lower_kebab),
@@ -91,7 +93,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 
     let (package, version) = dependency
         .split_once('@')
-        .ok_or_else(|| eyre!("dependency specification is missing version part: {dependency}"))?;
+        .ok_or_else(|| miette!("dependency specification is missing version part: {dependency}"))?;
 
     let package = package
         .parse::<PackageName>()
@@ -99,6 +101,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 
     let version = version
         .parse::<VersionReq>()
+        .into_diagnostic()
         .wrap_err_with(|| format!("not a valid version requirement: {version}"))?;
 
     let mut manifest = Manifest::read()
@@ -116,7 +119,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
 }
 
 /// Removes a dependency from this project
-pub async fn remove(package: PackageName) -> eyre::Result<()> {
+pub async fn remove(package: PackageName) -> miette::Result<()> {
     let mut manifest = Manifest::read()
         .await
         .wrap_err("failed to read manifest file")?;
@@ -125,7 +128,7 @@ pub async fn remove(package: PackageName) -> eyre::Result<()> {
         .dependencies
         .iter()
         .position(|d| d.package == package)
-        .ok_or_else(|| eyre!("package {package} not in manifest"))?;
+        .ok_or_else(|| miette!("package {package} not in manifest"))?;
 
     let dependency = manifest.dependencies.remove(match_idx);
 
@@ -142,7 +145,7 @@ pub async fn remove(package: PackageName) -> eyre::Result<()> {
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result<()> {
+pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
     let package = PackageStore::release()
         .await
         .wrap_err("failed to release package")?;
@@ -154,6 +157,7 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result
 
     if !dry_run {
         std::fs::write(path, package.tgz)
+            .into_diagnostic()
             .wrap_err("failed to write package release to the current directory")?;
     }
 
@@ -167,11 +171,12 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
-) -> eyre::Result<()> {
+) -> miette::Result<()> {
     #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
+            .into_diagnostic()
             .wrap_err("failed to determine repository status")?;
 
         if !allow_dirty && !statuses.is_empty() {
@@ -205,7 +210,7 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install(credentials: Credentials) -> eyre::Result<()> {
+pub async fn install(credentials: Credentials) -> miette::Result<()> {
     let credentials = Arc::new(credentials);
 
     let manifest = Manifest::read()
@@ -228,7 +233,7 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         graph: &DependencyGraph,
         locked: &mut Vec<LockedPackage>,
         prefix: String,
-    ) -> eyre::Result<()> {
+    ) -> miette::Result<()> {
         let resolved = graph
             .get(name)
             .expect("unexpected error: missing dependency in dependency graph");
@@ -281,7 +286,7 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
 }
 
 /// Uninstalls dependencies
-pub async fn uninstall() -> eyre::Result<()> {
+pub async fn uninstall() -> miette::Result<()> {
     PackageStore::clear()
         .await
         .wrap_err("failed to clear packages directory")
@@ -289,7 +294,7 @@ pub async fn uninstall() -> eyre::Result<()> {
 
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
+pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
@@ -297,7 +302,7 @@ pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> 
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
     let token = {
         tracing::info!("Please enter your artifactory token:");
 
@@ -305,6 +310,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
 
         std::io::stdin()
             .read_line(&mut raw)
+            .into_diagnostic()
             .wrap_err("failed to read the token from the user")?;
 
         raw.trim().into()
@@ -323,7 +329,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
 }
 
 /// Logs you out from a registry
-pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.remove(&registry);
     credentials
         .write()

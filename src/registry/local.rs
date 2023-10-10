@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use eyre::Context;
+use miette::{Context, IntoDiagnostic};
 use semver::VersionReq;
 use thiserror::Error;
 
@@ -38,9 +38,9 @@ impl LocalRegistry {
         LocalRegistry { base_dir }
     }
 
-    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
-        eyre::ensure!(
+        miette::ensure!(
             dependency.manifest.version.comparators.len() == 1,
             UnsupportedVersionRequirement(dependency.manifest.version)
         );
@@ -53,7 +53,7 @@ impl LocalRegistry {
             // validated above
             .expect("unexpected error: empty comparators vector in VersionReq");
 
-        eyre::ensure!(
+        miette::ensure!(
             version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
             UnsupportedVersionRequirement(dependency.manifest.version,)
         );
@@ -81,13 +81,17 @@ impl LocalRegistry {
 
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
-        let bytes = Bytes::from(std::fs::read(path).wrap_err("could not read file")?);
+        let bytes = Bytes::from(
+            std::fs::read(path)
+                .into_diagnostic()
+                .wrap_err("could not read file")?,
+        );
 
         Package::try_from(bytes)
             .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
     }
 
-    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
@@ -99,6 +103,7 @@ impl LocalRegistry {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
         std::fs::write(&path, &package.tgz)
+            .into_diagnostic()
             .wrap_err_with(|| format!("could not write to file: {}", path.display()))?;
 
         tracing::info!(

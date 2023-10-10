@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use eyre::{ensure, Context};
+use miette::{ensure, Context, IntoDiagnostic};
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -195,14 +195,6 @@ pub struct LockedPackage {
     pub dependants: usize,
 }
 
-#[derive(Error, Debug)]
-#[error("{property} mismatch - expected {expected}, actual {actual}")]
-struct ValidationError {
-    property: &'static str,
-    expected: String,
-    actual: String,
-}
-
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(
@@ -232,15 +224,23 @@ impl LockedPackage {
     }
 
     /// Validates if another LockedPackage matches this one
-    pub fn validate(&self, package: &Package) -> eyre::Result<()> {
+    pub fn validate(&self, package: &Package) -> miette::Result<()> {
         let digest: Digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
             .unwrap();
 
+        #[derive(Error, Debug)]
+        #[error("{property} mismatch - expected {expected}, actual {actual}")]
+        struct ValidationError {
+            property: &'static str,
+            expected: String,
+            actual: String,
+        }
+
         ensure!(
             &self.name == package.name(),
             ValidationError {
-                property: "Name",
+                property: "name",
                 expected: self.name.to_string(),
                 actual: package.name().to_string(),
             }
@@ -249,7 +249,7 @@ impl LockedPackage {
         ensure!(
             &self.version == package.version(),
             ValidationError {
-                property: "Version",
+                property: "version",
                 expected: self.version.to_string(),
                 actual: package.version().to_string(),
             }
@@ -258,7 +258,7 @@ impl LockedPackage {
         ensure!(
             self.digest == digest,
             ValidationError {
-                property: "Digest",
+                property: "digest",
                 expected: self.digest.to_string(),
                 actual: digest.to_string(),
             }
@@ -284,29 +284,31 @@ pub struct Lockfile {
 
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
-    pub async fn exists() -> eyre::Result<bool> {
+    pub async fn exists() -> miette::Result<bool> {
         fs::try_exists(LOCKFILE)
             .await
+            .into_diagnostic()
             .wrap_err_with(|| FileExistsError(LOCKFILE))
     }
 
     /// Loads the Lockfile from the current directory
-    pub async fn read() -> eyre::Result<Self> {
+    pub async fn read() -> miette::Result<Self> {
         match fs::read_to_string(LOCKFILE).await {
             Ok(contents) => {
-                let raw: RawLockfile =
-                    toml::from_str(&contents).wrap_err_with(|| DeserializationError("lockfile"))?;
+                let raw: RawLockfile = toml::from_str(&contents)
+                    .into_diagnostic()
+                    .wrap_err_with(|| DeserializationError("lockfile"))?;
                 Ok(Self::from_iter(raw.packages.into_iter()))
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(FileNotFound(LOCKFILE.into()).into())
             }
-            Err(err) => Err(err.into()),
+            Err(err) => Err(err).into_diagnostic(),
         }
     }
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
-    pub async fn read_or_default() -> eyre::Result<Self> {
+    pub async fn read_or_default() -> miette::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
         } else {
@@ -315,7 +317,7 @@ impl Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> miette::Result<()> {
         let mut packages: Vec<_> = self
             .packages
             .values()
@@ -336,10 +338,12 @@ impl Lockfile {
         fs::write(
             LOCKFILE,
             toml::to_string(&raw)
+                .into_diagnostic()
                 .wrap_err_with(|| SerializationError("lockfile"))?
                 .into_bytes(),
         )
         .await
+        .into_diagnostic()
         .wrap_err_with(|| WriteError(LOCKFILE))
     }
 

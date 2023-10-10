@@ -23,7 +23,7 @@ mod artifactory;
 mod local;
 
 pub use artifactory::Artifactory;
-use eyre::{ensure, eyre, Context};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -58,16 +58,18 @@ impl Display for RegistryUri {
 }
 
 impl FromStr for RegistryUri {
-    type Err = eyre::Report;
+    type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::from_str(value).wrap_err_with(|| format!("not a valid URL: {value}"))?;
+        let url = Url::from_str(value)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("not a valid URL: {value}"))?;
         sanity_check_url(&url)?;
         Ok(Self(url))
     }
 }
 
-fn sanity_check_url(url: &Url) -> eyre::Result<()> {
+fn sanity_check_url(url: &Url) -> miette::Result<()> {
     let scheme = url.scheme();
     ensure!(
         scheme == "http" || scheme == "https",
@@ -81,6 +83,6 @@ fn sanity_check_url(url: &Url) -> eyre::Result<()> {
         );
         Ok(())
     } else {
-        Err(eyre!("the URI must contain a host component: {url}"))
+        Err(miette!("the URI must contain a host component: {url}"))
     }
 }

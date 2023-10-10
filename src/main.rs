@@ -19,7 +19,7 @@ use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
-use eyre::Context;
+use miette::Context;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -122,10 +122,8 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() -> eyre::Result<()> {
+async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
-
-    color_eyre::install()?;
 
     tracing_subscriber::fmt()
         .compact()

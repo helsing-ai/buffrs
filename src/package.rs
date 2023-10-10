@@ -25,7 +25,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use eyre::{ensure, eyre, Context};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -50,10 +50,11 @@ impl PackageStore {
     pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create() -> eyre::Result<()> {
+    pub async fn create() -> miette::Result<()> {
         let create = |dir: &'static str| async move {
             fs::create_dir_all(dir)
                 .await
+                .into_diagnostic()
                 .wrap_err_with(|| format!("failed to create {dir} directory"))
         };
 
@@ -66,13 +67,13 @@ impl PackageStore {
 
 impl PackageStore {
     /// Clears all packages from the file system
-    pub async fn clear() -> eyre::Result<()> {
+    pub async fn clear() -> miette::Result<()> {
         match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
             Ok(()) => Ok(()),
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(eyre!("directory {} not found", Self::PROTO_VENDOR_PATH))
+                Err(miette!("directory {} not found", Self::PROTO_VENDOR_PATH))
             }
-            Err(_) => Err(eyre!(
+            Err(_) => Err(miette!(
                 "failed to clear {} directory",
                 Self::PROTO_VENDOR_PATH,
             )),
@@ -82,12 +83,13 @@ impl PackageStore {
 
 impl PackageStore {
     /// Unpacks a package into a local directory
-    pub async fn unpack(package: &Package) -> eyre::Result<()> {
+    pub async fn unpack(package: &Package) -> miette::Result<()> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
 
         gz.read_to_end(&mut tar)
+            .into_diagnostic()
             .wrap_err_with(|| format!("failed to decompress package {}", package.name()))?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
@@ -97,20 +99,25 @@ impl PackageStore {
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
-        fs::create_dir_all(&pkg_dir).await.wrap_err_with(|| {
-            format!(
-                "failed to create extraction directory for package {}",
-                package.name()
-            )
-        })?;
+        fs::create_dir_all(&pkg_dir)
+            .await
+            .into_diagnostic()
+            .wrap_err_with(|| {
+                format!(
+                    "failed to create extraction directory for package {}",
+                    package.name()
+                )
+            })?;
 
-        tar.unpack(pkg_dir.clone()).wrap_err_with(|| {
-            format!(
-                "failed to extract package {} to {}",
-                package.name(),
-                pkg_dir.display()
-            )
-        })?;
+        tar.unpack(pkg_dir.clone())
+            .into_diagnostic()
+            .wrap_err_with(|| {
+                format!(
+                    "failed to extract package {} to {}",
+                    package.name(),
+                    pkg_dir.display()
+                )
+            })?;
 
         tracing::debug!(
             ":: unpacked {}@{} into {}",
@@ -125,16 +132,17 @@ impl PackageStore {
 
 impl PackageStore {
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageName) -> eyre::Result<()> {
+    pub async fn uninstall(package: &PackageName) -> miette::Result<()> {
         let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
 
         fs::remove_dir_all(&pkg_dir)
             .await
+            .into_diagnostic()
             .wrap_err_with(|| format!("failed to uninstall package {package}"))
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageName) -> eyre::Result<Manifest> {
+    pub async fn resolve(package: &PackageName) -> miette::Result<Manifest> {
         Manifest::read_from(Self::locate(package).join(MANIFEST_FILE))
             .await
             .wrap_err_with(|| format!("failed to resolve package {package}"))
@@ -143,7 +151,7 @@ impl PackageStore {
 
 impl PackageStore {
     /// Packages a release from the local file system state
-    pub async fn release() -> eyre::Result<Package> {
+    pub async fn release() -> miette::Result<Package> {
         let manifest = Manifest::read().await?;
 
         ensure!(
@@ -168,6 +176,7 @@ impl PackageStore {
 
         let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
             .await
+            .into_diagnostic()
             .wrap_err_with(|| {
                 format!(
                     "failed to locate package folder (expected directory {} to be present)",
@@ -181,6 +190,7 @@ impl PackageStore {
             let as_str: String = manifest
                 .clone()
                 .try_into()
+                .into_diagnostic()
                 .wrap_err_with(|| SerializationError("manifest"))?;
             as_str.into_bytes()
         };
@@ -190,21 +200,25 @@ impl PackageStore {
             manifest_bytes
                 .len()
                 .try_into()
+                .into_diagnostic()
                 .wrap_err("serialized manifest was too large to fit in a tarball")?,
         );
         header.set_mode(0o444);
         archive
             .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
+            .into_diagnostic()
             .wrap_err("failed to add manifest to release")?;
 
         for entry in Self::collect(&pkg_path).await {
             let file = File::open(&entry)
+                .into_diagnostic()
                 .wrap_err_with(|| format!("failed to open file {}", entry.display()))?;
 
             let mut header = tar::Header::new_gnu();
             header.set_mode(0o444);
             header.set_size(
                 file.metadata()
+                    .into_diagnostic()
                     .wrap_err_with(|| {
                         format!("failed to fetch metadata for entry {}", entry.display())
                     })?
@@ -219,6 +233,7 @@ impl PackageStore {
                     ),
                     file,
                 )
+                .into_diagnostic()
                 .wrap_err_with(|| {
                     format!("failed to add proto {} to release tar", entry.display())
                 })?;
@@ -226,16 +241,19 @@ impl PackageStore {
 
         let tar = archive
             .into_inner()
+            .into_diagnostic()
             .wrap_err("failed to assemble tar package")?;
 
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
 
         encoder
             .write_all(&tar)
+            .into_diagnostic()
             .wrap_err("failed to compress release")?;
 
         let tgz = encoder
             .finish()
+            .into_diagnostic()
             .wrap_err("failed to finalize package")?
             .into();
 
@@ -316,7 +334,7 @@ impl Package {
 }
 
 impl TryFrom<Bytes> for Package {
-    type Error = eyre::Report;
+    type Error = miette::Report;
 
     fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
         let mut tar = Vec::new();
@@ -324,12 +342,14 @@ impl TryFrom<Bytes> for Package {
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
 
         gz.read_to_end(&mut tar)
+            .into_diagnostic()
             .wrap_err("failed to decompress package")?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
         let manifest = tar
             .entries()
+            .into_diagnostic()
             .wrap_err("corrupted tar package")?
             .filter_map(|entry| entry.ok())
             .find(|entry| {
@@ -343,15 +363,18 @@ impl TryFrom<Bytes> for Package {
                     .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
                     .is_some()
             })
-            .ok_or_else(|| eyre!("missing manifest"))?;
+            .ok_or_else(|| miette!("missing manifest"))?;
 
         let manifest = manifest
             .bytes()
             .collect::<io::Result<Vec<_>>>()
+            .into_diagnostic()
             .wrap_err_with(|| DeserializationError("manifest"))?;
         let manifest = String::from_utf8(manifest)
+            .into_diagnostic()
             .wrap_err("manifest has invalid character encoding")?
-            .parse()?;
+            .parse()
+            .into_diagnostic()?;
 
         Ok(Self { manifest, tgz })
     }
@@ -409,7 +432,7 @@ impl Default for PackageType {
 pub struct PackageName(String);
 
 impl TryFrom<String> for PackageName {
-    type Error = eyre::Report;
+    type Error = miette::Report;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         ensure!(
@@ -436,7 +459,7 @@ impl TryFrom<String> for PackageName {
 }
 
 impl TryFrom<&str> for PackageName {
-    type Error = eyre::Report;
+    type Error = miette::Report;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Self::try_from(value.to_string())
@@ -444,7 +467,7 @@ impl TryFrom<&str> for PackageName {
 }
 
 impl TryFrom<&String> for PackageName {
-    type Error = eyre::Report;
+    type Error = miette::Report;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
         Self::try_from(value.to_owned())
@@ -452,7 +475,7 @@ impl TryFrom<&String> for PackageName {
 }
 
 impl FromStr for PackageName {
-    type Err = eyre::Report;
+    type Err = miette::Report;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::try_from(s)
@@ -527,7 +550,7 @@ impl DependencyGraph {
         manifest: &Manifest,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
-    ) -> eyre::Result<Self> {
+    ) -> miette::Result<Self> {
         let name = manifest.package.name.clone();
 
         let mut entries = HashMap::new();
@@ -555,7 +578,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
-    ) -> eyre::Result<()> {
+    ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
         if let Some(entry) = entries.get_mut(&dependency.package) {
             ensure!(
@@ -612,7 +635,7 @@ impl DependencyGraph {
         is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
-    ) -> eyre::Result<Package> {
+    ) -> miette::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
                 dependency.manifest.version.matches(&local_locked.version),

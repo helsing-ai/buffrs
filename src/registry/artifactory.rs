@@ -15,7 +15,7 @@
 use super::RegistryUri;
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use bytes::Bytes;
-use eyre::{ensure, eyre, Context};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Method, Response};
 use semver::VersionReq;
 use thiserror::Error;
@@ -35,13 +35,14 @@ struct UnsupportedVersionRequirement(VersionReq);
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> eyre::Result<Self> {
+    pub fn new(registry: RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
             token: credentials.registry_tokens.get(&registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
-                .build()?,
+                .build()
+                .into_diagnostic()?,
         })
     }
 
@@ -50,7 +51,7 @@ impl Artifactory {
         method: Method,
         url: Url,
         body: Option<Bytes>,
-    ) -> eyre::Result<Response, eyre::Report> {
+    ) -> miette::Result<Response> {
         let mut request_builder = self.client.request(method.clone(), url.clone());
 
         if let Some(token) = &self.token {
@@ -61,7 +62,7 @@ impl Artifactory {
             request_builder = request_builder.body(body);
         }
 
-        let response = request_builder.send().await?;
+        let response = request_builder.send().await.into_diagnostic()?;
 
         ensure!(
             !response.status().is_redirection(),
@@ -74,11 +75,11 @@ impl Artifactory {
             "unauthorized - please provide registry credentials with `buffrs login`"
         );
 
-        response.error_for_status().map_err(eyre::Report::from)
+        response.error_for_status().into_diagnostic()
     }
 
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self) -> eyre::Result<()> {
+    pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
             let mut uri = self.registry.to_owned();
             let path = &format!("{}/api/repositories", uri.path());
@@ -89,11 +90,11 @@ impl Artifactory {
         self.make_auth_request(Method::GET, repositories_url, None)
             .await
             .map(|_| ())
-            .map_err(eyre::Report::from)
+            .map_err(miette::Report::from)
     }
 
     /// Downloads a package from artifactory
-    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
+    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         ensure!(
             dependency.manifest.version.comparators.len() == 1,
             UnsupportedVersionRequirement(dependency.manifest.version)
@@ -153,7 +154,7 @@ impl Artifactory {
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
-            .ok_or_else(|| eyre!("missing content-type header"))?;
+            .ok_or_else(|| miette!("missing content-type header"))?;
 
         ensure!(
             content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
@@ -162,7 +163,7 @@ impl Artifactory {
 
         tracing::debug!("downloaded dependency {dependency}");
 
-        let data = response.bytes().await.wrap_err_with(|| {
+        let data = response.bytes().await.into_diagnostic().wrap_err_with(|| {
             format!(
                 "failed to download data for dependency {}",
                 dependency.package
@@ -174,7 +175,7 @@ impl Artifactory {
     }
 
     /// Publishes a package to artifactory
-    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,

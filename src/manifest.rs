@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::{eyre, Context};
+use miette::IntoDiagnostic;
+use miette::{miette, Context};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -81,31 +82,33 @@ pub struct Manifest {
 
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
-    pub async fn exists() -> eyre::Result<bool> {
+    pub async fn exists() -> miette::Result<bool> {
         fs::try_exists(MANIFEST_FILE)
             .await
+            .into_diagnostic()
             .wrap_err_with(|| FileExistsError(MANIFEST_FILE))
     }
 
     /// Loads the manifest from the current directory
-    pub async fn read() -> eyre::Result<Self> {
+    pub async fn read() -> miette::Result<Self> {
         Self::read_from(MANIFEST_FILE).await
     }
 
     /// Loads the manifest from the given path
-    pub async fn read_from(path: impl AsRef<Path>) -> eyre::Result<Self> {
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
         let path_ref = path.as_ref();
 
         match fs::read_to_string(&path_ref).await {
             Ok(contents) => {
-                let raw: RawManifest =
-                    toml::from_str(&contents).wrap_err_with(|| DeserializationError("manifest"))?;
+                let raw: RawManifest = toml::from_str(&contents)
+                    .into_diagnostic()
+                    .wrap_err_with(|| DeserializationError("manifest"))?;
                 Ok(raw.into())
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(FileNotFound(path_ref.display().to_string()).into())
             }
-            Err(_) => Err(eyre!(
+            Err(_) => Err(miette!(
                 "failed to read manifest from `{}`",
                 path_ref.display()
             )),
@@ -113,16 +116,18 @@ impl Manifest {
     }
 
     /// Persists the manifest into the current directory
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> miette::Result<()> {
         let raw = RawManifest::from(self.to_owned());
 
         fs::write(
             MANIFEST_FILE,
             toml::to_string(&raw)
+                .into_diagnostic()
                 .wrap_err_with(|| SerializationError("manifest"))?
                 .into_bytes(),
         )
         .await
+        .into_diagnostic()
         .wrap_err_with(|| WriteError(MANIFEST_FILE))
     }
 }

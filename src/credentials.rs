@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::{eyre, Context};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
 use thiserror::Error;
@@ -37,44 +37,47 @@ pub struct Credentials {
 
 const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
 
-#[derive(Error, Debug)]
+#[derive(Error, Diagnostic, Debug)]
 #[error("could not determine credentials location")]
-struct LocateError(#[from] eyre::Report);
+struct LocateError(miette::Report);
+
+fn location() -> Result<PathBuf, LocateError> {
+    env::var(BUFFRS_HOME_VAR)
+        .map(PathBuf::from)
+        .or_else(|_| {
+            home::home_dir()
+                .ok_or_else(|| miette!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+        })
+        .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError)
+}
 
 impl Credentials {
-    fn location() -> Result<PathBuf, LocateError> {
-        env::var(BUFFRS_HOME_VAR)
-            .map(PathBuf::from)
-            .or_else(|_| {
-                home::home_dir()
-                    .ok_or_else(|| eyre!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
-            })
-            .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError::from)
-    }
-
     /// Checks if the credentials exists
-    pub async fn exists() -> eyre::Result<bool> {
-        fs::try_exists(Self::location()?)
+    pub async fn exists() -> miette::Result<bool> {
+        fs::try_exists(location().into_diagnostic()?)
             .await
+            .into_diagnostic()
             .wrap_err_with(|| FileExistsError(CREDENTIALS_FILE))
     }
 
     /// Reads the credentials from the file system
-    pub async fn read() -> eyre::Result<Self> {
+    pub async fn read() -> miette::Result<Self> {
         let raw: RawCredentialCollection = toml::from_str(
-            &fs::read_to_string(Self::location()?)
+            &fs::read_to_string(location().into_diagnostic()?)
                 .await
+                .into_diagnostic()
                 .wrap_err_with(|| ReadError(CREDENTIALS_FILE))?,
         )
+        .into_diagnostic()
         .wrap_err_with(|| DeserializationError("credentials"))?;
 
         Ok(raw.into())
     }
 
     /// Writes the credentials to the file system
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> miette::Result<()> {
         fs::create_dir(
-            Self::location()?
+            location()?
                 .parent()
                 .expect("unexpected error: resolved credentials path has no parent"),
         )
@@ -84,19 +87,21 @@ impl Credentials {
         let data: RawCredentialCollection = self.clone().into();
 
         fs::write(
-            Self::location()?,
+            location()?,
             toml::to_string(&data)
+                .into_diagnostic()
                 .wrap_err_with(|| SerializationError("credentials"))?
                 .into_bytes(),
         )
         .await
+        .into_diagnostic()
         .wrap_err_with(|| WriteError(CREDENTIALS_FILE))
     }
 
     /// Loads the credentials from the file system
     ///
     /// Note: Initializes the credential file if its not present
-    pub async fn load() -> eyre::Result<Self> {
+    pub async fn load() -> miette::Result<Self> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
             credentials.write().await?;

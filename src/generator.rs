@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use eyre::{ensure, eyre, Context};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 
@@ -58,8 +58,10 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> eyre::Result<()> {
-        let protoc = protoc_bin_path().wrap_err("unable to locate vendored protoc")?;
+    pub async fn run(&self) -> miette::Result<()> {
+        let protoc = protoc_bin_path()
+            .into_diagnostic()
+            .wrap_err("unable to locate vendored protoc")?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
@@ -74,7 +76,8 @@ impl Generator {
                     .build_server(true)
                     .build_transport(true)
                     .include_file(Self::TONIC_INCLUDE_FILE)
-                    .compile(&protos, includes)?;
+                    .compile(&protos, includes)
+                    .into_diagnostic()?;
             }
             Generator::Protoc { language, out_dir } => {
                 let mut protoc_cmd = tokio::process::Command::new(protoc);
@@ -98,9 +101,9 @@ impl Generator {
 
                 tracing::debug!(":: running {protoc_cmd:?}");
 
-                let output = protoc_cmd.output().await?;
+                let output = protoc_cmd.output().await.into_diagnostic()?;
 
-                let exit = output.status.code().ok_or(eyre!(
+                let exit = output.status.code().ok_or(miette!(
                     "a signal interrupted the protoc subprocess before it could complete"
                 ))?;
 
@@ -120,7 +123,7 @@ impl Generator {
 
 impl Generator {
     /// Execute code generation with pre-configured parameters
-    pub async fn generate(&self) -> eyre::Result<()> {
+    pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
 
         tracing::info!(":: initializing code generator");
