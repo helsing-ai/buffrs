@@ -1,5 +1,7 @@
 use miette::Diagnostic;
 
+use crate::managed_file::ManagedFile;
+
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("environment variable {0} is not set")]
 pub(crate) struct EnvVarNotSet(pub &'static str);
@@ -18,11 +20,11 @@ pub(crate) struct ReadError(pub &'static str);
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("could not deserialize {0}")]
-pub(crate) struct DeserializationError(pub &'static str);
+pub(crate) struct DeserializationError(pub ManagedFile);
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("could not serialize {0}")]
-pub(crate) struct SerializationError(pub &'static str);
+pub(crate) struct SerializationError(pub ManagedFile);
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("file `{0}` is missing")]

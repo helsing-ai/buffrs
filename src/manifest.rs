@@ -24,6 +24,7 @@ use std::{
 };
 use tokio::fs;
 
+use crate::managed_file::ManagedFile;
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{PackageName, PackageType},
@@ -102,7 +103,7 @@ impl Manifest {
             Ok(contents) => {
                 let raw: RawManifest = toml::from_str(&contents)
                     .into_diagnostic()
-                    .wrap_err_with(|| DeserializationError("manifest"))?;
+                    .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
                 Ok(raw.into())
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
@@ -123,7 +124,7 @@ impl Manifest {
             MANIFEST_FILE,
             toml::to_string(&raw)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError("manifest"))?
+                .wrap_err_with(|| SerializationError(ManagedFile::Manifest))?
                 .into_bytes(),
         )
         .await

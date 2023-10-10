@@ -20,6 +20,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
+    managed_file::ManagedFile,
     registry::RegistryUri,
 };
 
@@ -69,7 +70,7 @@ impl Credentials {
                 .wrap_err_with(|| ReadError(CREDENTIALS_FILE))?,
         )
         .into_diagnostic()
-        .wrap_err_with(|| DeserializationError("credentials"))?;
+        .wrap_err_with(|| DeserializationError(ManagedFile::Credentials))?;
 
         Ok(raw.into())
     }
@@ -90,7 +91,7 @@ impl Credentials {
             location()?,
             toml::to_string(&data)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError("credentials"))?
+                .wrap_err_with(|| SerializationError(ManagedFile::Credentials))?
                 .into_bytes(),
         )
         .await

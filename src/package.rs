@@ -36,6 +36,7 @@ use crate::{
     credentials::Credentials,
     errors::{DeserializationError, SerializationError},
     lock::{LockedPackage, Lockfile},
+    managed_file::ManagedFile,
     manifest::{self, Dependency, Manifest, MANIFEST_FILE},
     registry::{Artifactory, RegistryUri},
 };
@@ -191,7 +192,7 @@ impl PackageStore {
                 .clone()
                 .try_into()
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError("manifest"))?;
+                .wrap_err_with(|| SerializationError(ManagedFile::Manifest))?;
             as_str.into_bytes()
         };
 
@@ -369,7 +370,7 @@ impl TryFrom<Bytes> for Package {
             .bytes()
             .collect::<io::Result<Vec<_>>>()
             .into_diagnostic()
-            .wrap_err_with(|| DeserializationError("manifest"))?;
+            .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err("manifest has invalid character encoding")?

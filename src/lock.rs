@@ -23,6 +23,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
+    managed_file::ManagedFile,
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -297,7 +298,7 @@ impl Lockfile {
             Ok(contents) => {
                 let raw: RawLockfile = toml::from_str(&contents)
                     .into_diagnostic()
-                    .wrap_err_with(|| DeserializationError("lockfile"))?;
+                    .wrap_err(DeserializationError(ManagedFile::Lock))?;
                 Ok(Self::from_iter(raw.packages.into_iter()))
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
@@ -339,7 +340,7 @@ impl Lockfile {
             LOCKFILE,
             toml::to_string(&raw)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError("lockfile"))?
+                .wrap_err_with(|| SerializationError(ManagedFile::Lock))?
                 .into_bytes(),
         )
         .await

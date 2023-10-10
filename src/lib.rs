@@ -33,6 +33,8 @@ pub mod package;
 /// Supported registries
 pub mod registry;
 
+mod managed_file;
+
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
