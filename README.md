@@ -93,7 +93,7 @@ on them in other projects.*
 - [x] Support tonic as code generation backend
 - [x] Support protoc as code generation backend
 - [ ] Implement `buffrs-registry`, a self-hostable, S3-based registry.
-- [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, and
+- [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, validation and
   formatting.
 
 ## Contributing
