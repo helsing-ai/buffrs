@@ -103,7 +103,7 @@ impl PackageStore {
             .await
             .into_diagnostic()
             .wrap_err_with(|| {
-                format!(
+                miette!(
                     "failed to create extraction directory for package {}",
                     package.name()
                 )
@@ -112,7 +112,7 @@ impl PackageStore {
         tar.unpack(pkg_dir.clone())
             .into_diagnostic()
             .wrap_err_with(|| {
-                format!(
+                miette!(
                     "failed to extract package {} to {}",
                     package.name(),
                     pkg_dir.display()
@@ -178,7 +178,7 @@ impl PackageStore {
             .await
             .into_diagnostic()
             .wrap_err_with(|| {
-                format!(
+                miette!(
                     "failed to locate package folder (expected directory {} to be present)",
                     Self::PROTO_PATH
                 )
@@ -220,7 +220,7 @@ impl PackageStore {
                 file.metadata()
                     .into_diagnostic()
                     .wrap_err_with(|| {
-                        format!("failed to fetch metadata for entry {}", entry.display())
+                        miette!("failed to fetch metadata for entry {}", entry.display())
                     })?
                     .len(),
             );
@@ -343,7 +343,7 @@ impl TryFrom<Bytes> for Package {
 
         gz.read_to_end(&mut tar)
             .into_diagnostic()
-            .wrap_err("failed to decompress package")?;
+            .wrap_err_with(|| miette!("failed to decompress package"))?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
@@ -676,6 +676,7 @@ impl DependencyGraph {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
                 })?;
+
             registry
                 .download(dependency.clone())
                 .await
