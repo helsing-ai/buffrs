@@ -349,9 +349,9 @@ impl TryFrom<Bytes> for Package {
             .bytes()
             .collect::<io::Result<Vec<_>>>()
             .wrap_err_with(|| DeserializationError("manifest"))?;
-        let manifest = Manifest::try_from(
-            String::from_utf8(manifest).wrap_err("manifest has invalid character encoding")?,
-        )?;
+        let manifest = String::from_utf8(manifest)
+            .wrap_err("manifest has invalid character encoding")?
+            .parse()?;
 
         Ok(Self { manifest, tgz })
     }
