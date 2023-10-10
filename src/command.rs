@@ -65,7 +65,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
 
     PackageStore::create()
         .await
-        .wrap_err("failed to create buffrs project directories")
+        .wrap_err(miette!("failed to create buffrs project directories"))
 }
 
 /// Adds a dependency to this project
@@ -142,7 +142,9 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
     if !dry_run {
         std::fs::write(path, package.tgz)
             .into_diagnostic()
-            .wrap_err("failed to write package release to the current directory")?;
+            .wrap_err(miette!(
+                "failed to write package release to the current directory"
+            ))?;
     }
 
     Ok(())
@@ -161,7 +163,7 @@ pub async fn publish(
         let statuses = repository
             .statuses(None)
             .into_diagnostic()
-            .wrap_err("failed to determine repository status")?;
+            .wrap_err(miette!("failed to determine repository status"))?;
 
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
@@ -198,7 +200,7 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
 
     let dependency_graph = DependencyGraph::from_manifest(&manifest, &lockfile, &credentials)
         .await
-        .wrap_err("dependency resolution failed")?;
+        .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -284,7 +286,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
         std::io::stdin()
             .read_line(&mut raw)
             .into_diagnostic()
-            .wrap_err("failed to read the token from the user")?;
+            .wrap_err(miette!("failed to read the token from the user"))?;
 
         raw.trim().into()
     };
@@ -295,10 +297,10 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
         Artifactory::new(registry, &credentials)?
             .ping()
             .await
-            .wrap_err("failed to validate token")?;
+            .wrap_err(miette!("failed to validate token"))?;
     }
 
-    credentials.write().await.wrap_err("failed to save token")
+    credentials.write().await
 }
 
 /// Logs you out from a registry
