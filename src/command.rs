@@ -26,7 +26,7 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
-use eyre::{ensure, eyre, Context};
+use eyre::{bail, ensure, eyre, Context};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
@@ -38,7 +38,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<
         .await
         .wrap_err("failed to access filesystem")?
     {
-        eyre::bail!("a manifest file was found, project is already initialized");
+        bail!("a manifest file was found, project is already initialized");
     }
 
     fn curr_dir_name() -> eyre::Result<PackageName> {
@@ -183,7 +183,7 @@ pub async fn publish(
 
             tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
 
-            eyre::bail!("attempted to publish a dirty repository");
+            bail!("attempted to publish a dirty repository");
         }
     }
 
