@@ -15,7 +15,7 @@
 use super::RegistryUri;
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use bytes::Bytes;
-use eyre::Context;
+use eyre::{ensure, eyre, Context};
 use reqwest::{Method, Response};
 use semver::VersionReq;
 use thiserror::Error;
@@ -63,13 +63,13 @@ impl Artifactory {
 
         let response = request_builder.send().await?;
 
-        eyre::ensure!(
+        ensure!(
             !response.status().is_redirection(),
             "remote server attempted to redirect request - is this registry URL valid? {}",
             self.registry
         );
 
-        eyre::ensure!(
+        ensure!(
             response.status() != 401,
             "unauthorized - please provide registry credentials with `buffrs login`"
         );
@@ -94,7 +94,7 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        eyre::ensure!(
+        ensure!(
             dependency.manifest.version.comparators.len() == 1,
             UnsupportedVersionRequirement(dependency.manifest.version)
         );
@@ -107,7 +107,7 @@ impl Artifactory {
             // validated above
             .expect("unexpected error: empty comparators vector in VersionReq");
 
-        eyre::ensure!(
+        ensure!(
             version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
             UnsupportedVersionRequirement(dependency.manifest.version,)
         );
@@ -153,9 +153,9 @@ impl Artifactory {
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
-            .ok_or_else(|| eyre::eyre!("missing content-type header"))?;
+            .ok_or_else(|| eyre!("missing content-type header"))?;
 
-        eyre::ensure!(
+        ensure!(
             content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
             "server response has incorrect mime type: {content_type:?}"
         );

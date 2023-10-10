@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::Context;
+use eyre::{eyre, Context};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -104,7 +104,7 @@ impl Manifest {
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(FileNotFound(path_ref.display().to_string()).into())
             }
-            Err(_) => Err(eyre::eyre!(
+            Err(_) => Err(eyre!(
                 "failed to read manifest from `{}`",
                 path_ref.display()
             )),

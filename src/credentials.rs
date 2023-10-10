@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::Context;
+use eyre::{eyre, Context};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
 use thiserror::Error;
@@ -47,7 +47,7 @@ impl Credentials {
             .map(PathBuf::from)
             .or_else(|_| {
                 home::home_dir()
-                    .ok_or_else(|| eyre::eyre!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+                    .ok_or_else(|| eyre!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
             })
             .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError::from)
     }

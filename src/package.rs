@@ -25,7 +25,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use eyre::Context;
+use eyre::{ensure, eyre, Context};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -69,11 +69,10 @@ impl PackageStore {
     pub async fn clear() -> eyre::Result<()> {
         match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
             Ok(()) => Ok(()),
-            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => Err(eyre::eyre!(
-                "directory {} not found",
-                Self::PROTO_VENDOR_PATH
-            )),
-            Err(_) => Err(eyre::eyre!(
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
+                Err(eyre!("directory {} not found", Self::PROTO_VENDOR_PATH))
+            }
+            Err(_) => Err(eyre!(
                 "failed to clear {} directory",
                 Self::PROTO_VENDOR_PATH,
             )),
@@ -147,12 +146,12 @@ impl PackageStore {
     pub async fn release() -> eyre::Result<Package> {
         let manifest = Manifest::read().await?;
 
-        eyre::ensure!(
+        ensure!(
             manifest.package.kind != PackageType::Impl,
             "packages with type `impl` cannot be published"
         );
 
-        eyre::ensure!(
+        ensure!(
             !matches!(manifest.package.kind, PackageType::Lib) || manifest.dependencies.is_empty(),
             "library packages cannot have any dependencies"
         );
@@ -160,7 +159,7 @@ impl PackageStore {
         for dependency in manifest.dependencies.iter() {
             let resolved = Self::resolve(&dependency.package).await?;
 
-            eyre::ensure!(
+            ensure!(
                 resolved.package.kind == PackageType::Lib,
                 "depending on API packages is not allowed for {} packages",
                 manifest.package.kind
@@ -344,7 +343,7 @@ impl TryFrom<Bytes> for Package {
                     .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
                     .is_some()
             })
-            .ok_or(eyre::eyre!("missing manifest"))?;
+            .ok_or_else(|| eyre!("missing manifest"))?;
 
         let manifest = manifest
             .bytes()
@@ -413,7 +412,7 @@ impl TryFrom<String> for PackageName {
     type Error = eyre::Report;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        eyre::ensure!(
+        ensure!(
             value.len() >= 3,
             "package names must be at least three chars long"
         );
@@ -422,12 +421,12 @@ impl TryFrom<String> for PackageName {
             .chars()
             .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-');
 
-        eyre::ensure!(all_lower_alphanum, "invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
+        ensure!(all_lower_alphanum, "invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
 
         const UNEXPECTED_MSG: &str =
             "unexpected error: package name length should be validated prior to first character check";
 
-        eyre::ensure!(
+        ensure!(
             value.chars().next().expect(UNEXPECTED_MSG).is_alphabetic(),
             "package names must begin with an alphabetic letter"
         );
@@ -559,7 +558,7 @@ impl DependencyGraph {
     ) -> eyre::Result<()> {
         let version_req = dependency.manifest.version.clone();
         if let Some(entry) = entries.get_mut(&dependency.package) {
-            eyre::ensure!(
+            ensure!(
                 version_req.matches(entry.package.version()),
                 "a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
                     dependency.package,
@@ -615,7 +614,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
     ) -> eyre::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
-            eyre::ensure!(
+            ensure!(
                 dependency.manifest.version.matches(&local_locked.version),
                 "dependency {} cannot be satisfied - requested {}, but version {} is locked",
                 dependency.package,
@@ -623,7 +622,7 @@ impl DependencyGraph {
                 local_locked.version,
             );
 
-            eyre::ensure!(
+            ensure!(
                 is_root || dependency.manifest.registry == local_locked.registry,
                 "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                     dependency.package,

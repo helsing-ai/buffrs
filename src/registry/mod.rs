@@ -23,7 +23,7 @@ mod artifactory;
 mod local;
 
 pub use artifactory::Artifactory;
-use eyre::Context;
+use eyre::{ensure, eyre, Context};
 use serde::{Deserialize, Serialize};
 use url::Url;
 
@@ -69,18 +69,18 @@ impl FromStr for RegistryUri {
 
 fn sanity_check_url(url: &Url) -> eyre::Result<()> {
     let scheme = url.scheme();
-    eyre::ensure!(
+    ensure!(
         scheme == "http" || scheme == "https",
         "invalid URI scheme {scheme} - must be http or https"
     );
 
     if let Some(host) = url.host_str() {
-        eyre::ensure!(
+        ensure!(
             !host.ends_with(".jfrog.io") || url.path().ends_with("/artifactory"),
             "the url must end with '/artifactory' when using a *.jfrog.io host"
         );
         Ok(())
     } else {
-        Err(eyre::eyre!("the URI must contain a host component: {url}"))
+        Err(eyre!("the URI must contain a host component: {url}"))
     }
 }

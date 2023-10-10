@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use eyre::Context;
+use eyre::{ensure, Context};
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -237,7 +237,7 @@ impl LockedPackage {
             .try_into()
             .unwrap();
 
-        eyre::ensure!(
+        ensure!(
             &self.name == package.name(),
             ValidationError {
                 property: "Name",
@@ -246,7 +246,7 @@ impl LockedPackage {
             }
         );
 
-        eyre::ensure!(
+        ensure!(
             &self.version == package.version(),
             ValidationError {
                 property: "Version",
@@ -255,7 +255,7 @@ impl LockedPackage {
             }
         );
 
-        eyre::ensure!(
+        ensure!(
             self.digest == digest,
             ValidationError {
                 property: "Digest",

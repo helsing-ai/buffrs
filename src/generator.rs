@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use eyre::Context;
+use eyre::{ensure, eyre, Context};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 
@@ -100,11 +100,11 @@ impl Generator {
 
                 let output = protoc_cmd.output().await?;
 
-                let exit = output.status.code().ok_or(eyre::eyre!(
+                let exit = output.status.code().ok_or(eyre!(
                     "a signal interrupted the protoc subprocess before it could complete"
                 ))?;
 
-                eyre::ensure!(
+                ensure!(
                     exit == 0,
                     "the protoc subprocess terminated with an error: {exit}. stderr: {}",
                     String::from_utf8_lossy(&output.stderr)
@@ -125,7 +125,7 @@ impl Generator {
 
         tracing::info!(":: initializing code generator");
 
-        eyre::ensure!(
+        ensure!(
             manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
             "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
