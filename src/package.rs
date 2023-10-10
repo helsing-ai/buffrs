@@ -25,7 +25,7 @@ use std::{
 
 use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, Context, Diagnostic, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -537,7 +537,7 @@ pub struct DependencyGraph {
     entries: HashMap<PackageName, ResolvedDependency>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Diagnostic, Debug)]
 #[error("failed to download dependency {name}@{version} from the registry")]
 struct DownloadError {
     name: PackageName,
