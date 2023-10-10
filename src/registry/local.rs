@@ -88,7 +88,7 @@ impl LocalRegistry {
         );
 
         Package::try_from(bytes)
-            .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
+            .wrap_err_with(|| miette!("failed to download dependency {}", dependency.package))
     }
 
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
