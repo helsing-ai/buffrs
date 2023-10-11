@@ -116,6 +116,7 @@ impl Credentials {
 /// Credential store for storing authentication data. Serialization type.
 #[derive(Serialize, Deserialize)]
 struct RawCredentialCollection {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     credentials: Vec<RawRegistryCredentials>,
 }
 
