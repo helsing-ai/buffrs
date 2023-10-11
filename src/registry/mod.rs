@@ -66,7 +66,7 @@ impl FromStr for RegistryUri {
             .wrap_err_with(|| miette!("not a valid URL: {value}"))?;
 
         sanity_check_url(&url)?;
-        
+
         Ok(Self(url))
     }
 }
