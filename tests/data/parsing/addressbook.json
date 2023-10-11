@@ -1,0 +1,56 @@
+{
+  "packages": {
+    "tutorial": {
+      "name": "tutorial",
+      "file": "addressbook.proto",
+      "entities": {
+        "AddressBook": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "people",
+              "type_": "message",
+              "label": "repeated",
+              "default": null
+            }
+          }
+        },
+        "Person": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "name",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            },
+            "2": {
+              "name": "id",
+              "type_": "int32",
+              "label": "optional",
+              "default": null
+            },
+            "3": {
+              "name": "email",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            },
+            "4": {
+              "name": "phones",
+              "type_": "message",
+              "label": "repeated",
+              "default": null
+            },
+            "5": {
+              "name": "last_updated",
+              "type_": "message",
+              "label": "optional",
+              "default": null
+            }
+          }
+        }
+      }
+    }
+  }
+}

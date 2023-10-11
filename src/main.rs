@@ -46,6 +46,21 @@ enum Command {
         package: Option<PackageName>,
     },
 
+    /// Check rule violations for this package.
+    Lint {
+        /// Allow these rules to be violated.
+        #[clap(long, short)]
+        allow: Vec<String>,
+
+        /// Treat these rule violations as errors.
+        #[clap(long, short)]
+        deny: Vec<String>,
+
+        /// Treat these rule violations as warnings.
+        #[clap(long, short)]
+        warn: Vec<String>,
+    },
+
     /// Adds dependencies to a manifest file
     Add {
         /// Artifactory url (e.g. https://<domain>/artifactory)
@@ -196,6 +211,14 @@ async fn main() -> miette::Result<()> {
             .publish(registry, repository, allow_dirty, dry_run)
             .await
             .wrap_err(miette!("publish command failed")),
+        Command::Lint {
+            allow: _,
+            warn: _,
+            deny: _,
+        } => context
+            .lint()
+            .await
+            .wrap_err(miette!("lint command failed")),
         Command::Install => context
             .install()
             .await

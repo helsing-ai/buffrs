@@ -175,6 +175,24 @@ impl PackageStore {
             .wrap_err(miette!("failed to resolve package {package}"))
     }
 
+    /// Validate this package
+    #[cfg(feature = "validation")]
+    pub async fn validate(
+        &self,
+        manifest: &Manifest,
+    ) -> miette::Result<crate::validation::Violations> {
+        let pkg_path = self.proto_path();
+        let source_files = self.collect(&pkg_path).await;
+
+        let mut parser = crate::validation::Parser::new(&pkg_path);
+        for file in &source_files {
+            parser.input(file);
+        }
+        let parsed = parser.parse().into_diagnostic()?;
+        let mut rule_set = crate::validation::rules::package_rules(&manifest.package.name);
+        Ok(parsed.check(&mut rule_set))
+    }
+
     /// Packages a release from the local file system state
     pub async fn release(&self, manifest: Manifest) -> miette::Result<Package> {
         ensure!(
@@ -198,9 +216,10 @@ impl PackageStore {
         }
 
         let pkg_path = self.proto_path();
-        let mut entries = BTreeMap::new();
+        let source_files = self.collect(&pkg_path).await;
 
-        for entry in self.collect(&pkg_path).await {
+        let mut entries = BTreeMap::new();
+        for entry in &source_files {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
             entries.insert(path.into(), contents.into());

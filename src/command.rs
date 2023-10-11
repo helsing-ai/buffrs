@@ -290,6 +290,20 @@ impl Context {
         Lockfile::from_iter(locked.into_iter()).write().await
     }
 
+    /// Parses current package and validates rules.
+    #[cfg(feature = "validation")]
+    pub async fn lint(self: Arc<Self>) -> miette::Result<()> {
+        let manifest = Manifest::read().await?;
+        let violations = self.store().validate(&manifest).await?;
+
+        for violation in violations.into_iter() {
+            let report = miette::Report::new(violation);
+            println!("{report:?}");
+        }
+
+        Ok(())
+    }
+
     /// Uninstalls dependencies
     pub async fn uninstall(self: Arc<Self>) -> miette::Result<()> {
         PackageStore::current().await?.clear().await

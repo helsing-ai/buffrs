@@ -22,8 +22,9 @@ path = "tests/lib.rs"
 test = true
 
 [features]
-default = ["build", "git"]
+default = ["build", "git", "validation"]
 build = ["tonic-build", "protoc-bin-vendored"]
+validation = ["dep:protobuf", "dep:protobuf-parse", "dep:diff-struct"]
 git = ["git2"]
 
 [dependencies]
@@ -52,6 +53,11 @@ walkdir = "2"
 async-recursion = "1.0.5"
 thiserror = "1.0.49"
 miette = { version = "5.10.0", features = ["fancy"] }
+protobuf = { version = "3.3.0", optional = true }
+protobuf-parse = { version = "3.3.0", optional = true }
+diff-struct = { version = "0.5.3", optional = true }
+derive_more = "0.99.17"
+anyhow = "1.0.75"
 
 [dependencies.reqwest]
 version = "0.11"
@@ -66,6 +72,13 @@ predicates = "3.0"
 pretty_assertions = "1.4"
 ring = "0.16.20"
 hex = "0.4.3"
+similar-asserts = "1.5.0"
+serde_json = { version = "1.0.107" }
+paste = "1.0.14"
+
+[[test]]
+name = "validation"
+required-features = ["validation"]
 
 [workspace]
 members = [".", "registry"]

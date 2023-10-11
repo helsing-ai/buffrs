@@ -42,6 +42,9 @@ pub mod package;
 pub mod registry;
 /// Resolve package dependencies.
 pub mod resolver;
+/// Validation for buffrs packages.
+#[cfg(feature = "validation")]
+pub mod validation;
 
 /// Cargo build integration for buffrs
 ///
