@@ -124,12 +124,12 @@ impl Manifest {
             MANIFEST_FILE,
             toml::to_string(&raw)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError(ManagedFile::Manifest))?
+                .wrap_err(SerializationError(ManagedFile::Manifest))?
                 .into_bytes(),
         )
         .await
         .into_diagnostic()
-        .wrap_err_with(|| WriteError(MANIFEST_FILE))
+        .wrap_err(WriteError(MANIFEST_FILE))
     }
 }
 

@@ -192,7 +192,7 @@ impl PackageStore {
                 .clone()
                 .try_into()
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError(ManagedFile::Manifest))?;
+                .wrap_err(SerializationError(ManagedFile::Manifest))?;
             as_str.into_bytes()
         };
 

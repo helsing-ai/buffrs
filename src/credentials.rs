@@ -77,20 +77,25 @@ impl Credentials {
 
     /// Writes the credentials to the file system
     pub async fn write(&self) -> miette::Result<()> {
-        location()?.parent().map(fs::create_dir);
+        let location = location()?;
+
+        if let Some(parent) = location.parent() {
+            // if directory already exists, error is returned but that is fine
+            fs::create_dir(parent).await.ok();
+        }
 
         let data: RawCredentialCollection = self.clone().into();
 
         fs::write(
-            location()?,
+            location,
             toml::to_string(&data)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError(ManagedFile::Credentials))?
+                .wrap_err(SerializationError(ManagedFile::Credentials))?
                 .into_bytes(),
         )
         .await
         .into_diagnostic()
-        .wrap_err_with(|| WriteError(CREDENTIALS_FILE))
+        .wrap_err(WriteError(CREDENTIALS_FILE))
     }
 
     /// Loads the credentials from the file system
