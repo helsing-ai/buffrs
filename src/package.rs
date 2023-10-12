@@ -139,14 +139,14 @@ impl PackageStore {
         fs::remove_dir_all(&pkg_dir)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| format!("failed to uninstall package {package}"))
+            .wrap_err(miette!("failed to uninstall package {package}"))
     }
 
     /// Resolves a package in the local file system
     pub async fn resolve(package: &PackageName) -> miette::Result<Manifest> {
         Manifest::read_from(Self::locate(package).join(MANIFEST_FILE))
             .await
-            .wrap_err_with(|| format!("failed to resolve package {package}"))
+            .wrap_err(miette!("failed to resolve package {package}"))
     }
 }
 

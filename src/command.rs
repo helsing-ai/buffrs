@@ -43,7 +43,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .into_diagnostic()?
             .file_name()
             // because the path originates from the current directory, this condition is never met
-            .expect("unexpected error: current directory path terminates in ..")
+            .wrap_err("unexpected error: current directory path terminates in ..")?
             .to_str()
             .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
@@ -106,7 +106,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     manifest
         .write()
         .await
-        .wrap_err_with(|| miette!("failed to write manifest file"))
+        .wrap_err_with(|| miette!("failed to write `{MANIFEST_FILE}`"))
 }
 
 /// Removes a dependency from this project
