@@ -83,7 +83,7 @@ impl LocalRegistry {
         let bytes = Bytes::from(
             std::fs::read(path)
                 .into_diagnostic()
-                .wrap_err("could not read file")?,
+                .wrap_err(miette!("could not read file"))?,
         );
 
         Package::try_from(bytes)

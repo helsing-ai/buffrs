@@ -202,13 +202,15 @@ impl PackageStore {
                 .len()
                 .try_into()
                 .into_diagnostic()
-                .wrap_err("serialized manifest was too large to fit in a tarball")?,
+                .wrap_err(miette!(
+                    "serialized manifest was too large to fit in a tarball"
+                ))?,
         );
         header.set_mode(0o444);
         archive
             .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
             .into_diagnostic()
-            .wrap_err("failed to add manifest to release")?;
+            .wrap_err(miette!("failed to add manifest to release"))?;
 
         for entry in Self::collect(&pkg_path).await {
             let file = File::open(&entry)
@@ -246,19 +248,19 @@ impl PackageStore {
         let tar = archive
             .into_inner()
             .into_diagnostic()
-            .wrap_err("failed to assemble tar package")?;
+            .wrap_err(miette!("failed to assemble tar package"))?;
 
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
 
         encoder
             .write_all(&tar)
             .into_diagnostic()
-            .wrap_err("failed to compress release")?;
+            .wrap_err(miette!("failed to compress release"))?;
 
         let tgz = encoder
             .finish()
             .into_diagnostic()
-            .wrap_err("failed to finalize package")?
+            .wrap_err(miette!("failed to finalize package"))?
             .into();
 
         tracing::info!(
@@ -356,7 +358,7 @@ impl TryFrom<Bytes> for Package {
         let manifest = tar
             .entries()
             .into_diagnostic()
-            .wrap_err("corrupted tar package")?
+            .wrap_err(miette!("corrupted tar package"))?
             .filter_map(|entry| entry.ok())
             .find(|entry| {
                 entry
@@ -378,7 +380,7 @@ impl TryFrom<Bytes> for Package {
             .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
-            .wrap_err("manifest has invalid character encoding")?
+            .wrap_err(miette!("manifest has invalid character encoding"))?
             .parse()
             .into_diagnostic()?;
 

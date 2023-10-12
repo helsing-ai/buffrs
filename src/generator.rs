@@ -61,7 +61,7 @@ impl Generator {
     pub async fn run(&self) -> miette::Result<()> {
         let protoc = protoc_bin_path()
             .into_diagnostic()
-            .wrap_err("unable to locate vendored protoc")?;
+            .wrap_err(miette!("unable to locate vendored protoc"))?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
@@ -133,7 +133,9 @@ impl Generator {
             "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
 
-        self.run().await.wrap_err("failed to generate bindings")?;
+        self.run()
+            .await
+            .wrap_err(miette!("failed to generate bindings"))?;
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);
