@@ -15,7 +15,7 @@
 use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, Manifest, PackageManifest},
+    manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -43,7 +43,9 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .into_diagnostic()?
             .file_name()
             // because the path originates from the current directory, this condition is never met
-            .wrap_err("unexpected error: current directory path terminates in ..")?
+            .ok_or(miette!(
+                "unexpected error: current directory path terminates in .."
+            ))?
             .to_str()
             .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
@@ -211,9 +213,9 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
         locked: &mut Vec<LockedPackage>,
         prefix: String,
     ) -> miette::Result<()> {
-        let resolved = graph
-            .get(name)
-            .expect("unexpected error: missing dependency in dependency graph");
+        let resolved = graph.get(name).ok_or(miette!(
+            "unexpected error: missing dependency in dependency graph"
+        ))?;
 
         PackageStore::unpack(&resolved.package)
             .await
@@ -230,7 +232,7 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
             resolved.registry.clone(),
             resolved.repository.clone(),
             resolved.dependants.len(),
-        ));
+        )?);
 
         for (index, dependency) in resolved.depends_on.iter().enumerate() {
             let tree_char = if index + 1 == resolved.depends_on.len() {

@@ -77,13 +77,7 @@ impl Credentials {
 
     /// Writes the credentials to the file system
     pub async fn write(&self) -> miette::Result<()> {
-        fs::create_dir(
-            location()?
-                .parent()
-                .expect("unexpected error: resolved credentials path has no parent"),
-        )
-        .await
-        .ok(); // ok to ignore if parent already exists (other failure modes covered by expect above)
+        location()?.parent().map(fs::create_dir);
 
         let data: RawCredentialCollection = self.clone().into();
 

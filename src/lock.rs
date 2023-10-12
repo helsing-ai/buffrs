@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, str::FromStr};
 
-use miette::{ensure, Context, IntoDiagnostic};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -198,17 +198,20 @@ pub struct LockedPackage {
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
+    ///
+    /// Note that despite returning a Result this function never fails
     pub fn lock(
         package: &Package,
         registry: RegistryUri,
         repository: String,
         dependants: usize,
-    ) -> Self {
+    ) -> miette::Result<Self> {
         let digest = digest::digest(&digest::SHA256, &package.tgz)
             .try_into()
-            .expect("unexpected error: only SHA256 is supported");
+            .into_diagnostic()
+            .wrap_err(miette!("unexpected error: only SHA256 is supported"))?;
 
-        Self {
+        Ok(Self {
             name: package.name().to_owned(),
             registry,
             repository,
@@ -221,7 +224,7 @@ impl LockedPackage {
                 .map(|d| d.package.clone())
                 .collect(),
             dependants,
-        }
+        })
     }
 
     /// Validates if another LockedPackage matches this one

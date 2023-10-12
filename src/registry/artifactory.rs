@@ -184,7 +184,10 @@ impl Artifactory {
             package.version(),
         )
         .parse()
-        .expect("unexpected error: failed to construct artifact URL");
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "unexpected error: failed to construct artifact URL"
+        ))?;
 
         let _ = self
             .make_auth_request(Method::PUT, artifact_uri, Some(package.tgz.clone()))

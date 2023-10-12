@@ -229,9 +229,12 @@ impl PackageStore {
             archive
                 .append_data(
                     &mut header,
-                    entry.strip_prefix(&pkg_path).expect(
-                        "unexpected error: collected file path is not under package prefix",
-                    ),
+                    entry
+                        .strip_prefix(&pkg_path)
+                        .into_diagnostic()
+                        .wrap_err(miette!(
+                            "unexpected error: collected file path is not under package prefix"
+                        ))?,
                     file,
                 )
                 .into_diagnostic()
@@ -324,12 +327,14 @@ impl Package {
     }
 
     /// Lock this package
+    ///
+    /// Note that despite returning a Result this function never fails
     pub fn lock(
         &self,
         registry: RegistryUri,
         repository: String,
         dependants: usize,
-    ) -> LockedPackage {
+    ) -> miette::Result<LockedPackage> {
         LockedPackage::lock(self, registry, repository, dependants)
     }
 }
@@ -451,7 +456,11 @@ impl TryFrom<String> for PackageName {
             "unexpected error: package name length should be validated prior to first character check";
 
         ensure!(
-            value.chars().next().expect(UNEXPECTED_MSG).is_alphabetic(),
+            value
+                .chars()
+                .next()
+                .ok_or(miette!(UNEXPECTED_MSG))?
+                .is_alphabetic(),
             "package names must begin with an alphabetic letter"
         );
 
