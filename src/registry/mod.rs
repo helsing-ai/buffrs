@@ -24,8 +24,12 @@ mod local;
 
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};
+use semver::VersionReq;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use url::Url;
+
+use crate::manifest::Dependency;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -88,4 +92,43 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
     } else {
         Err(miette!("the URI must contain a host component: {url}"))
     }
+}
+
+#[derive(Error, Debug)]
+#[error("{0} is not a supported version requirement")]
+struct UnsupportedVersionRequirement(VersionReq);
+
+fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
+    let version = dependency
+        .manifest
+        .version
+        .comparators
+        .first()
+        .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
+        .into_diagnostic()?;
+
+    ensure!(
+        version.op == semver::Op::Exact,
+        UnsupportedVersionRequirement(dependency.manifest.version.clone(),)
+    );
+
+    let minor_version = version
+        .minor
+        .ok_or_else(|| miette!("version missing minor number"))?;
+
+    let patch_version = version
+        .patch
+        .ok_or_else(|| miette!("version missing patch number"))?;
+
+    Ok(format!(
+        "{}.{}.{}{}",
+        version.major,
+        minor_version,
+        patch_version,
+        if version.pre.is_empty() {
+            "".to_owned()
+        } else {
+            format!("-{}", version.pre)
+        }
+    ))
 }

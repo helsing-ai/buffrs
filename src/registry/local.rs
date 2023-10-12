@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use thiserror::Error;
 
@@ -40,38 +40,7 @@ impl LocalRegistry {
 
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         // TODO(rfink): Factor out checks so that artifactory and local registry both use them
-        let version = dependency
-            .manifest
-            .version
-            .comparators
-            .first()
-            .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
-            .into_diagnostic()?;
-
-        ensure!(
-            version.op == semver::Op::Exact,
-            UnsupportedVersionRequirement(dependency.manifest.version,)
-        );
-
-        let minor_version = version
-            .minor
-            .ok_or_else(|| miette!("version missing minor number"))?;
-
-        let patch_version = version
-            .patch
-            .ok_or_else(|| miette!("version missing patch number"))?;
-
-        let version = format!(
-            "{}.{}.{}{}",
-            version.major,
-            minor_version,
-            patch_version,
-            if version.pre.is_empty() {
-                "".to_owned()
-            } else {
-                format!("-{}", version.pre)
-            }
-        );
+        let version = super::dependency_version_string(&dependency)?;
 
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",

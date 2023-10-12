@@ -14,11 +14,8 @@
 
 use super::RegistryUri;
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
-use bytes::Bytes;
 use miette::{ensure, miette, Context, IntoDiagnostic};
-use reqwest::{Method, Response};
-use semver::VersionReq;
-use thiserror::Error;
+use reqwest::{Body, Method, Response};
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -28,10 +25,6 @@ pub struct Artifactory {
     token: Option<String>,
     client: reqwest::Client,
 }
-
-#[derive(Error, Debug)]
-#[error("{0} is not a supported version requirement")]
-struct UnsupportedVersionRequirement(VersionReq);
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
@@ -46,36 +39,14 @@ impl Artifactory {
         })
     }
 
-    async fn make_auth_request(
-        &self,
-        method: Method,
-        url: Url,
-        body: Option<Bytes>,
-    ) -> miette::Result<Response> {
-        let mut request_builder = self.client.request(method, url);
+    fn new_request(&self, method: Method, url: Url) -> RequestBuilder {
+        let mut request_builder = RequestBuilder::new(self.client.clone(), method, url);
 
         if let Some(token) = &self.token {
-            request_builder = request_builder.bearer_auth(token);
+            request_builder = request_builder.auth(token.clone());
         }
 
-        if let Some(body) = body {
-            request_builder = request_builder.body(body);
-        }
-
-        let response = request_builder.send().await.into_diagnostic()?;
-
-        ensure!(
-            !response.status().is_redirection(),
-            "remote server attempted to redirect request - is this registry URL valid? {}",
-            self.registry
-        );
-
-        ensure!(
-            response.status() != 401,
-            "unauthorized - please provide registry credentials with `buffrs login`"
-        );
-
-        response.error_for_status().into_diagnostic()
+        request_builder
     }
 
     /// Pings artifactory to ensure registry access is working
@@ -87,7 +58,8 @@ impl Artifactory {
             uri.into()
         };
 
-        self.make_auth_request(Method::GET, repositories_url, None)
+        self.new_request(Method::GET, repositories_url)
+            .send()
             .await
             .map(|_| ())
             .map_err(miette::Report::from)
@@ -95,81 +67,14 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
-        let version = dependency
-            .manifest
-            .version
-            .comparators
-            .first()
-            .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
-            .into_diagnostic()?;
-
-        ensure!(
-            version.op == semver::Op::Exact,
-            UnsupportedVersionRequirement(dependency.manifest.version,)
-        );
-
-        let minor_version = version
-            .minor
-            .ok_or_else(|| miette!("version missing minor number"))?;
-
-        let patch_version = version
-            .patch
-            .ok_or_else(|| miette!("version missing patch number"))?;
-
-        let version = format!(
-            "{}.{}.{}{}",
-            version.major,
-            minor_version,
-            patch_version,
-            if version.pre.is_empty() {
-                "".to_owned()
-            } else {
-                format!("-{}", version.pre)
-            }
-        );
-
-        let artifact_url: Url = {
-            let path = dependency.manifest.registry.path().to_owned();
-
-            let mut url = dependency.manifest.registry.clone();
-            url.set_path(&format!(
-                "{}/{}/{}/{}-{}.tgz",
-                path,
-                dependency.manifest.repository,
-                dependency.package,
-                dependency.package,
-                version
-            ));
-
-            url.into()
-        };
+        let artifact_url = resolve_url(dependency.clone())?;
 
         tracing::debug!("Hitting download URL: {artifact_url}");
 
-        let response = self
-            .make_auth_request(Method::GET, artifact_url, None)
-            .await?;
+        let response = self.new_request(Method::GET, artifact_url).send().await?;
 
-        let headers = response.headers();
-        let content_type = headers
-            .get(&reqwest::header::CONTENT_TYPE)
-            .ok_or_else(|| miette!("missing content-type header"))?;
-
-        ensure!(
-            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
-            "server response has incorrect mime type: {content_type:?}"
-        );
-
-        tracing::debug!("downloaded dependency {dependency}");
-
-        let data = response.bytes().await.into_diagnostic().wrap_err_with(|| {
-            format!(
-                "failed to download data for dependency {}",
-                dependency.package
-            )
-        })?;
-
-        Package::try_from(data)
+        convert_to_package(response)
+            .await
             .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
     }
 
@@ -190,7 +95,9 @@ impl Artifactory {
         ))?;
 
         let _ = self
-            .make_auth_request(Method::PUT, artifact_uri, Some(package.tgz.clone()))
+            .new_request(Method::PUT, artifact_uri)
+            .body(package.tgz.clone())
+            .send()
             .await?;
 
         tracing::info!(
@@ -202,4 +109,84 @@ impl Artifactory {
 
         Ok(())
     }
+}
+
+struct RequestBuilder(reqwest::RequestBuilder);
+
+impl RequestBuilder {
+    fn new(client: reqwest::Client, method: reqwest::Method, url: Url) -> Self {
+        Self(client.request(method, url))
+    }
+
+    fn auth(mut self, token: String) -> Self {
+        self.0 = self.0.bearer_auth(token);
+        self
+    }
+
+    fn body(mut self, payload: impl Into<Body>) -> Self {
+        self.0 = self.0.body(payload);
+        self
+    }
+
+    async fn send(self) -> miette::Result<ValidatedResponse> {
+        self.0.send().await.into_diagnostic()?.try_into()
+    }
+}
+
+struct ValidatedResponse(reqwest::Response);
+
+impl From<ValidatedResponse> for reqwest::Response {
+    fn from(value: ValidatedResponse) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<Response> for ValidatedResponse {
+    type Error = miette::Report;
+
+    fn try_from(value: Response) -> Result<Self, Self::Error> {
+        ensure!(
+            !value.status().is_redirection(),
+            "remote server attempted to redirect request - is this registry URL valid?"
+        );
+
+        ensure!(
+            value.status() != 401,
+            "unauthorized - please provide registry credentials with `buffrs login`"
+        );
+
+        value.error_for_status().into_diagnostic().map(Self)
+    }
+}
+
+fn resolve_url(dependency: Dependency) -> miette::Result<Url> {
+    let version = super::dependency_version_string(&dependency)?;
+
+    let path = dependency.manifest.registry.path().to_owned();
+
+    let mut url = dependency.manifest.registry.clone();
+    url.set_path(&format!(
+        "{}/{}/{}/{}-{}.tgz",
+        path, dependency.manifest.repository, dependency.package, dependency.package, version
+    ));
+
+    Ok(url.into())
+}
+
+async fn convert_to_package(response: ValidatedResponse) -> miette::Result<Package> {
+    let response: reqwest::Response = response.into();
+
+    let headers = response.headers();
+    let content_type = headers
+        .get(&reqwest::header::CONTENT_TYPE)
+        .ok_or_else(|| miette!("missing content-type header"))?;
+
+    ensure!(
+        content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+        "server response has incorrect mime type: {content_type:?}"
+    );
+
+    let data = response.bytes().await.into_diagnostic()?;
+
+    Package::try_from(data)
 }
