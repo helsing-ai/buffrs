@@ -16,6 +16,7 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 use eyre::{ensure, ContextCompat};
+use tokio::fs;
 
 use crate::{manifest::Dependency, package::Package};
 
@@ -71,7 +72,7 @@ impl LocalRegistry {
 
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
-        let bytes = Bytes::from(std::fs::read(path)?);
+        let bytes = Bytes::from(fs::read(path).await?);
         Package::try_from(bytes)
     }
 
@@ -84,9 +85,9 @@ impl LocalRegistry {
             package.version(),
         )));
 
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::create_dir_all(path.parent().unwrap()).await?;
 
-        std::fs::write(&path, &package.tgz)?;
+        fs::write(&path, &package.tgz).await?;
 
         tracing::info!(
             ":: published {}/{}@{} to {:?}",
