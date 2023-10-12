@@ -56,7 +56,7 @@ impl PackageStore {
             fs::create_dir_all(dir)
                 .await
                 .into_diagnostic()
-                .wrap_err_with(|| format!("failed to create {dir} directory"))
+                .wrap_err_with(|| miette!("failed to create {dir} directory"))
         };
 
         create(Self::PROTO_PATH).await?;
@@ -91,7 +91,7 @@ impl PackageStore {
 
         gz.read_to_end(&mut tar)
             .into_diagnostic()
-            .wrap_err_with(|| format!("failed to decompress package {}", package.name()))?;
+            .wrap_err_with(|| miette!("failed to decompress package {}", package.name()))?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
@@ -215,7 +215,7 @@ impl PackageStore {
         for entry in Self::collect(&pkg_path).await {
             let file = File::open(&entry)
                 .into_diagnostic()
-                .wrap_err_with(|| format!("failed to open file {}", entry.display()))?;
+                .wrap_err_with(|| miette!("failed to open file {}", entry.display()))?;
 
             let mut header = tar::Header::new_gnu();
             header.set_mode(0o444);
@@ -241,7 +241,7 @@ impl PackageStore {
                 )
                 .into_diagnostic()
                 .wrap_err_with(|| {
-                    format!("failed to add proto {} to release tar", entry.display())
+                    miette!("failed to add proto {} to release tar", entry.display())
                 })?;
         }
 
