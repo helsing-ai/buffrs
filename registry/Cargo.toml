@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 buffrs = { path = "../" }
+prost = "0.12.1"
+tonic = "0.10.2"
 
 [build-dependencies]
 buffrs = { path = "../" }
