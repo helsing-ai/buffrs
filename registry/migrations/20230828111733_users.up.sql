@@ -11,3 +11,8 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ NOT NULL,
     deleted_at TIMESTAMPTZ
 );
+
+CREATE TABLE user_tokens (
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token         TEXT NOT NULL UNIQUE
+);
