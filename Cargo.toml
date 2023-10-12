@@ -44,7 +44,7 @@ serde = { version = "1", features = ["derive"] }
 serde_typename = "0.1"
 semver = { version = "1", features = ["serde"] }
 tar = "0.4"
-tokio = { version = "1", features = ["full", "tracing"] }
+tokio = { version = "1", features = ["fs", "rt", "macros", "process", "io-std", "tracing"] }
 toml = "0.8.0"
 tonic-build = { version = "0.10.0", optional = true }
 tracing = "0.1"
