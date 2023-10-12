@@ -31,6 +31,7 @@ use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
+const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
 /// Initializes the project
 pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
@@ -295,7 +296,7 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
 
     credentials.registry_tokens.insert(registry.clone(), token);
 
-    if env::var("BUFFRS_TESTSUITE").is_err() {
+    if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
         Artifactory::new(registry, &credentials)?
             .ping()
             .await
