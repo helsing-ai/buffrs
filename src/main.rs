@@ -120,7 +120,7 @@ enum Command {
     },
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> eyre::Result<()> {
     human_panic::setup_panic!();
 

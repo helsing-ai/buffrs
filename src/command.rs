@@ -29,6 +29,10 @@ use async_recursion::async_recursion;
 use eyre::{ensure, Context, ContextCompat};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
+use tokio::{
+    fs,
+    io::{self, AsyncBufReadExt, BufReader},
+};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 
@@ -135,7 +139,9 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result
     ));
 
     if !dry_run {
-        std::fs::write(path, package.tgz).wrap_err("failed to write package to filesystem")?;
+        fs::write(path, package.tgz)
+            .await
+            .wrap_err("failed to write package to filesystem")?;
     }
 
     Ok(())
@@ -279,8 +285,10 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
 
         let mut raw = String::new();
 
-        std::io::stdin()
+        let mut reader = BufReader::new(io::stdin());
+        reader
             .read_line(&mut raw)
+            .await
             .wrap_err("Failed to read token")?;
 
         raw.trim().into()
