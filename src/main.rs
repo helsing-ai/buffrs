@@ -19,6 +19,7 @@ use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, package::PackageType};
 use clap::{Parser, Subcommand};
+use miette::{miette, Context};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -121,10 +122,8 @@ enum Command {
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> eyre::Result<()> {
+async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
-
-    color_eyre::install()?;
 
     tracing_subscriber::fmt()
         .compact()
@@ -141,7 +140,7 @@ async fn main() -> eyre::Result<()> {
 
     match cli.command {
         Command::Init { lib, api, package } => {
-            let r#type = if lib {
+            let kind = if lib {
                 PackageType::Lib
             } else if api {
                 PackageType::Api
@@ -149,27 +148,47 @@ async fn main() -> eyre::Result<()> {
                 PackageType::Impl
             };
 
-            command::init(r#type, package).await
+            command::init(kind, package)
+                .await
+                .wrap_err(miette!("init command failed"))
         }
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry, &dependency).await,
-        Command::Remove { package } => command::remove(package).await,
+        } => command::add(registry, &dependency)
+            .await
+            .wrap_err(miette!("add command failed")),
+        Command::Remove { package } => command::remove(package)
+            .await
+            .wrap_err(miette!("remove command failed")),
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run).await,
+        } => command::package(output_directory, dry_run)
+            .await
+            .wrap_err(miette!("package command failed")),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(credentials, registry, repository, allow_dirty, dry_run).await,
-        Command::Install => command::install(credentials).await,
-        Command::Uninstall => command::uninstall().await,
-        Command::Generate { language, out_dir } => command::generate(language, out_dir).await,
-        Command::Login { registry } => command::login(credentials, registry).await,
-        Command::Logout { registry } => command::logout(credentials, registry).await,
+        } => command::publish(credentials, registry, repository, allow_dirty, dry_run)
+            .await
+            .wrap_err(miette!("publish command failed")),
+        Command::Install => command::install(credentials)
+            .await
+            .wrap_err(miette!("install command failed")),
+        Command::Uninstall => command::uninstall()
+            .await
+            .wrap_err(miette!("uninstall command failed")),
+        Command::Generate { language, out_dir } => command::generate(language, out_dir)
+            .await
+            .wrap_err(miette!("generate command failed")),
+        Command::Login { registry } => command::login(credentials, registry)
+            .await
+            .wrap_err(miette!("login command failed")),
+        Command::Logout { registry } => command::logout(credentials, registry)
+            .await
+            .wrap_err(miette!("logout command failed")),
     }
 }

@@ -23,10 +23,15 @@ mod artifactory;
 mod local;
 
 pub use artifactory::Artifactory;
-use eyre::ensure;
+use miette::{ensure, miette, Context, IntoDiagnostic};
+use semver::VersionReq;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use url::Url;
 
+use crate::manifest::Dependency;
+
+/// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RegistryUri(Url);
 
@@ -57,39 +62,73 @@ impl Display for RegistryUri {
 }
 
 impl FromStr for RegistryUri {
-    type Err = eyre::Error;
+    type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let slf = Self(Url::from_str(value)?);
-        slf.sanity_check_url()?;
-        Ok(slf)
+        let url = Url::from_str(value)
+            .into_diagnostic()
+            .wrap_err(miette!("not a valid URL: {value}"))?;
+
+        sanity_check_url(&url)?;
+
+        Ok(Self(url))
     }
 }
 
-impl RegistryUri {
-    pub fn sanity_check_url(&self) -> eyre::Result<()> {
-        tracing::debug!(
-            "checking that url begins with http or https: {}",
-            self.0.scheme()
-        );
+fn sanity_check_url(url: &Url) -> miette::Result<()> {
+    let scheme = url.scheme();
+
+    ensure!(
+        scheme == "http" || scheme == "https",
+        "invalid URI scheme {scheme} - must be http or https"
+    );
+
+    if let Some(host) = url.host_str() {
         ensure!(
-            self.0.scheme() == "http" || self.0.scheme() == "https",
-            "The self.0 must start with http:// or https://"
+            !host.ends_with(".jfrog.io") || url.path().ends_with("/artifactory"),
+            "the url must end with '/artifactory' when using a *.jfrog.io host"
         );
-
-        if let Some(host) = self.0.host_str() {
-            if host.ends_with(".jfrog.io") {
-                tracing::debug!(
-                    "checking that jfrog.io url ends with /artifactory: {}",
-                    self.0.path()
-                );
-                ensure!(
-                    self.0.path().ends_with("/artifactory"),
-                    "The url must end with '/artifactory' when using a *.jfrog.io host"
-                );
-            }
-        }
-
         Ok(())
+    } else {
+        Err(miette!("the URI must contain a host component: {url}"))
     }
+}
+
+#[derive(Error, Debug)]
+#[error("{0} is not a supported version requirement")]
+struct UnsupportedVersionRequirement(VersionReq);
+
+fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
+    let version = dependency
+        .manifest
+        .version
+        .comparators
+        .first()
+        .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
+        .into_diagnostic()?;
+
+    ensure!(
+        version.op == semver::Op::Exact,
+        UnsupportedVersionRequirement(dependency.manifest.version.clone(),)
+    );
+
+    let minor_version = version
+        .minor
+        .ok_or_else(|| miette!("version missing minor number"))?;
+
+    let patch_version = version
+        .patch
+        .ok_or_else(|| miette!("version missing patch number"))?;
+
+    Ok(format!(
+        "{}.{}.{}{}",
+        version.major,
+        minor_version,
+        patch_version,
+        if version.pre.is_empty() {
+            "".to_owned()
+        } else {
+            format!("-{}", version.pre)
+        }
+    ))
 }

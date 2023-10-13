@@ -12,21 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::Context;
+use miette::{miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    path::Path,
     str::FromStr,
 };
 use tokio::fs;
 
 use crate::{
+    errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
+    ManagedFile,
 };
 
+/// The name of the manifest file
 pub const MANIFEST_FILE: &str = "Proto.toml";
 
 /// A `buffrs` manifest format used for serialization and deserialization.
@@ -78,30 +82,53 @@ pub struct Manifest {
 
 impl Manifest {
     /// Checks if the manifest file exists in the filesystem
-    pub async fn exists() -> eyre::Result<bool> {
+    pub async fn exists() -> miette::Result<bool> {
         fs::try_exists(MANIFEST_FILE)
             .await
-            .wrap_err("Failed to detect manifest")
+            .into_diagnostic()
+            .wrap_err(FileExistsError(MANIFEST_FILE))
     }
 
     /// Loads the manifest from the current directory
-    pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(MANIFEST_FILE)
-            .await
-            .wrap_err("Failed to read manifest")?;
+    pub async fn read() -> miette::Result<Self> {
+        Self::read_from(MANIFEST_FILE).await
+    }
 
-        let raw: RawManifest = toml.parse().wrap_err("Failed to parse manifest")?;
+    /// Loads the manifest from the given path
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
+        let path_ref = path.as_ref();
 
-        Ok(raw.into())
+        match fs::read_to_string(&path_ref).await {
+            Ok(contents) => {
+                let raw: RawManifest = toml::from_str(&contents)
+                    .into_diagnostic()
+                    .wrap_err(DeserializationError(ManagedFile::Manifest))?;
+                Ok(raw.into())
+            }
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
+                Err(FileNotFound(path_ref.display().to_string()).into())
+            }
+            Err(_) => Err(miette!(
+                "failed to read manifest from `{}`",
+                path_ref.display()
+            )),
+        }
     }
 
     /// Persists the manifest into the current directory
-    pub async fn write(&self) -> eyre::Result<()> {
+    pub async fn write(&self) -> miette::Result<()> {
         let raw = RawManifest::from(self.to_owned());
 
-        fs::write(MANIFEST_FILE, toml::to_string(&raw)?.into_bytes())
-            .await
-            .wrap_err("Failed to write manifest")
+        fs::write(
+            MANIFEST_FILE,
+            toml::to_string(&raw)
+                .into_diagnostic()
+                .wrap_err(SerializationError(ManagedFile::Manifest))?
+                .into_bytes(),
+        )
+        .await
+        .into_diagnostic()
+        .wrap_err(WriteError(MANIFEST_FILE))
     }
 }
 

@@ -15,10 +15,16 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use eyre::{ensure, ContextCompat};
+use miette::{miette, Context, IntoDiagnostic};
+use semver::VersionReq;
+use thiserror::Error;
 use tokio::fs;
 
 use crate::{manifest::Dependency, package::Package};
+
+#[derive(Error, Debug)]
+#[error("{0} is not a supported version requirement")]
+struct UnsupportedVersionRequirement(VersionReq);
 
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
@@ -33,37 +39,9 @@ impl LocalRegistry {
         LocalRegistry { base_dir }
     }
 
-    pub async fn download(&self, dependency: Dependency) -> eyre::Result<Package> {
-        // TODO(rfink): Factor out checks so that artifactory and local registry both use them
-        ensure!(
-            dependency.manifest.version.comparators.len() == 1,
-            "{} uses unsupported semver comparators",
-            dependency.package
-        );
-
-        let version = dependency
-            .manifest
-            .version
-            .comparators
-            .first()
-            .wrap_err("internal error")?;
-
-        ensure!(
-            version.op == semver::Op::Exact && version.minor.is_some() && version.patch.is_some(),
-            "local registry only support pinned dependencies"
-        );
-
-        let version = format!(
-            "{}.{}.{}{}",
-            version.major,
-            version.minor.wrap_err("internal error")?,
-            version.patch.wrap_err("internal error")?,
-            if version.pre.is_empty() {
-                "".to_owned()
-            } else {
-                format!("-{}", version.pre)
-            }
-        );
+    /// "Downloads" a package from the local filesystem
+    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        let version = super::dependency_version_string(&dependency)?;
 
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
@@ -72,11 +50,20 @@ impl LocalRegistry {
 
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
-        let bytes = Bytes::from(fs::read(path).await?);
-        Package::try_from(bytes)
+        let bytes = Bytes::from(
+            fs::read(path)
+                .await
+                .into_diagnostic()
+                .wrap_err(miette!("could not read file"))?,
+        );
+
+        Package::try_from(bytes).wrap_err(miette!(
+            "failed to download dependency {}",
+            dependency.package
+        ))
     }
 
-    pub async fn publish(&self, package: Package, repository: String) -> eyre::Result<()> {
+    pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
@@ -85,9 +72,14 @@ impl LocalRegistry {
             package.version(),
         )));
 
-        fs::create_dir_all(path.parent().unwrap()).await?;
+        fs::create_dir_all(path.parent().unwrap())
+            .await
+            .into_diagnostic()?;
 
-        fs::write(&path, &package.tgz).await?;
+        fs::write(&path, &package.tgz)
+            .await
+            .into_diagnostic()
+            .wrap_err(miette!("could not write to file: {}", path.display()))?;
 
         tracing::info!(
             ":: published {}/{}@{} to {:?}",
@@ -107,8 +99,9 @@ mod tests {
     use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
     use bytes::Bytes;
+    use std::env;
     use std::path::PathBuf;
-    use std::{env, fs};
+    use tokio::fs;
 
     #[tokio::test]
     async fn can_publish_and_fetch() {
@@ -139,7 +132,9 @@ mod tests {
 
         assert_eq!(
             Bytes::from(
-                fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
+                fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz")))
+                    .await
+                    .unwrap()
             ),
             package_bytes
         );

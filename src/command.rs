@@ -15,7 +15,7 @@
 use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, Manifest, PackageManifest},
+    manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{DependencyGraph, PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -26,7 +26,7 @@ use crate::{generator, generator::Language};
 use std::path::PathBuf;
 
 use async_recursion::async_recursion;
-use eyre::{ensure, Context, ContextCompat};
+use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
 use tokio::{
@@ -35,22 +35,24 @@ use tokio::{
 };
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
+const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
 /// Initializes the project
-pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<()> {
-    ensure!(
-        !Manifest::exists().await?,
-        "Cannot re-initialize an existing project"
-    );
+pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
+    if Manifest::exists().await? {
+        bail!("a manifest file was found, project is already initialized");
+    }
 
-    const DIR_ERR: &str = "Failed to read current directory name";
-
-    fn curr_dir_name() -> eyre::Result<PackageName> {
-        std::env::current_dir()?
+    fn curr_dir_name() -> miette::Result<PackageName> {
+        std::env::current_dir()
+            .into_diagnostic()?
             .file_name()
-            .wrap_err(DIR_ERR)?
+            // because the path originates from the current directory, this condition is never met
+            .ok_or(miette!(
+                "unexpected error: current directory path terminates in .."
+            ))?
             .to_str()
-            .wrap_err(DIR_ERR)?
+            .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
     }
 
@@ -68,36 +70,39 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> eyre::Result<
 
     manifest.write().await?;
 
-    PackageStore::create().await
+    PackageStore::create()
+        .await
+        .wrap_err(miette!("failed to create buffrs project directories"))
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
+pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
     let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
     let (repository, dependency) = dependency
         .trim()
         .split_once('/')
-        .wrap_err("Invalid dependency specification")?;
+        .ok_or_else(|| miette!("locator {dependency} is missing a repository delimiter"))?;
 
     ensure!(
         repository.chars().all(lower_kebab),
-        "Repositories must be in lower kebab case"
+        "repository {repository} is not in kebab case"
     );
 
     let repository = repository.into();
 
     let (package, version) = dependency
         .split_once('@')
-        .wrap_err_with(|| format!("Invalid dependency specification: {dependency}"))?;
+        .ok_or_else(|| miette!("dependency specification is missing version part: {dependency}"))?;
 
     let package = package
         .parse::<PackageName>()
-        .wrap_err_with(|| format!("Invalid package name supplied: {package}"))?;
+        .wrap_err(miette!("invalid package name: {package}"))?;
 
     let version = version
         .parse::<VersionReq>()
-        .wrap_err_with(|| format!("Invalid version requirement supplied: {package}"))?;
+        .into_diagnostic()
+        .wrap_err(miette!("not a valid version requirement: {version}"))?;
 
     let mut manifest = Manifest::read().await?;
 
@@ -105,33 +110,36 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> eyre::Result<()> {
         .dependencies
         .push(Dependency::new(registry, repository, package, version));
 
-    manifest.write().await
+    manifest
+        .write()
+        .await
+        .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
 }
 
 /// Removes a dependency from this project
-pub async fn remove(package: PackageName) -> eyre::Result<()> {
+pub async fn remove(package: PackageName) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
 
     let match_idx = manifest
         .dependencies
         .iter()
         .position(|d| d.package == package)
-        .wrap_err(eyre::eyre!(
-            "Unable to remove unknown dependency {package:?}"
-        ))?;
+        .ok_or_else(|| miette!("package {package} not in manifest"))?;
 
     let dependency = manifest.dependencies.remove(match_idx);
 
-    PackageStore::uninstall(&dependency.package).await.ok();
+    // if PackageStore::uninstall(&dependency.package).await.is_err() {
+    //     tracing::warn!("failed to uninstall package {}", dependency.package);
+    // }
+
+    PackageStore::uninstall(&dependency.package).await.ok(); // temporary due to broken test
 
     manifest.write().await
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result<()> {
-    let package = PackageStore::release()
-        .await
-        .wrap_err("Failed to create release")?;
+pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
+    let package = PackageStore::release().await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -141,7 +149,10 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> eyre::Result
     if !dry_run {
         fs::write(path, package.tgz)
             .await
-            .wrap_err("failed to write package to filesystem")?;
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "failed to write package release to the current directory"
+            ))?;
     }
 
     Ok(())
@@ -154,12 +165,13 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
-) -> eyre::Result<()> {
+) -> miette::Result<()> {
     #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
         let statuses = repository
             .statuses(None)
-            .wrap_err("Failed to get git status")?;
+            .into_diagnostic()
+            .wrap_err(miette!("failed to determine repository status"))?;
 
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
@@ -170,36 +182,33 @@ pub async fn publish(
 
             tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
 
-            eyre::bail!("Unable to publish a dirty git repository");
+            bail!("attempted to publish a dirty repository");
         }
     }
 
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    let package = PackageStore::release()
-        .await
-        .wrap_err("Failed to create release")?;
+    let package = PackageStore::release().await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
         return Ok(());
     }
 
-    artifactory.publish(package, repository).await?;
-
-    Ok(())
+    artifactory.publish(package, repository).await
 }
 
 /// Installs dependencies
-pub async fn install(credentials: Credentials) -> eyre::Result<()> {
+pub async fn install(credentials: Credentials) -> miette::Result<()> {
     let credentials = Arc::new(credentials);
 
     let manifest = Manifest::read().await?;
 
     let lockfile = Lockfile::read_or_default().await?;
 
-    let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials).await?;
+    let dependency_graph = DependencyGraph::from_manifest(&manifest, &lockfile, &credentials)
+        .await
+        .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -209,12 +218,17 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         graph: &DependencyGraph,
         locked: &mut Vec<LockedPackage>,
         prefix: String,
-    ) -> eyre::Result<()> {
-        let resolved = graph
-            .get(name)
-            .wrap_err("Dependency missing from dependency tree")?;
+    ) -> miette::Result<()> {
+        let resolved = graph.get(name).ok_or(miette!(
+            "unexpected error: missing dependency in dependency graph"
+        ))?;
 
-        PackageStore::unpack(&resolved.package).await?;
+        PackageStore::unpack(&resolved.package)
+            .await
+            .wrap_err(miette!(
+                "failed to unpack package {}",
+                &resolved.package.name()
+            ))?;
 
         tracing::info!(
             "{} installed {}@{}",
@@ -227,7 +241,7 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
             resolved.registry.clone(),
             resolved.repository.clone(),
             resolved.dependants.len(),
-        ));
+        )?);
 
         for (index, dependency) in resolved.depends_on.iter().enumerate() {
             let tree_char = if index + 1 == resolved.depends_on.len() {
@@ -256,30 +270,25 @@ pub async fn install(credentials: Credentials) -> eyre::Result<()> {
         .await?;
     }
 
-    let lockfile = Lockfile::from_iter(locked.into_iter());
-    lockfile.write().await?;
-
-    Ok(())
+    Lockfile::from_iter(locked.into_iter()).write().await
 }
 
 /// Uninstalls dependencies
-pub async fn uninstall() -> eyre::Result<()> {
+pub async fn uninstall() -> miette::Result<()> {
     PackageStore::clear().await
 }
 
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> eyre::Result<()> {
+pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
-        .wrap_err_with(|| format!("Failed to generate language bindings for {language}"))?;
-
-    Ok(())
+        .wrap_err(miette!("failed to generate {language} bindings"))
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
     let token = {
         tracing::info!("Please enter your artifactory token:");
 
@@ -289,27 +298,26 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> eyre:
         reader
             .read_line(&mut raw)
             .await
-            .wrap_err("Failed to read token")?;
+            .into_diagnostic()
+            .wrap_err(miette!("failed to read the token from the user"))?;
 
         raw.trim().into()
     };
 
     credentials.registry_tokens.insert(registry.clone(), token);
 
-    let artifactory = Artifactory::new(registry, &credentials)?;
-
-    if env::var("BUFFRS_TESTSUITE").is_err() {
-        artifactory
+    if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
+        Artifactory::new(registry, &credentials)?
             .ping()
             .await
-            .wrap_err("Failed to reach artifactory, please make sure the url and credentials are correct and the instance is up and running")?;
+            .wrap_err(miette!("failed to validate token"))?;
     }
 
     credentials.write().await
 }
 
 /// Logs you out from a registry
-pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> eyre::Result<()> {
+pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
 }

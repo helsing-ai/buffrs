@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use eyre::{Context, ContextCompat};
+use miette::{miette, Context, Diagnostic, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, path::PathBuf};
+use thiserror::Error;
 use tokio::fs;
 
-use crate::registry::RegistryUri;
+use crate::{
+    errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
+    registry::RegistryUri,
+    ManagedFile,
+};
 
 /// Global configuration directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
@@ -31,55 +36,72 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
+const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
+
+#[derive(Error, Diagnostic, Debug)]
+#[error("could not determine credentials location")]
+struct LocateError(#[diagnostic_source] miette::Report);
+
+fn location() -> Result<PathBuf, LocateError> {
+    env::var(BUFFRS_HOME_VAR)
+        .map(PathBuf::from)
+        .or_else(|_| {
+            home::home_dir()
+                .ok_or_else(|| miette!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+        })
+        .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError)
+}
+
 impl Credentials {
-    fn location() -> eyre::Result<PathBuf> {
-        let home = home::home_dir().wrap_err("Failed to locate home directory")?;
-
-        let home = env::var("BUFFRS_HOME").map(PathBuf::from).unwrap_or(home);
-
-        Ok(home.join(BUFFRS_HOME).join(CREDENTIALS_FILE))
-    }
-
     /// Checks if the credentials exists
-    pub async fn exists() -> eyre::Result<bool> {
-        fs::try_exists(Self::location()?)
+    pub async fn exists() -> miette::Result<bool> {
+        fs::try_exists(location().into_diagnostic()?)
             .await
-            .wrap_err("Failed to detect credentials")
+            .into_diagnostic()
+            .wrap_err(FileExistsError(CREDENTIALS_FILE))
     }
 
     /// Reads the credentials from the file system
-    pub async fn read() -> eyre::Result<Self> {
-        let toml = fs::read_to_string(Self::location()?)
-            .await
-            .wrap_err("Failed to read credentials")?;
-
-        let raw: RawCredentialCollection =
-            toml::from_str(&toml).wrap_err("Failed to parse credentials")?;
+    pub async fn read() -> miette::Result<Self> {
+        let raw: RawCredentialCollection = toml::from_str(
+            &fs::read_to_string(location().into_diagnostic()?)
+                .await
+                .into_diagnostic()
+                .wrap_err(ReadError(CREDENTIALS_FILE))?,
+        )
+        .into_diagnostic()
+        .wrap_err(DeserializationError(ManagedFile::Credentials))?;
 
         Ok(raw.into())
     }
 
     /// Writes the credentials to the file system
-    pub async fn write(&self) -> eyre::Result<()> {
-        fs::create_dir(
-            Self::location()?
-                .parent()
-                .wrap_err("Invalid credentials location")?,
-        )
-        .await
-        .ok();
+    pub async fn write(&self) -> miette::Result<()> {
+        let location = location()?;
+
+        if let Some(parent) = location.parent() {
+            // if directory already exists, error is returned but that is fine
+            fs::create_dir(parent).await.ok();
+        }
 
         let data: RawCredentialCollection = self.clone().into();
 
-        fs::write(Self::location()?, toml::to_string(&data)?.into_bytes())
-            .await
-            .wrap_err("Failed to write credentials")
+        fs::write(
+            location,
+            toml::to_string(&data)
+                .into_diagnostic()
+                .wrap_err(SerializationError(ManagedFile::Credentials))?
+                .into_bytes(),
+        )
+        .await
+        .into_diagnostic()
+        .wrap_err(WriteError(CREDENTIALS_FILE))
     }
 
     /// Loads the credentials from the file system
     ///
     /// Note: Initializes the credential file if its not present
-    pub async fn load() -> eyre::Result<Self> {
+    pub async fn load() -> miette::Result<Self> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
             credentials.write().await?;

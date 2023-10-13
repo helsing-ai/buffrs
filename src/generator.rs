@@ -17,7 +17,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use eyre::{ensure, Context, ContextCompat};
+use miette::{ensure, miette, Context, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +28,7 @@ use crate::{manifest::Manifest, package::PackageStore};
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
 )]
 #[serde(rename_all = "kebab-case")]
+#[allow(missing_docs)] // trivial enum
 pub enum Language {
     Python,
 }
@@ -45,17 +46,22 @@ pub enum Generator {
     Tonic,
     /// The official `protoc` protobuf compiler
     Protoc {
+        /// Target language for code generation
         language: Language,
+        /// Target directory for the generated source files
         out_dir: PathBuf,
     },
 }
 
 impl Generator {
+    /// Tonic include file name
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> eyre::Result<()> {
-        let protoc = protoc_bin_path().wrap_err("Unable to locate vendored protoc")?;
+    pub async fn run(&self) -> miette::Result<()> {
+        let protoc = protoc_bin_path()
+            .into_diagnostic()
+            .wrap_err(miette!("unable to locate vendored protoc"))?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
@@ -70,7 +76,8 @@ impl Generator {
                     .build_server(true)
                     .build_transport(true)
                     .include_file(Self::TONIC_INCLUDE_FILE)
-                    .compile(&protos, includes)?;
+                    .compile(&protos, includes)
+                    .into_diagnostic()?;
             }
             Generator::Protoc { language, out_dir } => {
                 let mut protoc_cmd = tokio::process::Command::new(protoc);
@@ -94,20 +101,16 @@ impl Generator {
 
                 tracing::debug!(":: running {protoc_cmd:?}");
 
-                let output = protoc_cmd
-                    .output()
-                    .await
-                    .wrap_err("failed to retrieve protoc output")?;
+                let output = protoc_cmd.output().await.into_diagnostic()?;
 
-                let exit = output
-                    .status
-                    .code()
-                    .wrap_err("failed to retrieve exit code of protoc")?;
+                let exit = output.status.code().ok_or(miette!(
+                    "a signal interrupted the protoc subprocess before it could complete"
+                ))?;
 
                 ensure!(
                     exit == 0,
-                    "protoc generation failed: {}",
-                    String::from_utf8(output.stderr)?,
+                    "the protoc subprocess terminated with an error: {exit}. stderr: {}",
+                    String::from_utf8_lossy(&output.stderr)
                 );
 
                 tracing::info!(":: {language} code generated successfully");
@@ -116,20 +119,23 @@ impl Generator {
 
         Ok(())
     }
+}
 
-    pub async fn generate(&self) -> eyre::Result<()> {
+impl Generator {
+    /// Execute code generation with pre-configured parameters
+    pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
 
         tracing::info!(":: initializing code generator");
 
-        eyre::ensure!(
+        ensure!(
             manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
-            "Either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
+            "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
 
         self.run()
             .await
-            .wrap_err_with(|| "Failed to generate bindings")?;
+            .wrap_err(miette!("failed to generate bindings"))?;
 
         if manifest.package.kind.compilable() {
             let location = Path::new(PackageStore::PROTO_PATH);
