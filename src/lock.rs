@@ -292,7 +292,7 @@ impl Lockfile {
         fs::try_exists(LOCKFILE)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| FileExistsError(LOCKFILE))
+            .wrap_err(FileExistsError(LOCKFILE))
     }
 
     /// Loads the Lockfile from the current directory
@@ -343,12 +343,12 @@ impl Lockfile {
             LOCKFILE,
             toml::to_string(&raw)
                 .into_diagnostic()
-                .wrap_err_with(|| SerializationError(ManagedFile::Lock))?
+                .wrap_err(SerializationError(ManagedFile::Lock))?
                 .into_bytes(),
         )
         .await
         .into_diagnostic()
-        .wrap_err_with(|| WriteError(LOCKFILE))
+        .wrap_err(WriteError(LOCKFILE))
     }
 
     /// Locates a given package in the Lockfile

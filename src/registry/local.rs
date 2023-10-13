@@ -57,8 +57,10 @@ impl LocalRegistry {
                 .wrap_err(miette!("could not read file"))?,
         );
 
-        Package::try_from(bytes)
-            .wrap_err_with(|| miette!("failed to download dependency {}", dependency.package))
+        Package::try_from(bytes).wrap_err(miette!(
+            "failed to download dependency {}",
+            dependency.package
+        ))
     }
 
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
@@ -77,7 +79,7 @@ impl LocalRegistry {
         fs::write(&path, &package.tgz)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| format!("could not write to file: {}", path.display()))?;
+            .wrap_err(miette!("could not write to file: {}", path.display()))?;
 
         tracing::info!(
             ":: published {}/{}@{} to {:?}",

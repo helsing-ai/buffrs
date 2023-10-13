@@ -58,7 +58,7 @@ impl Credentials {
         fs::try_exists(location().into_diagnostic()?)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| FileExistsError(CREDENTIALS_FILE))
+            .wrap_err(FileExistsError(CREDENTIALS_FILE))
     }
 
     /// Reads the credentials from the file system
@@ -67,10 +67,10 @@ impl Credentials {
             &fs::read_to_string(location().into_diagnostic()?)
                 .await
                 .into_diagnostic()
-                .wrap_err_with(|| ReadError(CREDENTIALS_FILE))?,
+                .wrap_err(ReadError(CREDENTIALS_FILE))?,
         )
         .into_diagnostic()
-        .wrap_err_with(|| DeserializationError(ManagedFile::Credentials))?;
+        .wrap_err(DeserializationError(ManagedFile::Credentials))?;
 
         Ok(raw.into())
     }

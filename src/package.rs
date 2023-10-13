@@ -56,7 +56,7 @@ impl PackageStore {
             fs::create_dir_all(dir)
                 .await
                 .into_diagnostic()
-                .wrap_err_with(|| miette!("failed to create {dir} directory"))
+                .wrap_err(miette!("failed to create {dir} directory"))
         };
 
         create(Self::PROTO_PATH).await?;
@@ -91,7 +91,7 @@ impl PackageStore {
 
         gz.read_to_end(&mut tar)
             .into_diagnostic()
-            .wrap_err_with(|| miette!("failed to decompress package {}", package.name()))?;
+            .wrap_err(miette!("failed to decompress package {}", package.name()))?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
@@ -103,22 +103,20 @@ impl PackageStore {
         fs::create_dir_all(&pkg_dir)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| {
+            .wrap_err({
                 miette!(
                     "failed to create extraction directory for package {}",
                     package.name()
                 )
             })?;
 
-        tar.unpack(pkg_dir.clone())
-            .into_diagnostic()
-            .wrap_err_with(|| {
-                miette!(
-                    "failed to extract package {} to {}",
-                    package.name(),
-                    pkg_dir.display()
-                )
-            })?;
+        tar.unpack(pkg_dir.clone()).into_diagnostic().wrap_err({
+            miette!(
+                "failed to extract package {} to {}",
+                package.name(),
+                pkg_dir.display()
+            )
+        })?;
 
         tracing::debug!(
             ":: unpacked {}@{} into {}",
@@ -178,7 +176,7 @@ impl PackageStore {
         let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| {
+            .wrap_err({
                 miette!(
                     "failed to locate package folder (expected directory {} to be present)",
                     Self::PROTO_PATH
@@ -215,14 +213,14 @@ impl PackageStore {
         for entry in Self::collect(&pkg_path).await {
             let file = File::open(&entry)
                 .into_diagnostic()
-                .wrap_err_with(|| miette!("failed to open file {}", entry.display()))?;
+                .wrap_err(miette!("failed to open file {}", entry.display()))?;
 
             let mut header = tar::Header::new_gnu();
             header.set_mode(0o444);
             header.set_size(
                 file.metadata()
                     .into_diagnostic()
-                    .wrap_err_with(|| {
+                    .wrap_err({
                         miette!("failed to fetch metadata for entry {}", entry.display())
                     })?
                     .len(),
@@ -240,9 +238,10 @@ impl PackageStore {
                     file,
                 )
                 .into_diagnostic()
-                .wrap_err_with(|| {
-                    miette!("failed to add proto {} to release tar", entry.display())
-                })?;
+                .wrap_err(miette!(
+                    "failed to add proto {} to release tar",
+                    entry.display()
+                ))?;
         }
 
         let tar = archive
@@ -351,7 +350,7 @@ impl TryFrom<Bytes> for Package {
 
         gz.read_to_end(&mut tar)
             .into_diagnostic()
-            .wrap_err_with(|| miette!("failed to decompress package"))?;
+            .wrap_err(miette!("failed to decompress package"))?;
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
@@ -377,8 +376,7 @@ impl TryFrom<Bytes> for Package {
             .bytes()
             .collect::<io::Result<Vec<_>>>()
             .into_diagnostic()
-            .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
-
+            .wrap_err(DeserializationError(ManagedFile::Manifest))?;
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
@@ -673,7 +671,7 @@ impl DependencyGraph {
             );
 
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err_with(|| DownloadError {
+                .wrap_err(DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
                 })?;
@@ -681,7 +679,7 @@ impl DependencyGraph {
             let package = registry
                 .download(dependency.with_version(&local_locked.version))
                 .await
-                .wrap_err_with(|| DownloadError {
+                .wrap_err(DownloadError {
                     name: dependency.package,
                     version: dependency.manifest.version,
                 })?;
@@ -691,7 +689,7 @@ impl DependencyGraph {
             Ok(package)
         } else {
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err_with(|| DownloadError {
+                .wrap_err(DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
                 })?;
@@ -699,7 +697,7 @@ impl DependencyGraph {
             registry
                 .download(dependency.clone())
                 .await
-                .wrap_err_with(|| DownloadError {
+                .wrap_err(DownloadError {
                     name: dependency.package,
                     version: dependency.manifest.version,
                 })

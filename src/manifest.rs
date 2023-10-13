@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use miette::IntoDiagnostic;
-use miette::{miette, Context};
+use miette::{miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -87,7 +86,7 @@ impl Manifest {
         fs::try_exists(MANIFEST_FILE)
             .await
             .into_diagnostic()
-            .wrap_err_with(|| FileExistsError(MANIFEST_FILE))
+            .wrap_err(FileExistsError(MANIFEST_FILE))
     }
 
     /// Loads the manifest from the current directory
@@ -103,7 +102,7 @@ impl Manifest {
             Ok(contents) => {
                 let raw: RawManifest = toml::from_str(&contents)
                     .into_diagnostic()
-                    .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
+                    .wrap_err(DeserializationError(ManagedFile::Manifest))?;
                 Ok(raw.into())
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {

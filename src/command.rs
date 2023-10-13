@@ -97,12 +97,12 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     let package = package
         .parse::<PackageName>()
-        .wrap_err_with(|| miette!("invalid package name: {package}"))?;
+        .wrap_err(miette!("invalid package name: {package}"))?;
 
     let version = version
         .parse::<VersionReq>()
         .into_diagnostic()
-        .wrap_err_with(|| miette!("not a valid version requirement: {version}"))?;
+        .wrap_err(miette!("not a valid version requirement: {version}"))?;
 
     let mut manifest = Manifest::read().await?;
 
@@ -113,7 +113,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     manifest
         .write()
         .await
-        .wrap_err_with(|| miette!("failed to write `{MANIFEST_FILE}`"))
+        .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
 }
 
 /// Removes a dependency from this project
@@ -225,7 +225,10 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
 
         PackageStore::unpack(&resolved.package)
             .await
-            .wrap_err_with(|| format!("failed to unpack package {}", &resolved.package.name()))?;
+            .wrap_err(miette!(
+                "failed to unpack package {}",
+                &resolved.package.name()
+            ))?;
 
         tracing::info!(
             "{} installed {}@{}",
@@ -281,7 +284,7 @@ pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()
     generator::Generator::Protoc { language, out_dir }
         .generate()
         .await
-        .wrap_err_with(|| format!("failed to generate {language} bindings"))
+        .wrap_err(miette!("failed to generate {language} bindings"))
 }
 
 /// Logs you in for a registry

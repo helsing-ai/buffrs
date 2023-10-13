@@ -73,9 +73,10 @@ impl Artifactory {
 
         let response = self.new_request(Method::GET, artifact_url).send().await?;
 
-        convert_to_package(response)
-            .await
-            .wrap_err_with(|| format!("failed to download dependency {}", dependency.package))
+        convert_to_package(response).await.wrap_err(miette!(
+            "failed to download dependency {}",
+            dependency.package
+        ))
     }
 
     /// Publishes a package to artifactory

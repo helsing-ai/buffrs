@@ -67,7 +67,7 @@ impl FromStr for RegistryUri {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let url = Url::from_str(value)
             .into_diagnostic()
-            .wrap_err_with(|| miette!("not a valid URL: {value}"))?;
+            .wrap_err(miette!("not a valid URL: {value}"))?;
 
         sanity_check_url(&url)?;
 
