@@ -66,3 +66,6 @@ predicates = "3.0"
 pretty_assertions = "1.4"
 ring = "0.16.20"
 hex = "0.4.3"
+
+[workspace]
+members = [".", "registry"]
