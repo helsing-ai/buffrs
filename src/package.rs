@@ -378,6 +378,7 @@ impl TryFrom<Bytes> for Package {
             .collect::<io::Result<Vec<_>>>()
             .into_diagnostic()
             .wrap_err_with(|| DeserializationError(ManagedFile::Manifest))?;
+
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
