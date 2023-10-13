@@ -18,6 +18,7 @@ use bytes::Bytes;
 use miette::{miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use thiserror::Error;
+use tokio::fs;
 
 use crate::{manifest::Dependency, package::Package};
 
@@ -50,7 +51,8 @@ impl LocalRegistry {
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);
 
         let bytes = Bytes::from(
-            std::fs::read(path)
+            fs::read(path)
+                .await
                 .into_diagnostic()
                 .wrap_err(miette!("could not read file"))?,
         );
@@ -68,9 +70,12 @@ impl LocalRegistry {
             package.version(),
         )));
 
-        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::create_dir_all(path.parent().unwrap())
+            .await
+            .into_diagnostic()?;
 
-        std::fs::write(&path, &package.tgz)
+        fs::write(&path, &package.tgz)
+            .await
             .into_diagnostic()
             .wrap_err_with(|| format!("could not write to file: {}", path.display()))?;
 
@@ -92,8 +97,9 @@ mod tests {
     use crate::package::{Package, PackageType};
     use crate::registry::local::LocalRegistry;
     use bytes::Bytes;
+    use std::env;
     use std::path::PathBuf;
-    use std::{env, fs};
+    use tokio::fs;
 
     #[tokio::test]
     async fn can_publish_and_fetch() {
@@ -124,7 +130,9 @@ mod tests {
 
         assert_eq!(
             Bytes::from(
-                fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz"))).unwrap()
+                fs::read(dir.join(PathBuf::from("test-repo/test-api/test-api-0.1.0.tgz")))
+                    .await
+                    .unwrap()
             ),
             package_bytes
         );

@@ -39,22 +39,17 @@ mod managed_file;
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
-pub fn build() -> miette::Result<()> {
+#[tokio::main(flavor = "current_thread")]
+pub async fn build() -> miette::Result<()> {
     use credentials::Credentials;
-    use miette::IntoDiagnostic;
     use package::PackageStore;
-
-    async fn install() -> miette::Result<()> {
-        let credentials = Credentials::read().await?;
-        command::install(credentials).await
-    }
 
     println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
 
-    let rt = tokio::runtime::Runtime::new().into_diagnostic()?;
+    let credentials = Credentials::read().await?;
+    command::install(credentials).await?;
 
-    rt.block_on(install())?;
-    rt.block_on(generator::Generator::Tonic.generate())?;
+    generator::Generator::Tonic.generate().await?;
 
     Ok(())
 }

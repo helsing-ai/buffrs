@@ -121,7 +121,7 @@ enum Command {
     },
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
 

@@ -29,6 +29,10 @@ use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, sync::Arc};
+use tokio::{
+    fs,
+    io::{self, AsyncBufReadExt, BufReader},
+};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -143,7 +147,8 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
     ));
 
     if !dry_run {
-        std::fs::write(path, package.tgz)
+        fs::write(path, package.tgz)
+            .await
             .into_diagnostic()
             .wrap_err(miette!(
                 "failed to write package release to the current directory"
@@ -286,8 +291,10 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
 
         let mut raw = String::new();
 
-        std::io::stdin()
+        let mut reader = BufReader::new(io::stdin());
+        reader
             .read_line(&mut raw)
+            .await
             .into_diagnostic()
             .wrap_err(miette!("failed to read the token from the user"))?;
 
