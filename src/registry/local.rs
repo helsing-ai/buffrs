@@ -40,7 +40,6 @@ impl LocalRegistry {
     }
 
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
-        // TODO(rfink): Factor out checks so that artifactory and local registry both use them
         let version = super::dependency_version_string(&dependency)?;
 
         let path = self.base_dir.join(PathBuf::from(format!(
