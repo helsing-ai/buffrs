@@ -67,13 +67,43 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
-        let artifact_url = resolve_url(dependency.clone())?;
+        let artifact_url = {
+            let version = super::dependency_version_string(&dependency)?;
+
+            let path = dependency.manifest.registry.path().to_owned();
+
+            let mut url = dependency.manifest.registry.clone();
+            url.set_path(&format!(
+                "{}/{}/{}/{}-{}.tgz",
+                path,
+                dependency.manifest.repository,
+                dependency.package,
+                dependency.package,
+                version
+            ));
+
+            url.into()
+        };
 
         tracing::debug!("Hitting download URL: {artifact_url}");
 
         let response = self.new_request(Method::GET, artifact_url).send().await?;
 
-        convert_to_package(response).await.wrap_err(miette!(
+        let response: reqwest::Response = response.into();
+
+        let headers = response.headers();
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .ok_or_else(|| miette!("missing content-type header"))?;
+
+        ensure!(
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            "server response has incorrect mime type: {content_type:?}"
+        );
+
+        let data = response.bytes().await.into_diagnostic()?;
+
+        Package::try_from(data).wrap_err(miette!(
             "failed to download dependency {}",
             dependency.package
         ))
@@ -158,36 +188,4 @@ impl TryFrom<Response> for ValidatedResponse {
 
         value.error_for_status().into_diagnostic().map(Self)
     }
-}
-
-fn resolve_url(dependency: Dependency) -> miette::Result<Url> {
-    let version = super::dependency_version_string(&dependency)?;
-
-    let path = dependency.manifest.registry.path().to_owned();
-
-    let mut url = dependency.manifest.registry.clone();
-    url.set_path(&format!(
-        "{}/{}/{}/{}-{}.tgz",
-        path, dependency.manifest.repository, dependency.package, dependency.package, version
-    ));
-
-    Ok(url.into())
-}
-
-async fn convert_to_package(response: ValidatedResponse) -> miette::Result<Package> {
-    let response: reqwest::Response = response.into();
-
-    let headers = response.headers();
-    let content_type = headers
-        .get(&reqwest::header::CONTENT_TYPE)
-        .ok_or_else(|| miette!("missing content-type header"))?;
-
-    ensure!(
-        content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
-        "server response has incorrect mime type: {content_type:?}"
-    );
-
-    let data = response.bytes().await.into_diagnostic()?;
-
-    Package::try_from(data)
 }
