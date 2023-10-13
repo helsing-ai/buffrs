@@ -39,6 +39,7 @@ impl LocalRegistry {
         LocalRegistry { base_dir }
     }
 
+    /// "Downloads" a package from the local filesystem
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         let version = super::dependency_version_string(&dependency)?;
 
