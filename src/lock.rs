@@ -23,9 +23,9 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
-    managed_file::ManagedFile,
     package::{Package, PackageName},
     registry::RegistryUri,
+    ManagedFile,
 };
 
 /// File name of the lockfile

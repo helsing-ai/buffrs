@@ -23,11 +23,11 @@ use std::{
 };
 use tokio::fs;
 
-use crate::managed_file::ManagedFile;
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
+    ManagedFile,
 };
 
 /// The name of the manifest file

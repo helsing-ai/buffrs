@@ -15,6 +15,12 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+use std::fmt::Display;
+
+use credentials::CREDENTIALS_FILE;
+use lock::LOCKFILE;
+use manifest::MANIFEST_FILE;
+
 /// CLI command implementations
 pub mod command;
 /// Credential management
@@ -32,8 +38,6 @@ pub mod manifest;
 pub mod package;
 /// Supported registries
 pub mod registry;
-
-mod managed_file;
 
 /// Cargo build integration for buffrs
 ///
@@ -66,4 +70,27 @@ macro_rules! include {
     () => {
         ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
     };
+}
+
+#[derive(Debug)]
+pub(crate) enum ManagedFile {
+    Credentials,
+    Manifest,
+    Lock,
+}
+
+impl ManagedFile {
+    fn name(&self) -> &str {
+        match self {
+            ManagedFile::Manifest => MANIFEST_FILE,
+            ManagedFile::Lock => LOCKFILE,
+            ManagedFile::Credentials => CREDENTIALS_FILE,
+        }
+    }
+}
+
+impl Display for ManagedFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }

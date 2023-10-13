@@ -20,8 +20,8 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
-    managed_file::ManagedFile,
     registry::RegistryUri,
+    ManagedFile,
 };
 
 /// Global configuration directory for `buffrs`

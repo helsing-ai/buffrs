@@ -1,6 +1,6 @@
 use miette::Diagnostic;
 
-use crate::managed_file::ManagedFile;
+use crate::ManagedFile;
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("environment variable {0} is not set")]
