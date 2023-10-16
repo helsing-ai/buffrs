@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{db::connect, options::Options};
 use clap::Parser;
+
+mod options;
+use options::Options;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let config = Options::parse();
+    let options = Options::parse();
     tracing_subscriber::fmt::init();
-    let _db = connect(config.database.as_str()).await.unwrap();
+    let context = options.build().await?;
+    context.launch_api().await;
     Ok(())
 }
