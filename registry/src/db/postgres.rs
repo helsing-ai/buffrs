@@ -29,15 +29,16 @@ pub async fn migrate(pool: &Pool) -> Result<(), Error> {
 
 #[async_trait]
 impl Database for Connection {
-    async fn user_lookup(&mut self, token: &str) -> User {
-        User {
-            id: 0,
-            token: "".into(),
-        }
+    async fn user_lookup(&mut self, handle: &str) -> User {
+        query_as("SELECT * FROM users WHERE handle = $1")
+            .bind(handle)
+            .fetch_one(self)
+            .await
+            .unwrap()
     }
 
     async fn user_create(&mut self, user: &str) -> Result<(), ()> {
-        let result = query("INSERT INTO users(token) VALUES ($1) RETURNING (id)")
+        let result = query("INSERT INTO users(handle) VALUES ($1) RETURNING (id)")
             .bind(user)
             .fetch_one(self)
             .await
@@ -45,8 +46,25 @@ impl Database for Connection {
         Ok(())
     }
 
+    async fn user_token_auth(&mut self, token: &str) -> Result<(), ()> {
+        query("SELECT 1").bind(token).fetch_one(self).await.unwrap();
+        Ok(())
+    }
+
     async fn user_cert_create(&mut self, user: &str, token: &str) -> Result<(), ()> {
-        todo!()
+        query(
+            "INSERT INTO user_tokens(user_id, token)
+            VALUES (
+                (SELECT id FROM users WHERE handle = $1),
+                $2
+            )",
+        )
+        .bind(user)
+        .bind(token)
+        .execute(self)
+        .await
+        .unwrap();
+        Ok(())
     }
 
     async fn user_cert_list(&mut self, user: &str) -> Result<Vec<String>, ()> {

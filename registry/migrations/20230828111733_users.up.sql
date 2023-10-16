@@ -5,7 +5,7 @@ CREATE TABLE users (
     email         TEXT,
     avatar        TEXT,
     -- static user token here
-    token         TEXT NOT NULL UNIQUE,
+    handle        TEXT NOT NULL UNIQUE,
     -- timestamps
     created_at TIMESTAMPTZ NOT NULL DEFAULT (now()),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT (now()),

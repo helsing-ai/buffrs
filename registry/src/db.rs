@@ -42,7 +42,7 @@ pub enum AuthError {
 #[async_trait]
 pub trait Database {
     /// Lookup a user by token.
-    async fn user_lookup(&mut self, token: &str) -> User;
+    async fn user_lookup(&mut self, user: &str) -> User;
 
     /// Create a user
     async fn user_create(&mut self, user: &str) -> Result<(), ()>;
@@ -56,6 +56,9 @@ pub trait Database {
     /// Delete a token for a user
     async fn user_cert_delete(&mut self, user: &str, token: &str) -> Result<(), ()>;
 
+    /// Attempt to authenticate a user by token.
+    async fn user_token_auth(&mut self, token: &str) -> Result<(), ()>;
+
     /// Create a new package.
     async fn package_create(&mut self, package: &str) -> Result<(), ()>;
 
@@ -68,4 +71,3 @@ pub trait Database {
     /// Increment package version download counter.
     async fn package_version_download(&mut self, package: &str, version: &str, count: u64) -> Result<(), ()>;
 }
-
