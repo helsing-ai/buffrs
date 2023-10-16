@@ -7,8 +7,8 @@ CREATE TABLE users (
     -- static user token here
     token         TEXT NOT NULL UNIQUE,
     -- timestamps
-    created_at TIMESTAMPTZ NOT NULL,
-    updated_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT (now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT (now()),
     deleted_at TIMESTAMPTZ
 );
 

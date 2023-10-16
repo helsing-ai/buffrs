@@ -11,3 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+use crate::proto::buffrs::registry::{
+    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse,
+};
+use async_trait::async_trait;
+use sqlx::PgPool;
+use tonic::{Request, Response, Status};
+
+#[derive(Clone, Debug)]
+pub struct Context {
+    pub database: PgPool,
+}
+
+impl Context {}
+
+#[async_trait]
+impl Registry for Context {
+    async fn publish(
+        &self,
+        request: Request<PublishRequest>,
+    ) -> Result<Response<PublishResponse>, Status> {
+        todo!()
+    }
+
+    async fn download(
+        &self,
+        request: Request<DownloadRequest>,
+    ) -> Result<Response<DownloadResponse>, Status> {
+        todo!()
+    }
+}

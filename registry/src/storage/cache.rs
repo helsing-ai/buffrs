@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{db::connect, options::Options};
-use clap::Parser;
+use super::*;
+use std::path::{PathBuf, Path};
+use tokio::fs;
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
-    let config = Options::parse();
-    tracing_subscriber::fmt::init();
-    let _db = connect(&config.database).await.unwrap();
-    Ok(())
-}

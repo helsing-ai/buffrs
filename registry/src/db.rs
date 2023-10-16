@@ -12,12 +12,60 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use sqlx::PgPool;
+//! # Database
+//!
+//! This module encapsulates the connection the database. Outside of this module, `sqlx` should not
+//! be used directly. Instead, the necessary types should be exported from this module.
 
-pub async fn connect(string: &str) -> eyre::Result<PgPool> {
-    let pool = PgPool::connect(string).await?;
+mod entities;
+#[cfg(all(test, feature = "test-database"))]
+mod tests;
+mod postgres;
 
-    sqlx::migrate!().run(&pool).await?;
+use async_trait::async_trait;
+pub use entities::*;
+pub use postgres::*;
+use sqlx::{query, query_as};
+use url::Url;
 
-    Ok(pool)
+#[derive(thiserror::Error, Debug)]
+pub enum AuthError {
+    #[error("token not found")]
+    TokenNotFound,
+    #[error("token expired")]
+    TokenExpired,
+    #[error("token deleted")]
+    TokenDeleted,
 }
+
+/// Database interactions.
+#[async_trait]
+pub trait Database {
+    /// Lookup a user by token.
+    async fn user_lookup(&mut self, token: &str) -> User;
+
+    /// Create a user
+    async fn user_create(&mut self, user: &str) -> Result<(), ()>;
+
+    /// Create a token for a user
+    async fn user_cert_create(&mut self, user: &str, token: &str) -> Result<(), ()>;
+
+    /// List certificates for user
+    async fn user_cert_list(&mut self, user: &str) -> Result<Vec<String>, ()>;
+
+    /// Delete a token for a user
+    async fn user_cert_delete(&mut self, user: &str, token: &str) -> Result<(), ()>;
+
+    /// Create a new package.
+    async fn package_create(&mut self, package: &str) -> Result<(), ()>;
+
+    /// Create a new package version.
+    async fn package_version_create(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()>;
+
+    /// Yank this package version.
+    async fn package_version_yank(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()>;
+
+    /// Increment package version download counter.
+    async fn package_version_download(&mut self, package: &str, version: &str, count: u64) -> Result<(), ()>;
+}
+

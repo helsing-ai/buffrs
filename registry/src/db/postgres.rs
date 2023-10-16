@@ -1,0 +1,75 @@
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+pub use super::*;
+pub use sqlx::{Error, PgConnection as Connection, PgPool as Pool};
+
+/// Connect to the database.
+pub async fn connect(url: &Url) -> Result<Pool, Error> {
+    let pool = Pool::connect(url.as_str()).await?;
+    Ok(pool)
+}
+
+/// Migrate database.
+pub async fn migrate(pool: &Pool) -> Result<(), Error> {
+    sqlx::migrate!().run(pool).await?;
+    Ok(())
+}
+
+#[async_trait]
+impl Database for Connection {
+    async fn user_lookup(&mut self, token: &str) -> User {
+        User {
+            id: 0,
+            token: "".into(),
+        }
+    }
+
+    async fn user_create(&mut self, user: &str) -> Result<(), ()> {
+        let result = query("INSERT INTO users(token) VALUES ($1) RETURNING (id)")
+            .bind(user)
+            .fetch_one(self)
+            .await
+            .unwrap();
+        Ok(())
+    }
+
+    async fn user_cert_create(&mut self, user: &str, token: &str) -> Result<(), ()> {
+        todo!()
+    }
+
+    async fn user_cert_list(&mut self, user: &str) -> Result<Vec<String>, ()> {
+        todo!()
+    }
+
+    async fn user_cert_delete(&mut self, user: &str, token: &str) -> Result<(), ()> {
+        todo!()
+    }
+
+    async fn package_create(&mut self, package: &str) -> Result<(), ()> {
+        todo!()
+    }
+
+    async fn package_version_create(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()> {
+        todo!()
+    }
+
+    async fn package_version_yank(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()> {
+        todo!()
+    }
+
+    async fn package_version_download(&mut self, package: &str, version: &str, count: u64) -> Result<(), ()> {
+        todo!()
+    }
+}
