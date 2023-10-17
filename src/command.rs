@@ -47,7 +47,6 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
         std::env::current_dir()
             .into_diagnostic()?
             .file_name()
-            // because the path originates from the current directory, this condition is never met
             .ok_or(miette!(
                 "unexpected error: current directory path terminates in .."
             ))?
@@ -124,7 +123,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
         .dependencies
         .iter()
         .position(|d| d.package == package)
-        .ok_or_else(|| miette!("package {package} not in manifest"))?;
+        .ok_or(miette!("package {package} not in manifest"))?;
 
     let dependency = manifest.dependencies.remove(match_idx);
 

@@ -15,9 +15,10 @@
 use std::path::PathBuf;
 
 use buffrs::command;
+use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
-use buffrs::{credentials::Credentials, package::PackageType};
+use buffrs::{credentials::Credentials, manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
 use miette::{miette, Context};
 
@@ -148,47 +149,68 @@ async fn main() -> miette::Result<()> {
                 PackageType::Impl
             };
 
-            command::init(kind, package)
+            command::init(kind, package.to_owned())
                 .await
-                .wrap_err(miette!("init command failed"))
+                .wrap_err(miette!(
+                    "failed to initialize {}{kind} package",
+                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+                ))
         }
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry, &dependency)
+        } => command::add(registry.to_owned(), &dependency)
             .await
-            .wrap_err(miette!("add command failed")),
-        Command::Remove { package } => command::remove(package)
-            .await
-            .wrap_err(miette!("remove command failed")),
+            .wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            )),
+        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
+            "failed to remove `{package}` from `{MANIFEST_FILE}`"
+        )),
         Command::Package {
             output_directory,
             dry_run,
         } => command::package(output_directory, dry_run)
             .await
-            .wrap_err(miette!("package command failed")),
+            .wrap_err(miette!(
+                "failed to export `{}` into the buffrs package format",
+                Manifest::read().await?.package.name
+            )),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(credentials, registry, repository, allow_dirty, dry_run)
-            .await
-            .wrap_err(miette!("publish command failed")),
-        Command::Install => command::install(credentials)
-            .await
-            .wrap_err(miette!("install command failed")),
-        Command::Uninstall => command::uninstall()
-            .await
-            .wrap_err(miette!("uninstall command failed")),
+        } => command::publish(
+            credentials,
+            registry.to_owned(),
+            repository.to_owned(),
+            allow_dirty,
+            dry_run,
+        )
+        .await
+        .wrap_err(miette!(
+            "failed to publish `{}` to `{}:{}`",
+            Manifest::read().await?.package.name,
+            registry,
+            repository
+        )),
+        Command::Install => command::install(credentials).await.wrap_err(miette!(
+            "failed to install dependencies for `{}`",
+            Manifest::read().await?.package.name,
+        )),
+        Command::Uninstall => command::uninstall().await.wrap_err(miette!(
+            "failed to install dependencies for `{}`",
+            Manifest::read().await?.package.name,
+        )),
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
-            .wrap_err(miette!("generate command failed")),
-        Command::Login { registry } => command::login(credentials, registry)
+            .wrap_err(miette!("failed to generate {language} language bindings")),
+        Command::Login { registry } => command::login(credentials, registry.to_owned())
             .await
-            .wrap_err(miette!("login command failed")),
-        Command::Logout { registry } => command::logout(credentials, registry)
+            .wrap_err(miette!("failed to login to `{registry}`")),
+        Command::Logout { registry } => command::logout(credentials, registry.to_owned())
             .await
-            .wrap_err(miette!("logout command failed")),
+            .wrap_err(miette!("failed to logout from `{registry}`")),
     }
 }
