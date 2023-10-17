@@ -19,10 +19,11 @@ use url::Url;
 #[derive(Parser, Clone, Debug)]
 pub struct Options {
     /// Address to listen to for incoming connections.
-    #[clap(long, short, env, default_value = "0.0.0.0:8000")]
+    #[clap(long, short, env, default_value = "0.0.0.0:4367")]
     pub listen: SocketAddr,
 
     /// URL of Postgres database to connect to.
-    #[clap(long, short, env, default_value = "postgres://buffrs:buffrs@localhost")]
+    #[clap(long, short, env)]
+    #[cfg_attr(dev, clap(default_value = "postgres://buffrs:buffrs@localhost"))]
     pub database: Url,
 }
