@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use std::{
+    collections::BTreeMap,
     env::current_dir,
     fmt::{self, Formatter},
-    fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
@@ -185,93 +185,23 @@ impl PackageStore {
         }
 
         let pkg_path = self.proto_path();
-
-        let mut archive = tar::Builder::new(Vec::new());
-
-        let manifest_bytes = {
-            let as_str: String = manifest
-                .clone()
-                .try_into()
-                .into_diagnostic()
-                .wrap_err(SerializationError(ManagedFile::Manifest))?;
-            as_str.into_bytes()
-        };
-
-        let mut header = tar::Header::new_gnu();
-        header.set_size(
-            manifest_bytes
-                .len()
-                .try_into()
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "serialized manifest was too large to fit in a tarball"
-                ))?,
-        );
-        header.set_mode(0o444);
-        archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
-            .into_diagnostic()
-            .wrap_err(miette!("failed to add manifest to release"))?;
+        let mut entries = BTreeMap::new();
 
         for entry in self.collect(&pkg_path).await {
-            let file = File::open(&entry)
-                .into_diagnostic()
-                .wrap_err(miette!("failed to open file {}", entry.display()))?;
-
-            let mut header = tar::Header::new_gnu();
-            header.set_mode(0o444);
-            header.set_size(
-                file.metadata()
-                    .into_diagnostic()
-                    .wrap_err({
-                        miette!("failed to fetch metadata for entry {}", entry.display())
-                    })?
-                    .len(),
-            );
-
-            archive
-                .append_data(
-                    &mut header,
-                    entry
-                        .strip_prefix(&pkg_path)
-                        .into_diagnostic()
-                        .wrap_err(miette!(
-                            "unexpected error: collected file path is not under package prefix"
-                        ))?,
-                    file,
-                )
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "failed to add proto {} to release tar",
-                    entry.display()
-                ))?;
+            let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
+            let contents = tokio::fs::read(&entry).await.unwrap();
+            entries.insert(path.into(), contents.into());
         }
 
-        let tar = archive
-            .into_inner()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to assemble tar package"))?;
-
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-
-        encoder
-            .write_all(&tar)
-            .into_diagnostic()
-            .wrap_err(miette!("failed to compress release"))?;
-
-        let tgz = encoder
-            .finish()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to finalize package"))?
-            .into();
+        let package = Package::create(manifest, entries)?;
 
         tracing::info!(
             ":: packaged {}@{}",
-            manifest.package.name,
-            manifest.package.version
+            package.manifest.package.name,
+            package.manifest.package.version
         );
 
-        Ok(Package::new(manifest, tgz))
+        Ok(package)
     }
 
     /// Directory for the vendored installation of a package
@@ -327,35 +257,71 @@ impl Package {
         Self { manifest, tgz }
     }
 
-    /// The name of this package
-    #[inline]
-    pub fn name(&self) -> &PackageName {
-        &self.manifest.package.name
-    }
-
-    /// The version of this package
-    #[inline]
-    pub fn version(&self) -> &Version {
-        &self.manifest.package.version
-    }
-
-    /// Lock this package
+    /// Create new [`Package`] from [`Manifest`] and list of files.
     ///
-    /// Note that despite returning a Result this function never fails
-    pub fn lock(
-        &self,
-        registry: RegistryUri,
-        repository: String,
-        dependants: usize,
-    ) -> miette::Result<LockedPackage> {
-        LockedPackage::lock(self, registry, repository, dependants)
+    /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
+    /// lexicographically. This ensures a reproducible output.
+    pub fn create(manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+        let mut archive = tar::Builder::new(Vec::new());
+
+        let manifest_bytes = {
+            let as_str: String = manifest
+                .clone()
+                .try_into()
+                .into_diagnostic()
+                .wrap_err(SerializationError(ManagedFile::Manifest))?;
+            as_str.into_bytes()
+        };
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(
+            manifest_bytes
+                .len()
+                .try_into()
+                .into_diagnostic()
+                .wrap_err(miette!(
+                    "serialized manifest was too large to fit in a tarball"
+                ))?,
+        );
+        header.set_mode(0o444);
+        archive
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
+            .into_diagnostic()
+            .wrap_err(miette!("failed to add manifest to release"))?;
+
+        for (name, contents) in &files {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o444);
+            header.set_size(contents.len() as u64);
+            archive
+                .append_data(&mut header, name, &contents[..])
+                .into_diagnostic()
+                .wrap_err(miette!("failed to add proto {name:?} to release tar"))?;
+        }
+
+        let tar = archive
+            .into_inner()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to assemble tar package"))?;
+
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+
+        encoder
+            .write_all(&tar)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to compress release"))?;
+
+        let tgz = encoder
+            .finish()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to finalize package"))?
+            .into();
+
+        Ok(Package::new(manifest, tgz))
     }
-}
 
-impl TryFrom<Bytes> for Package {
-    type Error = miette::Report;
-
-    fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
+    /// Load a package from a precompressed archive.
+    pub fn load(tgz: Bytes) -> miette::Result<Self> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
@@ -396,6 +362,38 @@ impl TryFrom<Bytes> for Package {
             .into_diagnostic()?;
 
         Ok(Self { manifest, tgz })
+    }
+
+    /// The name of this package
+    #[inline]
+    pub fn name(&self) -> &PackageName {
+        &self.manifest.package.name
+    }
+
+    /// The version of this package
+    #[inline]
+    pub fn version(&self) -> &Version {
+        &self.manifest.package.version
+    }
+
+    /// Lock this package
+    ///
+    /// Note that despite returning a Result this function never fails
+    pub fn lock(
+        &self,
+        registry: RegistryUri,
+        repository: String,
+        dependants: usize,
+    ) -> miette::Result<LockedPackage> {
+        LockedPackage::lock(self, registry, repository, dependants)
+    }
+}
+
+impl TryFrom<Bytes> for Package {
+    type Error = miette::Report;
+
+    fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
+        Package::load(tgz)
     }
 }
 
