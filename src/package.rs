@@ -416,7 +416,10 @@ impl FromStr for PackageType {
 
 impl fmt::Display for PackageType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", serde_typename::to_str(self).unwrap_or_default())
+        match serde_typename::to_str(self) {
+            Ok(value) => f.write_str(value),
+            Err(_error) => unreachable!(),
+        }
     }
 }
 
