@@ -91,8 +91,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir =
-            Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.package.name.as_str());
+        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(&*package.manifest.package.name);
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -126,7 +125,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(package: &PackageName) -> miette::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
+        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(&**package);
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -265,7 +264,7 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(package: &PackageName) -> PathBuf {
-        PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
+        PathBuf::from(Self::PROTO_VENDOR_PATH).join(&**package)
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
@@ -538,7 +537,7 @@ impl From<PackageName> for String {
 }
 
 impl Deref for PackageName {
-    type Target = String;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
