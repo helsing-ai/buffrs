@@ -380,7 +380,7 @@ impl From<&Package> for Bytes {
 }
 
 /// Package types
-#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageType {
     /// A library package containing primitive type definitions
@@ -390,6 +390,7 @@ pub enum PackageType {
     /// An implementation package that implements an api or library
     ///
     /// Note: Implementation packages can't be published via Buffrs
+    #[default]
     Impl,
 }
 
@@ -416,12 +417,6 @@ impl FromStr for PackageType {
 impl fmt::Display for PackageType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", serde_typename::to_str(self).unwrap_or_default())
-    }
-}
-
-impl Default for PackageType {
-    fn default() -> Self {
-        Self::Impl
     }
 }
 
