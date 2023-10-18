@@ -64,9 +64,7 @@ impl PackageStore {
 
         Ok(())
     }
-}
 
-impl PackageStore {
     /// Clears all packages from the file system
     pub async fn clear() -> miette::Result<()> {
         match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
@@ -80,9 +78,7 @@ impl PackageStore {
             )),
         }
     }
-}
 
-impl PackageStore {
     /// Unpacks a package into a local directory
     pub async fn unpack(package: &Package) -> miette::Result<()> {
         let mut tar = Vec::new();
@@ -127,9 +123,7 @@ impl PackageStore {
 
         Ok(())
     }
-}
 
-impl PackageStore {
     /// Uninstalls a package from the local file system
     pub async fn uninstall(package: &PackageName) -> miette::Result<()> {
         let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
@@ -146,9 +140,7 @@ impl PackageStore {
             .await
             .wrap_err(miette!("failed to resolve package {package}"))
     }
-}
 
-impl PackageStore {
     /// Packages a release from the local file system state
     pub async fn release() -> miette::Result<Package> {
         let manifest = Manifest::read().await?;
