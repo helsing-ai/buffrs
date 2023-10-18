@@ -373,12 +373,6 @@ impl TryFrom<Bytes> for Package {
     }
 }
 
-impl From<&Package> for Bytes {
-    fn from(value: &Package) -> Self {
-        value.tgz.clone()
-    }
-}
-
 /// Package types
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[serde(rename_all = "snake_case")]
