@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    env::current_dir,
     fmt::{self, Formatter},
     fs::File,
     io::{self, Cursor, Read, Write},
@@ -37,45 +38,71 @@ use crate::{
 };
 
 /// IO abstraction layer over local `buffrs` package store
-pub struct PackageStore;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageStore {
+    root: PathBuf,
+}
 
 impl PackageStore {
     /// Path to the proto directory
-    pub const PROTO_PATH: &str = "proto";
+    const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
+    const PROTO_VENDOR_PATH: &str = "proto/vendor";
+
+    fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    /// Open current directory.
+    pub fn current() -> Result<Self, io::Error> {
+        Ok(Self::new(current_dir()?))
+    }
+
+    /// Open given directory.
+    pub fn open(path: &Path) -> Self {
+        Self::new(path.into())
+    }
+
+    /// Path to the `proto` directory.
+    pub fn proto_path(&self) -> PathBuf {
+        self.root.join(Self::PROTO_PATH)
+    }
+
+    /// Path to the vendor directory.
+    pub fn proto_vendor_path(&self) -> PathBuf {
+        self.root.join(Self::PROTO_VENDOR_PATH)
+    }
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create() -> miette::Result<()> {
-        let create = |dir: &'static str| async move {
-            fs::create_dir_all(dir)
+    pub async fn create(path: PathBuf) -> miette::Result<Self> {
+        let store = PackageStore::new(path);
+        let create = |dir: PathBuf| async move {
+            fs::create_dir_all(&dir)
                 .await
                 .into_diagnostic()
-                .wrap_err(miette!("failed to create {dir} directory"))
+                .wrap_err(miette!("failed to create {} directory", dir.display()))
         };
 
-        create(Self::PROTO_PATH).await?;
-        create(Self::PROTO_VENDOR_PATH).await?;
+        create(store.proto_path()).await?;
+        create(store.proto_vendor_path()).await?;
 
-        Ok(())
+        Ok(store)
     }
 
     /// Clears all packages from the file system
-    pub async fn clear() -> miette::Result<()> {
-        match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
+    pub async fn clear(&self) -> miette::Result<()> {
+        let path = self.proto_vendor_path();
+        match fs::remove_dir_all(&path).await {
             Ok(()) => Ok(()),
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(miette!("directory {} not found", Self::PROTO_VENDOR_PATH))
+                Err(miette!("directory {path:?} not found"))
             }
-            Err(_) => Err(miette!(
-                "failed to clear {} directory",
-                Self::PROTO_VENDOR_PATH,
-            )),
+            Err(_) => Err(miette!("failed to clear {path:?} directory",)),
         }
     }
 
     /// Unpacks a package into a local directory
-    pub async fn unpack(package: &Package) -> miette::Result<()> {
+    pub async fn unpack(&self, package: &Package) -> miette::Result<()> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
@@ -86,7 +113,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(&*package.manifest.package.name);
+        let pkg_dir = self.locate(&package.manifest.package.name);
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -119,8 +146,8 @@ impl PackageStore {
     }
 
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageName) -> miette::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(&**package);
+    pub async fn uninstall(&self, package: &PackageName) -> miette::Result<()> {
+        let pkg_dir = self.proto_vendor_path().join(&**package);
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -129,14 +156,14 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageName) -> miette::Result<Manifest> {
-        Manifest::read_from(Self::locate(package).join(MANIFEST_FILE))
+    pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
+        Manifest::read_from(self.locate(package).join(MANIFEST_FILE))
             .await
             .wrap_err(miette!("failed to resolve package {package}"))
     }
 
     /// Packages a release from the local file system state
-    pub async fn release() -> miette::Result<Package> {
+    pub async fn release(&self) -> miette::Result<Package> {
         let manifest = Manifest::read().await?;
 
         ensure!(
@@ -150,7 +177,7 @@ impl PackageStore {
         );
 
         for dependency in manifest.dependencies.iter() {
-            let resolved = Self::resolve(&dependency.package).await?;
+            let resolved = self.resolve(&dependency.package).await?;
 
             ensure!(
                 resolved.package.kind == PackageType::Lib,
@@ -159,15 +186,7 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
-            .await
-            .into_diagnostic()
-            .wrap_err({
-                miette!(
-                    "failed to locate package folder (expected directory {} to be present)",
-                    Self::PROTO_PATH
-                )
-            })?;
+        let pkg_path = self.proto_path();
 
         let mut archive = tar::Builder::new(Vec::new());
 
@@ -196,7 +215,7 @@ impl PackageStore {
             .into_diagnostic()
             .wrap_err(miette!("failed to add manifest to release"))?;
 
-        for entry in Self::collect(&pkg_path).await {
+        for entry in self.collect(&pkg_path).await {
             let file = File::open(&entry)
                 .into_diagnostic()
                 .wrap_err(miette!("failed to open file {}", entry.display()))?;
@@ -258,16 +277,13 @@ impl PackageStore {
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(package: &PackageName) -> PathBuf {
-        PathBuf::from(Self::PROTO_VENDOR_PATH).join(&**package)
+    pub fn locate(&self, package: &PackageName) -> PathBuf {
+        self.proto_vendor_path().join(&**package)
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
-    pub async fn collect(path: &Path) -> Vec<PathBuf> {
-        let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
-            .await
-            .unwrap_or(Self::PROTO_VENDOR_PATH.into());
-
+    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
+        let vendor_path = self.proto_vendor_path();
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
@@ -284,6 +300,18 @@ impl PackageStore {
 
         paths
     }
+}
+
+#[test]
+fn can_get_proto_path() {
+    assert_eq!(
+        PackageStore::new("/tmp".into()).proto_path(),
+        PathBuf::from("/tmp/proto")
+    );
+    assert_eq!(
+        PackageStore::new("/tmp".into()).proto_vendor_path(),
+        PathBuf::from("/tmp/proto/vendor")
+    );
 }
 
 /// An in memory representation of a `buffrs` package

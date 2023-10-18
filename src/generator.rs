@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::{fmt, path::PathBuf};
 
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
@@ -66,9 +63,9 @@ impl Generator {
 
         std::env::set_var("PROTOC", protoc.clone());
 
-        let store = Path::new(PackageStore::PROTO_PATH);
-        let protos = PackageStore::collect(store).await;
-        let includes = &[store];
+        let store = PackageStore::current().into_diagnostic()?;
+        let protos = store.collect(&store.proto_path()).await;
+        let includes = &[store.proto_path()];
 
         match self {
             Generator::Tonic => {
@@ -126,6 +123,7 @@ impl Generator {
     /// Execute code generation with pre-configured parameters
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
+        let store = PackageStore::current().into_diagnostic()?;
 
         info!(":: initializing code generator");
 
@@ -139,20 +137,18 @@ impl Generator {
             .wrap_err(miette!("failed to generate bindings"))?;
 
         if manifest.package.kind.is_compilable() {
-            let location = Path::new(PackageStore::PROTO_PATH);
             info!(
                 ":: compiled {} [{}]",
                 manifest.package.name,
-                location.display()
+                store.proto_path().display()
             );
         }
 
         for dependency in manifest.dependencies {
-            let location = PackageStore::locate(&dependency.package);
             info!(
                 ":: compiled {} [{}]",
                 dependency.package,
-                location.display()
+                store.locate(&dependency.package).display()
             );
         }
 

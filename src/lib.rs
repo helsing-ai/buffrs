@@ -48,9 +48,14 @@ pub mod resolver;
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
     use credentials::Credentials;
+    use miette::IntoDiagnostic;
     use package::PackageStore;
 
-    println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
+    let store = PackageStore::current().into_diagnostic()?;
+    println!(
+        "cargo:rerun-if-changed={}",
+        store.proto_vendor_path().display()
+    );
 
     let credentials = Credentials::read().await?;
     command::install(credentials).await?;
