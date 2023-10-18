@@ -432,46 +432,102 @@ impl Default for PackageType {
 }
 
 /// A `buffrs` package name for parsing and type safety
-#[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(try_from = "String", into = "String")]
 pub struct PackageName(String);
 
+/// Errors that can be generated parsing [`PackageName`][], see [`PackageName::new()`][].
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum PackageNameError {
+    /// Incorrect length.
+    #[error("package name must be at least three chars long, but was {0:} long")]
+    Length(usize),
+    /// Invalid start character.
+    #[error("package name must start with alphabetic character, but was {0:}")]
+    InvalidStart(char),
+    /// Invalid character.
+    #[error("package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}")]
+    InvalidCharacter(char, usize),
+}
+
+impl PackageName {
+    /// New package name from string.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, PackageNameError> {
+        let value = value.into();
+        Self::validate(&value)?;
+        Ok(Self(value))
+    }
+
+    /// Determine if this character is allowed at the start of a package name.
+    fn is_allowed_start(c: char) -> bool {
+        c.is_alphabetic()
+    }
+
+    /// Determine if this character is allowed anywhere in a package name.
+    fn is_allowed(c: char) -> bool {
+        let is_ascii_lowercase_alphanumeric =
+            |c: char| c.is_ascii_alphanumeric() && !c.is_ascii_uppercase();
+        match c {
+            '-' => true,
+            c if is_ascii_lowercase_alphanumeric(c) => true,
+            _ => false,
+        }
+    }
+
+    /// Validate a package name.
+    pub fn validate(name: &str) -> Result<(), PackageNameError> {
+        // validate length
+        if name.len() < 3 {
+            return Err(PackageNameError::Length(name.len()));
+        }
+
+        // validate first character
+        match name.chars().next() {
+            Some(c) if Self::is_allowed_start(c) => {}
+            Some(c) => return Err(PackageNameError::InvalidStart(c)),
+            None => unreachable!(),
+        }
+
+        // validate all characters
+        let illegal = name
+            .chars()
+            .enumerate()
+            .find(|(_, c)| !Self::is_allowed(*c));
+        if let Some((index, c)) = illegal {
+            return Err(PackageNameError::InvalidCharacter(c, index));
+        }
+
+        Ok(())
+    }
+}
+
+#[test]
+fn can_parse_package_name() {
+    assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+    assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
+    assert_eq!(
+        PackageName::new("4abc"),
+        Err(PackageNameError::InvalidStart('4'))
+    );
+    assert_eq!(
+        PackageName::new("serde_typename"),
+        Err(PackageNameError::InvalidCharacter('_', 5))
+    );
+}
+
 impl TryFrom<String> for PackageName {
-    type Error = miette::Report;
+    type Error = PackageNameError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        ensure!(
-            value.len() >= 3,
-            "package names must be at least three chars long"
-        );
-
-        let all_lower_alphanum = value
-            .chars()
-            .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-');
-
-        ensure!(all_lower_alphanum, "invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
-
-        const UNEXPECTED_MSG: &str =
-            "unexpected error: package name length should be validated prior to first character check";
-
-        ensure!(
-            value
-                .chars()
-                .next()
-                .ok_or(miette!(UNEXPECTED_MSG))?
-                .is_alphabetic(),
-            "package names must begin with an alphabetic letter"
-        );
-
-        Ok(Self(value))
+        Self::new(value)
     }
 }
 
 impl FromStr for PackageName {
-    type Err = miette::Report;
+    type Err = PackageNameError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s.to_string())
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::new(input)
     }
 }
 
@@ -492,14 +548,6 @@ impl Deref for PackageName {
 impl fmt::Display for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-impl fmt::Debug for PackageName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PackageName")
-            .field(&format!("{self}"))
-            .finish()
     }
 }
 
