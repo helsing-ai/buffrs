@@ -54,6 +54,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .to_str()
             .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
+            .into_diagnostic()
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
@@ -97,6 +98,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     let package = package
         .parse::<PackageName>()
+        .into_diagnostic()
         .wrap_err(miette!("invalid package name: {package}"))?;
 
     let version = version
