@@ -163,9 +163,7 @@ impl PackageStore {
     }
 
     /// Packages a release from the local file system state
-    pub async fn release(&self) -> miette::Result<Package> {
-        let manifest = Manifest::read().await?;
-
+    pub async fn release(&self, manifest: Manifest) -> miette::Result<Package> {
         ensure!(
             manifest.package.kind.is_publishable(),
             "packages with type `impl` cannot be published"

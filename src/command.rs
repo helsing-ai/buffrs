@@ -147,7 +147,11 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
 /// Packages the api and writes it to the filesystem
 pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
-    let package = PackageStore::current().into_diagnostic()?.release().await?;
+    let manifest = Manifest::read().await?;
+    let package = PackageStore::current()
+        .into_diagnostic()?
+        .release(manifest)
+        .await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -196,7 +200,11 @@ pub async fn publish(
 
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    let package = PackageStore::current().into_diagnostic()?.release().await?;
+    let manifest = Manifest::read().await?;
+    let package = PackageStore::current()
+        .into_diagnostic()?
+        .release(manifest)
+        .await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
