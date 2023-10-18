@@ -467,27 +467,11 @@ impl TryFrom<String> for PackageName {
     }
 }
 
-impl TryFrom<&str> for PackageName {
-    type Error = miette::Report;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_string())
-    }
-}
-
-impl TryFrom<&String> for PackageName {
-    type Error = miette::Report;
-
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_owned())
-    }
-}
-
 impl FromStr for PackageName {
     type Err = miette::Report;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s)
+        Self::try_from(s.to_string())
     }
 }
 
