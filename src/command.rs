@@ -16,8 +16,9 @@ use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
-    package::{DependencyGraph, PackageName, PackageStore, PackageType},
+    package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
+    resolver::DependencyGraph,
 };
 
 #[cfg(feature = "build")]

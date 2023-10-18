@@ -13,31 +13,26 @@
 // limitations under the License.
 
 use std::{
-    collections::HashMap,
     fmt::{self, Formatter},
     fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
 };
 
-use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use miette::{ensure, miette, Context, Diagnostic, IntoDiagnostic};
-use semver::{Version, VersionReq};
+use miette::{ensure, miette, Context, IntoDiagnostic};
+use semver::Version;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    credentials::Credentials,
     errors::{DeserializationError, SerializationError},
-    lock::{LockedPackage, Lockfile},
-    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
-    registry::{Artifactory, RegistryUri},
+    lock::LockedPackage,
+    manifest::{self, Manifest, MANIFEST_FILE},
+    registry::RegistryUri,
     ManagedFile,
 };
 
@@ -547,196 +542,5 @@ impl Deref for PackageName {
 impl fmt::Display for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
-    }
-}
-
-/// Represents a dependency contextualized by the current dependency graph
-pub struct ResolvedDependency {
-    /// The materialized package as downloaded from the registry
-    pub package: Package,
-    /// The registry the package was downloaded from
-    pub registry: RegistryUri,
-    /// The repository in the registry where the package can be found
-    pub repository: String,
-    /// Packages that requested this dependency (and what versions they accept)
-    pub dependants: Vec<Dependant>,
-    /// Transitive dependencies
-    pub depends_on: Vec<PackageName>,
-}
-
-/// Represents a requester of the associated dependency
-pub struct Dependant {
-    /// Package that requested the dependency
-    pub name: PackageName,
-    /// Version requirement
-    pub version_req: VersionReq,
-}
-
-/// Represents direct and transitive dependencies of the root package
-pub struct DependencyGraph {
-    entries: HashMap<PackageName, ResolvedDependency>,
-}
-
-#[derive(Error, Diagnostic, Debug)]
-#[error("failed to download dependency {name}@{version} from the registry")]
-struct DownloadError {
-    name: PackageName,
-    version: VersionReq,
-}
-
-impl DependencyGraph {
-    /// Recursively resolves dependencies from the manifest to build a dependency graph
-    pub async fn from_manifest(
-        manifest: &Manifest,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-    ) -> miette::Result<Self> {
-        let name = manifest.package.name.clone();
-
-        let mut entries = HashMap::new();
-
-        for dependency in &manifest.dependencies {
-            Self::process_dependency(
-                name.clone(),
-                dependency.clone(),
-                true,
-                lockfile,
-                credentials,
-                &mut entries,
-            )
-            .await?;
-        }
-
-        Ok(Self { entries })
-    }
-
-    #[async_recursion]
-    async fn process_dependency(
-        name: PackageName,
-        dependency: Dependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
-    ) -> miette::Result<()> {
-        let version_req = dependency.manifest.version.clone();
-        if let Some(entry) = entries.get_mut(&dependency.package) {
-            ensure!(
-                version_req.matches(entry.package.version()),
-                "a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
-                    dependency.package,
-                    dependency.manifest.version,
-                    entry.dependants[0].name.clone(),
-                    dependency.manifest.version,
-                    entry.package.manifest.package.version.clone(),
-            );
-
-            entry.dependants.push(Dependant { name, version_req });
-        } else {
-            let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials).await?;
-
-            let dependency_name = dependency_pkg.name().clone();
-            let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
-            let sub_dependency_names: Vec<_> = sub_dependencies
-                .iter()
-                .map(|sub_dependency| sub_dependency.package.clone())
-                .collect();
-
-            entries.insert(
-                dependency_name.clone(),
-                ResolvedDependency {
-                    package: dependency_pkg,
-                    registry: dependency.manifest.registry,
-                    repository: dependency.manifest.repository,
-                    dependants: vec![Dependant { name, version_req }],
-                    depends_on: sub_dependency_names,
-                },
-            );
-
-            for sub_dependency in sub_dependencies {
-                Self::process_dependency(
-                    dependency_name.clone(),
-                    sub_dependency,
-                    false,
-                    lockfile,
-                    credentials,
-                    entries,
-                )
-                .await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn resolve(
-        dependency: Dependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-    ) -> miette::Result<Package> {
-        if let Some(local_locked) = lockfile.get(&dependency.package) {
-            ensure!(
-                dependency.manifest.version.matches(&local_locked.version),
-                "dependency {} cannot be satisfied - requested {}, but version {} is locked",
-                dependency.package,
-                dependency.manifest.version,
-                local_locked.version,
-            );
-
-            ensure!(
-                is_root || dependency.manifest.registry == local_locked.registry,
-                "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
-                    dependency.package,
-                    dependency.manifest.registry,
-                    local_locked.registry,
-            );
-
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            let package = registry
-                .download(dependency.with_version(&local_locked.version))
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })?;
-
-            local_locked.validate(&package)?;
-
-            Ok(package)
-        } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            registry
-                .download(dependency.clone())
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })
-        }
-    }
-
-    /// Locates and returns a reference to a resolved dependency package by its name
-    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
-        self.entries.get(name)
-    }
-}
-
-impl IntoIterator for DependencyGraph {
-    type Item = ResolvedDependency;
-    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_values()
     }
 }
