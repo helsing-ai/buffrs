@@ -41,4 +41,11 @@ impl Registry for Context {
     ) -> Result<Response<DownloadResponse>, Status> {
         todo!()
     }
+
+    async fn versions(
+        &self,
+        request: Request<VersionsRequest>,
+    ) -> Result<Response<VersionsResponse>, Status> {
+        todo!()
+    }
 }
