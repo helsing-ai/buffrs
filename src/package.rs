@@ -230,18 +230,6 @@ impl PackageStore {
     }
 }
 
-#[test]
-fn can_get_proto_path() {
-    assert_eq!(
-        PackageStore::new("/tmp".into()).proto_path(),
-        PathBuf::from("/tmp/proto")
-    );
-    assert_eq!(
-        PackageStore::new("/tmp".into()).proto_vendor_path(),
-        PathBuf::from("/tmp/proto/vendor")
-    );
-}
-
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
@@ -443,35 +431,6 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[test]
-fn can_check_publishable() {
-    assert!(PackageType::Lib.is_publishable());
-    assert!(PackageType::Api.is_publishable());
-    assert!(!PackageType::Impl.is_publishable());
-}
-
-#[test]
-fn can_check_compilable() {
-    assert!(PackageType::Lib.is_compilable());
-    assert!(PackageType::Api.is_compilable());
-    assert!(!PackageType::Impl.is_compilable());
-}
-
-#[test]
-fn can_default_package_type() {
-    assert_eq!(PackageType::default(), PackageType::Impl);
-}
-
-#[test]
-fn can_parse_package_type() {
-    let types = [PackageType::Lib, PackageType::Api, PackageType::Impl];
-    for typ in &types {
-        let string = typ.to_string();
-        let parsed: PackageType = string.parse().unwrap();
-        assert_eq!(parsed, *typ);
-    }
-}
-
 /// A `buffrs` package name for parsing and type safety
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(try_from = "String", into = "String")]
@@ -542,20 +501,6 @@ impl PackageName {
     }
 }
 
-#[test]
-fn can_parse_package_name() {
-    assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
-    assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
-    assert_eq!(
-        PackageName::new("4abc"),
-        Err(PackageNameError::InvalidStart('4'))
-    );
-    assert_eq!(
-        PackageName::new("serde_typename"),
-        Err(PackageNameError::InvalidCharacter('_', 5))
-    );
-}
-
 impl TryFrom<String> for PackageName {
     type Error = PackageNameError;
 
@@ -589,5 +534,65 @@ impl Deref for PackageName {
 impl fmt::Display for PackageName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_parse_package_name() {
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+        assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
+        assert_eq!(
+            PackageName::new("4abc"),
+            Err(PackageNameError::InvalidStart('4'))
+        );
+        assert_eq!(
+            PackageName::new("serde_typename"),
+            Err(PackageNameError::InvalidCharacter('_', 5))
+        );
+    }
+
+    #[test]
+    fn can_get_proto_path() {
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_path(),
+            PathBuf::from("/tmp/proto")
+        );
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_vendor_path(),
+            PathBuf::from("/tmp/proto/vendor")
+        );
+    }
+
+    #[test]
+    fn can_check_publishable() {
+        assert!(PackageType::Lib.is_publishable());
+        assert!(PackageType::Api.is_publishable());
+        assert!(!PackageType::Impl.is_publishable());
+    }
+
+    #[test]
+    fn can_check_compilable() {
+        assert!(PackageType::Lib.is_compilable());
+        assert!(PackageType::Api.is_compilable());
+        assert!(!PackageType::Impl.is_compilable());
+    }
+
+    #[test]
+    fn can_default_package_type() {
+        assert_eq!(PackageType::default(), PackageType::Impl);
+    }
+
+    #[test]
+    fn can_parse_package_type() {
+        let types = [PackageType::Lib, PackageType::Api, PackageType::Impl];
+        for typ in &types {
+            let string = typ.to_string();
+            let parsed: PackageType = string.parse().unwrap();
+            assert_eq!(parsed, *typ);
+        }
     }
 }
