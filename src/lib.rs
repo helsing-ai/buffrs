@@ -23,6 +23,8 @@ use manifest::MANIFEST_FILE;
 
 /// CLI command implementations
 pub mod command;
+/// Shared context.
+pub mod context;
 /// Credential management
 pub mod credentials;
 /// Common error types
@@ -47,20 +49,15 @@ pub mod resolver;
 #[cfg(feature = "build")]
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
-    use credentials::Credentials;
-    use package::PackageStore;
+    let context = context::Context::open_current().await?;
 
-    let store = PackageStore::current().await?;
     println!(
         "cargo:rerun-if-changed={}",
-        store.proto_vendor_path().display()
+        context.store().proto_vendor_path().display()
     );
 
-    let credentials = Credentials::read().await?;
-    command::install(credentials).await?;
-
+    context.install().await?;
     generator::Generator::Tonic.generate().await?;
-
     Ok(())
 }
 

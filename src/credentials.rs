@@ -30,6 +30,8 @@ pub const BUFFRS_HOME: &str = ".buffrs";
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
 /// Credential store for storing authentication data
+///
+/// This type represents a snapshot of the read credential store.
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
     /// A mapping from registry URIs to their corresponding tokens
@@ -104,7 +106,7 @@ impl Credentials {
     pub async fn load() -> miette::Result<Self> {
         let Ok(credentials) = Self::read().await else {
             let credentials = Credentials::default();
-            credentials.write().await?;
+            credentials.write().await.wrap_err("Writing empty config")?;
             return Ok(credentials);
         };
 
