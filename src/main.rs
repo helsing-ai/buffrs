@@ -14,12 +14,12 @@
 
 use std::path::PathBuf;
 
-use buffrs::command;
-use buffrs::package::PackageName;
-use buffrs::registry::RegistryUri;
-use buffrs::{credentials::Credentials, package::PackageType};
+use buffrs::{
+    command, context::Context, credentials::Credentials, package::PackageName,
+    package::PackageType, registry::RegistryUri,
+};
 use clap::{Parser, Subcommand};
-use miette::{miette, Context};
+use miette::{miette, Context as _};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -136,9 +136,9 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let credentials = Credentials::load().await?;
 
-    match cli.command {
+    // all of the commands that do not assume an initialised project.
+    let context = match cli.command {
         Command::Init { lib, api, package } => {
             let kind = if lib {
                 PackageType::Lib
@@ -148,23 +148,43 @@ async fn main() -> miette::Result<()> {
                 PackageType::Impl
             };
 
-            command::init(kind, package)
+            Context::init(kind, package)
                 .await
-                .wrap_err(miette!("init command failed"))
+                .wrap_err(miette!("init command failed"))?;
+            return Ok(());
         }
+        Command::Login { registry } => {
+            let credentials = Credentials::load().await?;
+            return command::login(credentials, registry).await;
+        }
+        Command::Logout { registry } => {
+            let credentials = Credentials::load().await?;
+            return command::logout(credentials, registry).await;
+        }
+        _ => Context::open_current().await.wrap_err("Opening context")?,
+    };
+
+    // handle all other commands
+    match cli.command {
+        Command::Init { .. } => unreachable!(),
+        Command::Login { .. } => unreachable!(),
+        Command::Logout { .. } => unreachable!(),
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry, &dependency)
+        } => context
+            .add(registry, &dependency)
             .await
             .wrap_err(miette!("add command failed")),
-        Command::Remove { package } => command::remove(package)
+        Command::Remove { package } => context
+            .remove(package)
             .await
             .wrap_err(miette!("remove command failed")),
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run)
+        } => context
+            .package(output_directory, dry_run)
             .await
             .wrap_err(miette!("package command failed")),
         Command::Publish {
@@ -172,23 +192,21 @@ async fn main() -> miette::Result<()> {
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(credentials, registry, repository, allow_dirty, dry_run)
+        } => context
+            .publish(registry, repository, allow_dirty, dry_run)
             .await
             .wrap_err(miette!("publish command failed")),
-        Command::Install => command::install(credentials)
+        Command::Install => context
+            .install()
             .await
             .wrap_err(miette!("install command failed")),
-        Command::Uninstall => command::uninstall()
+        Command::Uninstall => context
+            .uninstall()
             .await
             .wrap_err(miette!("uninstall command failed")),
-        Command::Generate { language, out_dir } => command::generate(language, out_dir)
+        Command::Generate { language, out_dir } => context
+            .generate(language, out_dir)
             .await
             .wrap_err(miette!("generate command failed")),
-        Command::Login { registry } => command::login(credentials, registry)
-            .await
-            .wrap_err(miette!("login command failed")),
-        Command::Logout { registry } => command::logout(credentials, registry)
-            .await
-            .wrap_err(miette!("logout command failed")),
     }
 }
