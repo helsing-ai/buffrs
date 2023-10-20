@@ -39,7 +39,7 @@ impl Context {
     pub async fn open<P: Into<PathBuf>>(path: P) -> miette::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             store: PackageStore::open(&path.into()).await?,
-            credentials: Credentials::load().await.map(Arc::new)?,
+            credentials: Credentials::read().await?.map(Arc::new).unwrap_or_default(),
         }))
     }
 

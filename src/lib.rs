@@ -56,8 +56,12 @@ pub async fn build() -> miette::Result<()> {
         context.store().proto_vendor_path().display()
     );
 
+    // install dependencies
     context.install().await?;
+
+    // run code generation
     generator::Generator::Tonic.generate().await?;
+
     Ok(())
 }
 
