@@ -309,7 +309,7 @@ impl Package {
     }
 
     /// Load a package from a precompressed archive.
-    pub fn load(tgz: Bytes) -> miette::Result<Self> {
+    fn parse(tgz: Bytes) -> miette::Result<Self> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
@@ -381,7 +381,7 @@ impl TryFrom<Bytes> for Package {
     type Error = miette::Report;
 
     fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
-        Package::load(tgz)
+        Package::parse(tgz)
     }
 }
 
