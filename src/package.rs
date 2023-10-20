@@ -54,8 +54,8 @@ impl PackageStore {
     }
 
     /// Open current directory.
-    pub fn current() -> Result<Self, io::Error> {
-        Ok(Self::new(current_dir()?))
+    pub fn current() -> miette::Result<Self> {
+        Ok(Self::new(current_dir().into_diagnostic()?))
     }
 
     /// Open given directory.
@@ -510,10 +510,10 @@ impl TryFrom<String> for PackageName {
 }
 
 impl FromStr for PackageName {
-    type Err = PackageNameError;
+    type Err = miette::Report;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Self::new(input)
+        Self::new(input).into_diagnostic()
     }
 }
 

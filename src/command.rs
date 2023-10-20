@@ -55,7 +55,6 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .to_str()
             .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
-            .into_diagnostic()
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
@@ -100,7 +99,6 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     let package = package
         .parse::<PackageName>()
-        .into_diagnostic()
         .wrap_err(miette!("invalid package name: {package}"))?;
 
     let version = version
@@ -136,8 +134,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
     //     tracing::warn!("failed to uninstall package {}", dependency.package);
     // }
 
-    PackageStore::current()
-        .into_diagnostic()?
+    PackageStore::current()?
         .uninstall(&dependency.package)
         .await
         .ok(); // temporary due to broken test
@@ -148,10 +145,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 /// Packages the api and writes it to the filesystem
 pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-    let package = PackageStore::current()
-        .into_diagnostic()?
-        .release(manifest)
-        .await?;
+    let package = PackageStore::current()?.release(manifest).await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -201,10 +195,7 @@ pub async fn publish(
     let artifactory = Artifactory::new(registry, &credentials)?;
 
     let manifest = Manifest::read().await?;
-    let package = PackageStore::current()
-        .into_diagnostic()?
-        .release(manifest)
-        .await?;
+    let package = PackageStore::current()?.release(manifest).await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -239,11 +230,13 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
             "unexpected error: missing dependency in dependency graph"
         ))?;
 
-        let store = PackageStore::current().into_diagnostic()?;
-        store.unpack(&resolved.package).await.wrap_err(miette!(
-            "failed to unpack package {}",
-            &resolved.package.name()
-        ))?;
+        PackageStore::current()?
+            .unpack(&resolved.package)
+            .await
+            .wrap_err(miette!(
+                "failed to unpack package {}",
+                &resolved.package.name()
+            ))?;
 
         tracing::info!(
             "{} installed {}@{}",
@@ -290,7 +283,7 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
 
 /// Uninstalls dependencies
 pub async fn uninstall() -> miette::Result<()> {
-    PackageStore::current().into_diagnostic()?.clear().await
+    PackageStore::current()?.clear().await
 }
 
 /// Generate bindings for a given language
