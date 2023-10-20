@@ -19,6 +19,6 @@ use clap::Parser;
 async fn main() -> eyre::Result<()> {
     let config = Options::parse();
     tracing_subscriber::fmt::init();
-    let db = connect(&config.database.as_str()).await.unwrap();
+    let _db = connect(config.database.as_str()).await.unwrap();
     Ok(())
 }

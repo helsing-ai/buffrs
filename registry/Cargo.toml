@@ -2,9 +2,11 @@
 name = "buffrs-registry"
 version = "0.1.0"
 edition = "2021"
+description = "Registry for buffrs, a modern protocol buffer package manager"
+license = "Apache-2.0"
 
 [dependencies]
-buffrs = { path = "../" }
+buffrs = { path = "../", version = "0.6.4" }
 prost = "0.12.1"
 tonic = "0.10.2"
 clap = { version = "4.3", features = ["cargo", "derive", "env"] }
@@ -16,4 +18,4 @@ eyre = "0.6.8"
 url = "2.4.1"
 
 [build-dependencies]
-buffrs = { path = "../" }
+buffrs = { path = "../", version = "0.6.4" }
