@@ -55,6 +55,7 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .to_str()
             .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
             .parse()
+            .map_err(Into::into)
     }
 
     let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;

@@ -23,7 +23,7 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, Context, IntoDiagnostic, Diagnostic};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -437,16 +437,19 @@ impl fmt::Display for PackageType {
 pub struct PackageName(String);
 
 /// Errors that can be generated parsing [`PackageName`][], see [`PackageName::new()`][].
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq, Diagnostic)]
 pub enum PackageNameError {
     /// Incorrect length.
     #[error("package name must be at least three chars long, but was {0:} long")]
+    #[diagnostic(code(package_name::length))]
     Length(usize),
     /// Invalid start character.
     #[error("package name must start with alphabetic character, but was {0:}")]
+    #[diagnostic(code(package_name::invalid_start))]
     InvalidStart(char),
     /// Invalid character.
     #[error("package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}")]
+    #[diagnostic(code(package_name::invalid_character))]
     InvalidCharacter(char, usize),
 }
 
@@ -510,10 +513,10 @@ impl TryFrom<String> for PackageName {
 }
 
 impl FromStr for PackageName {
-    type Err = miette::Report;
+    type Err = PackageNameError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        Self::new(input).into_diagnostic()
+        Self::new(input)
     }
 }
 

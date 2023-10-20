@@ -23,7 +23,7 @@ mod artifactory;
 mod local;
 
 pub use artifactory::Artifactory;
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, IntoDiagnostic, Diagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -61,37 +61,54 @@ impl Display for RegistryUri {
     }
 }
 
+/// Error parsing a registry URI
+#[derive(Error, Debug, Diagnostic)]
+pub enum RegistryUriError {
+    /// URL parse error
+    #[error("not a valid URL")]
+    Parse(#[from] url::ParseError),
+
+    /// Invalid scheme
+    #[error("invalid scheme {0:}, must be http or https")]
+    Scheme(String),
+
+    /// Artifactory
+    #[error("the url must end with '/artifactory' when using a *.jfrog.io host")]
+    Artifactory,
+
+    /// Missing host
+    #[error("the URI must contain a host component")]
+    MissingHost,
+}
+
 impl FromStr for RegistryUri {
-    type Err = miette::Report;
+    type Err = RegistryUriError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::from_str(value)
-            .into_diagnostic()
-            .wrap_err(miette!("not a valid URL: {value}"))?;
-
+        let url = Url::from_str(value)?;
         sanity_check_url(&url)?;
-
         Ok(Self(url))
     }
 }
 
-fn sanity_check_url(url: &Url) -> miette::Result<()> {
+fn sanity_check_url(url: &Url) -> Result<(), RegistryUriError> {
     let scheme = url.scheme();
 
-    ensure!(
-        scheme == "http" || scheme == "https",
-        "invalid URI scheme {scheme} - must be http or https"
-    );
-
-    if let Some(host) = url.host_str() {
-        ensure!(
-            !host.ends_with(".jfrog.io") || url.path().ends_with("/artifactory"),
-            "the url must end with '/artifactory' when using a *.jfrog.io host"
-        );
-        Ok(())
-    } else {
-        Err(miette!("the URI must contain a host component: {url}"))
+    if !["http", "https"].contains(&scheme) {
+        return Err(RegistryUriError::Scheme(scheme.into()));
     }
+
+    let Some(host) = url.host_str() else {
+        return Err(RegistryUriError::MissingHost);
+    };
+
+    if host.ends_with(".jfrog.io") {
+        if !url.path().ends_with("/artifactory") {
+            return Err(RegistryUriError::Artifactory);
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Error, Debug)]

@@ -1,5 +1,5 @@
 use miette::Diagnostic;
-
+use thiserror::Error;
 use crate::ManagedFile;
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
@@ -29,3 +29,7 @@ pub(crate) struct SerializationError(pub ManagedFile);
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("file `{0}` is missing")]
 pub(crate) struct FileNotFound(pub String);
+
+#[derive(Error, Diagnostic, Debug)]
+pub enum Error {
+}

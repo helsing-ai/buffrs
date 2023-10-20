@@ -14,7 +14,7 @@
 
 use std::{collections::HashMap, fmt, str::FromStr};
 
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, Context, IntoDiagnostic, Diagnostic};
 use ring::digest;
 use semver::Version;
 use serde::{de::Visitor, Deserialize, Serialize};
@@ -40,18 +40,21 @@ pub enum DigestAlgorithm {
     SHA256,
 }
 
-/// Represents a ring digest algorithm that isn't supported by Buffrs
-#[derive(Error, Debug)]
-#[error("unsupported digest algorithm: {0}")]
-pub struct UnsupportedAlgorithm(String);
+/// Error parsing digest algorithm
+#[derive(Error, Debug, Diagnostic)]
+pub enum DigestAlgorithmError {
+    /// Represents a ring digest algorithm that isn't supported by Buffrs
+    #[error("unsupported digest algorithm: {0}")]
+    UnsupportedAlgorithm(String),
+}
 
 impl FromStr for DigestAlgorithm {
-    type Err = UnsupportedAlgorithm;
+    type Err = DigestAlgorithmError;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match serde_typename::from_str(input) {
             Ok(value) => Ok(value),
-            _other => Err(UnsupportedAlgorithm(input.into())),
+            _other => Err(DigestAlgorithmError::UnsupportedAlgorithm(input.into())),
         }
     }
 }
@@ -74,13 +77,13 @@ pub struct Digest {
 }
 
 impl TryFrom<digest::Digest> for Digest {
-    type Error = UnsupportedAlgorithm;
+    type Error = DigestAlgorithmError;
 
     fn try_from(value: digest::Digest) -> Result<Self, Self::Error> {
         let algorithm = if value.algorithm() == &digest::SHA256 {
             DigestAlgorithm::SHA256
         } else {
-            return Err(UnsupportedAlgorithm(format!("{:?}", value.algorithm())));
+            return Err(DigestAlgorithmError::UnsupportedAlgorithm(format!("{:?}", value.algorithm())));
         };
 
         Ok(Self {
