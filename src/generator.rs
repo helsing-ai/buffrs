@@ -63,7 +63,7 @@ impl Generator {
 
         std::env::set_var("PROTOC", protoc.clone());
 
-        let store = PackageStore::current()?;
+        let store = PackageStore::current().await?;
         let protos = store.collect(&store.proto_path()).await;
         let includes = &[store.proto_path()];
 
@@ -123,7 +123,7 @@ impl Generator {
     /// Execute code generation with pre-configured parameters
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
-        let store = PackageStore::current()?;
+        let store = PackageStore::current().await?;
 
         info!(":: initializing code generator");
 
