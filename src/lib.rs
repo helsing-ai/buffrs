@@ -50,7 +50,7 @@ pub async fn build() -> miette::Result<()> {
     use credentials::Credentials;
     use package::PackageStore;
 
-    let store = PackageStore::current()?;
+    let store = PackageStore::current().await?;
     println!(
         "cargo:rerun-if-changed={}",
         store.proto_vendor_path().display()

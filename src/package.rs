@@ -54,13 +54,28 @@ impl PackageStore {
     }
 
     /// Open current directory.
-    pub fn current() -> miette::Result<Self> {
-        Ok(Self::new(current_dir().into_diagnostic()?))
+    pub async fn current() -> miette::Result<Self> {
+        Self::open(&current_dir().into_diagnostic()?).await
+    }
+
+    /// Check if this store exists
+    async fn exists(&self) -> miette::Result<bool> {
+        let meta = fs::metadata(&self.proto_vendor_path())
+            .await
+            .into_diagnostic()?;
+
+        Ok(meta.is_dir())
     }
 
     /// Open given directory.
-    pub fn open(path: &Path) -> Self {
-        Self::new(path.into())
+    pub async fn open(path: &Path) -> miette::Result<Self> {
+        let store = Self::new(path.into());
+
+        if !store.exists().await? {
+            miette::bail!("package store does not exist");
+        }
+
+        Ok(store)
     }
 
     /// Path to the `proto` directory.

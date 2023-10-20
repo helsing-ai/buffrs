@@ -134,7 +134,8 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
     //     tracing::warn!("failed to uninstall package {}", dependency.package);
     // }
 
-    PackageStore::current()?
+    PackageStore::current()
+        .await?
         .uninstall(&dependency.package)
         .await
         .ok(); // temporary due to broken test
@@ -145,7 +146,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 /// Packages the api and writes it to the filesystem
 pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-    let package = PackageStore::current()?.release(manifest).await?;
+    let package = PackageStore::current().await?.release(manifest).await?;
 
     let path = directory.as_ref().join(format!(
         "{}-{}.tgz",
@@ -195,7 +196,7 @@ pub async fn publish(
     let artifactory = Artifactory::new(registry, &credentials)?;
 
     let manifest = Manifest::read().await?;
-    let package = PackageStore::current()?.release(manifest).await?;
+    let package = PackageStore::current().await?.release(manifest).await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -230,7 +231,8 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
             "unexpected error: missing dependency in dependency graph"
         ))?;
 
-        PackageStore::current()?
+        PackageStore::current()
+            .await?
             .unpack(&resolved.package)
             .await
             .wrap_err(miette!(
@@ -283,7 +285,7 @@ pub async fn install(credentials: Credentials) -> miette::Result<()> {
 
 /// Uninstalls dependencies
 pub async fn uninstall() -> miette::Result<()> {
-    PackageStore::current()?.clear().await
+    PackageStore::current().await?.clear().await
 }
 
 /// Generate bindings for a given language
