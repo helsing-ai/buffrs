@@ -1,12 +1,13 @@
 [package]
 name = "buffrs-registry"
-version = "0.1.0"
-edition = "2021"
 description = "Registry for buffrs, a modern protocol buffer package manager"
-license = "Apache-2.0"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-buffrs = { path = "../", version = "0.6.4" }
+buffrs = { workspace = true }
 prost = "0.12.1"
 tonic = "0.10.2"
 clap = { version = "4.3", features = ["cargo", "derive", "env"] }
@@ -18,4 +19,4 @@ eyre = "0.6.8"
 url = "2.4.1"
 
 [build-dependencies]
-buffrs = { path = "../", version = "0.6.4" }
+buffrs = { workspace = true }

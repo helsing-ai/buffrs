@@ -1,15 +1,15 @@
 [package]
 name = "buffrs"
-version = "0.6.4"
-edition = "2021"
 description = "Modern protobuf package management"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
-repository = "https://github.com/helsing-ai/buffrs"
+version.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
 documentation = "https://docs.rs/buffrs"
 keywords = ["protobuf", "protocol", "buffers", "package", "distribution"]
 categories = ["command-line-utilities"]
 readme = "README.md"
-license = "Apache-2.0"
 
 [[bin]]
 name = "buffrs"
@@ -69,3 +69,14 @@ hex = "0.4.3"
 
 [workspace]
 members = [".", "registry"]
+resolver = "2"
+
+[workspace.package]
+version = "0.6.4"
+license = "Apache-2.0"
+authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
+edition = "2021"
+repository = "https://github.com/helsing-ai/buffrs"
+
+[workspace.dependencies]
+buffrs = { path = ".", version = "0.6.4" }
