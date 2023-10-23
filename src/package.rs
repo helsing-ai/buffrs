@@ -60,9 +60,7 @@ impl PackageStore {
 
     /// Check if this store exists
     async fn exists(&self) -> miette::Result<bool> {
-        let meta = fs::metadata(&self.proto_vendor_path())
-            .await
-            .into_diagnostic()?;
+        let meta = fs::metadata(&self.proto_path()).await.into_diagnostic()?;
 
         Ok(meta.is_dir())
     }
