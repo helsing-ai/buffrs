@@ -14,12 +14,12 @@
 
 use std::{fmt, path::PathBuf};
 
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, Context as _, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
-use crate::{manifest::Manifest, package::PackageStore};
+use crate::{context::Context, manifest::Manifest};
 
 /// The language used for code generation
 #[derive(
@@ -56,14 +56,14 @@ impl Generator {
     pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> miette::Result<()> {
+    pub async fn run(&self, context: &Context) -> miette::Result<()> {
         let protoc = protoc_bin_path()
             .into_diagnostic()
             .wrap_err(miette!("unable to locate vendored protoc"))?;
 
         std::env::set_var("PROTOC", protoc.clone());
 
-        let store = PackageStore::current().await?;
+        let store = context.store();
         let protos = store.collect(&store.proto_path()).await;
         let includes = &[store.proto_path()];
 
@@ -117,13 +117,10 @@ impl Generator {
 
         Ok(())
     }
-}
 
-impl Generator {
     /// Execute code generation with pre-configured parameters
-    pub async fn generate(&self) -> miette::Result<()> {
+    pub async fn generate(&self, context: &Context) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
-        let store = PackageStore::current().await?;
 
         info!(":: initializing code generator");
 
@@ -132,7 +129,7 @@ impl Generator {
             "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
 
-        self.run()
+        self.run(context)
             .await
             .wrap_err(miette!("failed to generate bindings"))?;
 
@@ -140,7 +137,7 @@ impl Generator {
             info!(
                 ":: compiled {} [{}]",
                 manifest.package.name,
-                store.proto_path().display()
+                context.store().proto_path().display()
             );
         }
 
@@ -148,7 +145,7 @@ impl Generator {
             info!(
                 ":: compiled {} [{}]",
                 dependency.package,
-                store.locate(&dependency.package).display()
+                context.store().locate(&dependency.package).display()
             );
         }
 

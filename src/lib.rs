@@ -60,7 +60,7 @@ pub async fn build() -> miette::Result<()> {
     context.install().await?;
 
     // run code generation
-    generator::Generator::Tonic.generate().await?;
+    generator::Generator::Tonic.generate(&context).await?;
 
     Ok(())
 }

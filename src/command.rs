@@ -81,7 +81,7 @@ impl Context {
 
     /// Adds a dependency to this project
     pub async fn add(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         registry: RegistryUri,
         dependency: &str,
     ) -> miette::Result<()> {
@@ -125,7 +125,7 @@ impl Context {
     }
 
     /// Removes a dependency from this project
-    pub async fn remove(self: Arc<Self>, package: PackageName) -> miette::Result<()> {
+    pub async fn remove(self: &Arc<Self>, package: PackageName) -> miette::Result<()> {
         let mut manifest = Manifest::read().await?;
 
         let match_idx = manifest
@@ -140,23 +140,19 @@ impl Context {
         //     tracing::warn!("failed to uninstall package {}", dependency.package);
         // }
 
-        PackageStore::current()
-            .await?
-            .uninstall(&dependency.package)
-            .await
-            .ok(); // temporary due to broken test
+        self.store().uninstall(&dependency.package).await.ok(); // temporary due to broken test
 
         manifest.write().await
     }
 
     /// Packages the api and writes it to the filesystem
     pub async fn package(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         directory: impl AsRef<Path>,
         dry_run: bool,
     ) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
-        let package = PackageStore::current().await?.release(manifest).await?;
+        let package = self.store().release(manifest).await?;
 
         let path = directory.as_ref().join(format!(
             "{}-{}.tgz",
@@ -177,7 +173,7 @@ impl Context {
 
     /// Publishes the api package to the registry
     pub async fn publish(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         registry: RegistryUri,
         repository: String,
         #[cfg(feature = "git")] allow_dirty: bool,
@@ -206,7 +202,7 @@ impl Context {
         let artifactory = Artifactory::new(registry, self.credentials())?;
 
         let manifest = Manifest::read().await?;
-        let package = PackageStore::current().await?.release(manifest).await?;
+        let package = self.store().release(manifest).await?;
 
         if dry_run {
             tracing::warn!(":: aborting upload due to dry run");
@@ -217,7 +213,7 @@ impl Context {
     }
 
     /// Installs dependencies
-    pub async fn install(self: Arc<Self>) -> miette::Result<()> {
+    pub async fn install(self: &Arc<Self>) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
         let lockfile = Lockfile::read_or_default().await?;
         let dependency_graph =
@@ -227,8 +223,10 @@ impl Context {
 
         let mut locked = Vec::new();
 
+        /// Helper method to traverse dependencies and install recursively.
         #[async_recursion]
         async fn traverse_and_install(
+            context: &Context,
             name: &PackageName,
             graph: &DependencyGraph,
             locked: &mut Vec<LockedPackage>,
@@ -238,8 +236,8 @@ impl Context {
                 "unexpected error: missing dependency in dependency graph"
             ))?;
 
-            PackageStore::current()
-                .await?
+            context
+                .store()
                 .unpack(&resolved.package)
                 .await
                 .wrap_err(miette!(
@@ -271,7 +269,8 @@ impl Context {
                     "{} {tree_char}",
                     if prefix.is_empty() { "  " } else { &prefix }
                 );
-                traverse_and_install(dependency, graph, locked, new_prefix).await?;
+
+                traverse_and_install(context, dependency, graph, locked, new_prefix).await?;
             }
 
             Ok(())
@@ -279,6 +278,7 @@ impl Context {
 
         for dependency in manifest.dependencies {
             traverse_and_install(
+                self,
                 &dependency.package,
                 &dependency_graph,
                 &mut locked,
@@ -291,19 +291,19 @@ impl Context {
     }
 
     /// Uninstalls dependencies
-    pub async fn uninstall(self: Arc<Self>) -> miette::Result<()> {
-        PackageStore::current().await?.clear().await
+    pub async fn uninstall(self: &Arc<Self>) -> miette::Result<()> {
+        self.store().clear().await
     }
 
     /// Generate bindings for a given language
     #[cfg(feature = "build")]
     pub async fn generate(
-        self: Arc<Self>,
+        self: &Arc<Self>,
         language: Language,
         out_dir: PathBuf,
     ) -> miette::Result<()> {
         Generator::Protoc { language, out_dir }
-            .generate()
+            .generate(self)
             .await
             .wrap_err(miette!("failed to generate {language} bindings"))
     }
