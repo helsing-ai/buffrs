@@ -1,5 +1,5 @@
 use crate::{credentials::Credentials, package::PackageStore};
-use miette::{IntoDiagnostic, Result};
+use miette::IntoDiagnostic;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -26,7 +26,7 @@ impl Context {
     /// Create new context.
     ///
     /// This will create and initialize a new `buffrs` project.
-    pub async fn create<P: Into<PathBuf>>(path: P) -> Result<Arc<Self>> {
+    pub async fn create<P: Into<PathBuf>>(path: P) -> miette::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             store: PackageStore::create(path.into()).await?,
             credentials: Credentials::load().await.map(Arc::new)?,
@@ -36,7 +36,7 @@ impl Context {
     /// Open a context by path.
     ///
     /// This will check if the path is a valid `buffrs` project, and return an error if it is not.
-    pub async fn open<P: Into<PathBuf>>(path: P) -> Result<Arc<Self>> {
+    pub async fn open<P: Into<PathBuf>>(path: P) -> miette::Result<Arc<Self>> {
         Ok(Arc::new(Self {
             store: PackageStore::open(&path.into()).await?,
             credentials: Credentials::load().await.map(Arc::new)?,
@@ -44,7 +44,7 @@ impl Context {
     }
 
     /// Open a context in the current working directory.
-    pub async fn open_current() -> Result<Arc<Self>> {
+    pub async fn open_current() -> miette::Result<Arc<Self>> {
         let current = std::env::current_dir().into_diagnostic()?;
         Self::open(current).await
     }
