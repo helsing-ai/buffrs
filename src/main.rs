@@ -15,12 +15,13 @@
 use std::path::PathBuf;
 
 use buffrs::command;
+use buffrs::context::Context;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
 use buffrs::{credentials::Credentials, manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
-use miette::{miette, Context};
+use miette::{miette, Context as _};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -137,8 +138,8 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let credentials = Credentials::load().await?;
 
+    // commands without a context
     match cli.command {
         Command::Init { lib, api, package } => {
             let kind = if lib {
@@ -149,28 +150,51 @@ async fn main() -> miette::Result<()> {
                 PackageType::Impl
             };
 
-            command::init(kind, package.to_owned())
-                .await
-                .wrap_err(miette!(
-                    "failed to initialize {}{kind} package",
-                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
-                ))
+            Context::init(kind, package).await.wrap_err(miette!(
+                "failed to initialize {}{kind} package",
+                package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+            ))?;
+
+            return Ok(());
         }
+        Command::Login { registry } => {
+            let credentials = Credentials::load().await?;
+
+            return command::login(credentials, registry)
+                .await
+                .wrap_err(miette!("failed to login to `{registry}`"));
+        }
+        Command::Logout { registry } => {
+            let credentials = Credentials::load().await?;
+
+            return command::logout(credentials, registry)
+                .await
+                .wrap_err(miette!("failed to logout from `{registry}`"));
+        }
+        _ => {}
+    };
+
+    let context = Context::open_current().await?;
+
+    // handle all other commands
+    match cli.command {
+        Command::Init { .. } => unreachable!(),
+        Command::Login { .. } => unreachable!(),
+        Command::Logout { .. } => unreachable!(),
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry.to_owned(), &dependency)
-            .await
-            .wrap_err(miette!(
-                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-            )),
-        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
+        } => context.add(registry, &dependency).await.wrap_err(miette!(
+            "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+        )),
+        Command::Remove { package } => context.remove(package).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
         )),
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run)
+        } => context
+            .package(output_directory, dry_run)
             .await
             .wrap_err(miette!(
                 "failed to export `{}` into the buffrs package format",
@@ -181,36 +205,26 @@ async fn main() -> miette::Result<()> {
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(
-            credentials,
-            registry.to_owned(),
-            repository.to_owned(),
-            allow_dirty,
-            dry_run,
-        )
-        .await
-        .wrap_err(miette!(
-            "failed to publish `{}` to `{}:{}`",
-            Manifest::read().await?.package.name,
-            registry,
-            repository
-        )),
-        Command::Install => command::install(credentials).await.wrap_err(miette!(
+        } => context
+            .publish(registry, repository, allow_dirty, dry_run)
+            .await
+            .wrap_err(miette!(
+                "failed to publish `{}` to `{}:{}`",
+                Manifest::read().await?.package.name,
+                registry,
+                repository
+            )),
+        Command::Install => context.install().await.wrap_err(miette!(
             "failed to install dependencies for `{}`",
             Manifest::read().await?.package.name,
         )),
-        Command::Uninstall => command::uninstall().await.wrap_err(miette!(
+        Command::Uninstall => context.uninstall().await.wrap_err(miette!(
             "failed to install dependencies for `{}`",
             Manifest::read().await?.package.name,
         )),
-        Command::Generate { language, out_dir } => command::generate(language, out_dir)
+        Command::Generate { language, out_dir } => context
+            .generate(language, out_dir)
             .await
             .wrap_err(miette!("failed to generate {language} language bindings")),
-        Command::Login { registry } => command::login(credentials, registry.to_owned())
-            .await
-            .wrap_err(miette!("failed to login to `{registry}`")),
-        Command::Logout { registry } => command::logout(credentials, registry.to_owned())
-            .await
-            .wrap_err(miette!("failed to logout from `{registry}`")),
     }
 }

@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    fmt,
-    path::{Path, PathBuf},
-};
+use std::{fmt, path::PathBuf};
 
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use protoc_bin_vendored::protoc_bin_path;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info};
 
 use crate::{manifest::Manifest, package::PackageStore};
 
@@ -65,9 +63,9 @@ impl Generator {
 
         std::env::set_var("PROTOC", protoc.clone());
 
-        let store = Path::new(PackageStore::PROTO_PATH);
-        let protos = PackageStore::collect(store).await;
-        let includes = &[store];
+        let store = PackageStore::current().await?;
+        let protos = store.collect(&store.proto_path()).await;
+        let includes = &[store.proto_path()];
 
         match self {
             Generator::Tonic => {
@@ -99,7 +97,7 @@ impl Generator {
 
                 protoc_cmd.args(&protos);
 
-                tracing::debug!(":: running {protoc_cmd:?}");
+                debug!(":: running {protoc_cmd:?}");
 
                 let output = protoc_cmd.output().await.into_diagnostic()?;
 
@@ -113,7 +111,7 @@ impl Generator {
                     String::from_utf8_lossy(&output.stderr)
                 );
 
-                tracing::info!(":: {language} code generated successfully");
+                info!(":: {language} code generated successfully");
             }
         }
 
@@ -125,11 +123,12 @@ impl Generator {
     /// Execute code generation with pre-configured parameters
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
+        let store = PackageStore::current().await?;
 
-        tracing::info!(":: initializing code generator");
+        info!(":: initializing code generator");
 
         ensure!(
-            manifest.package.kind.compilable() || !manifest.dependencies.is_empty(),
+            manifest.package.kind.is_compilable() || !manifest.dependencies.is_empty(),
             "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
         );
 
@@ -137,21 +136,19 @@ impl Generator {
             .await
             .wrap_err(miette!("failed to generate bindings"))?;
 
-        if manifest.package.kind.compilable() {
-            let location = Path::new(PackageStore::PROTO_PATH);
-            tracing::info!(
+        if manifest.package.kind.is_compilable() {
+            info!(
                 ":: compiled {} [{}]",
                 manifest.package.name,
-                location.display()
+                store.proto_path().display()
             );
         }
 
         for dependency in manifest.dependencies {
-            let location = PackageStore::locate(&dependency.package);
-            tracing::info!(
+            info!(
                 ":: compiled {} [{}]",
                 dependency.package,
-                location.display()
+                store.locate(&dependency.package).display()
             );
         }
 

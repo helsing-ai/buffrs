@@ -14,7 +14,7 @@
 
 use miette::{miette, Context, Diagnostic, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{collections::HashMap, env, io::ErrorKind, path::PathBuf};
 use thiserror::Error;
 use tokio::fs;
 
@@ -30,6 +30,8 @@ pub const BUFFRS_HOME: &str = ".buffrs";
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
 /// Credential store for storing authentication data
+///
+/// This type represents a snapshot of the read credential store.
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
     /// A mapping from registry URIs to their corresponding tokens
@@ -62,17 +64,22 @@ impl Credentials {
     }
 
     /// Reads the credentials from the file system
-    pub async fn read() -> miette::Result<Self> {
-        let raw: RawCredentialCollection = toml::from_str(
-            &fs::read_to_string(location().into_diagnostic()?)
-                .await
-                .into_diagnostic()
-                .wrap_err(ReadError(CREDENTIALS_FILE))?,
-        )
-        .into_diagnostic()
-        .wrap_err(DeserializationError(ManagedFile::Credentials))?;
+    pub async fn read() -> miette::Result<Option<Self>> {
+        let location = location().into_diagnostic()?;
 
-        Ok(raw.into())
+        // if the file does not exist, we don't need to treat it as an error.
+        match fs::read_to_string(&location).await {
+            Ok(contents) => {
+                let raw: RawCredentialCollection = toml::from_str(&contents)
+                    .into_diagnostic()
+                    .wrap_err(DeserializationError(ManagedFile::Credentials))?;
+                Ok(Some(raw.into()))
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error)
+                .into_diagnostic()
+                .wrap_err(ReadError(CREDENTIALS_FILE)),
+        }
     }
 
     /// Writes the credentials to the file system
@@ -102,9 +109,9 @@ impl Credentials {
     ///
     /// Note: Initializes the credential file if its not present
     pub async fn load() -> miette::Result<Self> {
-        let Ok(credentials) = Self::read().await else {
+        let Some(credentials) = Self::read().await? else {
             let credentials = Credentials::default();
-            credentials.write().await?;
+            credentials.write().await.wrap_err("Writing empty config")?;
             return Ok(credentials);
         };
 

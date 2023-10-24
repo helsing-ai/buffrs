@@ -13,78 +13,109 @@
 // limitations under the License.
 
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
+    env::current_dir,
     fmt::{self, Formatter},
-    fs::File,
     io::{self, Cursor, Read, Write},
     ops::Deref,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
 };
 
-use async_recursion::async_recursion;
 use bytes::{Buf, Bytes};
-use miette::{ensure, miette, Context, Diagnostic, IntoDiagnostic};
-use semver::{Version, VersionReq};
+use miette::{ensure, miette, Context, IntoDiagnostic};
+use semver::Version;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    credentials::Credentials,
     errors::{DeserializationError, SerializationError},
-    lock::{LockedPackage, Lockfile},
-    manifest::{self, Dependency, Manifest, MANIFEST_FILE},
-    registry::{Artifactory, RegistryUri},
+    lock::LockedPackage,
+    manifest::{self, Manifest, MANIFEST_FILE},
+    registry::RegistryUri,
     ManagedFile,
 };
 
 /// IO abstraction layer over local `buffrs` package store
-pub struct PackageStore;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageStore {
+    root: PathBuf,
+}
 
 impl PackageStore {
     /// Path to the proto directory
-    pub const PROTO_PATH: &str = "proto";
+    const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
+    const PROTO_VENDOR_PATH: &str = "proto/vendor";
+
+    fn new(root: PathBuf) -> Self {
+        Self { root }
+    }
+
+    /// Open current directory.
+    pub async fn current() -> miette::Result<Self> {
+        Self::open(&current_dir().into_diagnostic()?).await
+    }
+
+    /// Check if this store exists
+    async fn exists(&self) -> miette::Result<bool> {
+        let meta = fs::metadata(&self.proto_path()).await.into_diagnostic()?;
+
+        Ok(meta.is_dir())
+    }
+
+    /// Open given directory.
+    pub async fn open(path: &Path) -> miette::Result<Self> {
+        let store = Self::new(path.into());
+
+        if !store.exists().await? {
+            miette::bail!("package store does not exist");
+        }
+
+        Ok(store)
+    }
+
+    /// Path to the `proto` directory.
+    pub fn proto_path(&self) -> PathBuf {
+        self.root.join(Self::PROTO_PATH)
+    }
+
+    /// Path to the vendor directory.
+    pub fn proto_vendor_path(&self) -> PathBuf {
+        self.root.join(Self::PROTO_VENDOR_PATH)
+    }
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create() -> miette::Result<()> {
-        let create = |dir: &'static str| async move {
-            fs::create_dir_all(dir)
+    pub async fn create(path: PathBuf) -> miette::Result<Self> {
+        let store = PackageStore::new(path);
+        let create = |dir: PathBuf| async move {
+            fs::create_dir_all(&dir)
                 .await
                 .into_diagnostic()
-                .wrap_err(miette!("failed to create {dir} directory"))
+                .wrap_err(miette!("failed to create {} directory", dir.display()))
         };
 
-        create(Self::PROTO_PATH).await?;
-        create(Self::PROTO_VENDOR_PATH).await?;
+        create(store.proto_path()).await?;
+        create(store.proto_vendor_path()).await?;
 
-        Ok(())
+        Ok(store)
     }
-}
 
-impl PackageStore {
     /// Clears all packages from the file system
-    pub async fn clear() -> miette::Result<()> {
-        match fs::remove_dir_all(Self::PROTO_VENDOR_PATH).await {
+    pub async fn clear(&self) -> miette::Result<()> {
+        let path = self.proto_vendor_path();
+        match fs::remove_dir_all(&path).await {
             Ok(()) => Ok(()),
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(miette!("directory {} not found", Self::PROTO_VENDOR_PATH))
+                Err(miette!("directory {path:?} not found"))
             }
-            Err(_) => Err(miette!(
-                "failed to clear {} directory",
-                Self::PROTO_VENDOR_PATH,
-            )),
+            Err(_) => Err(miette!("failed to clear {path:?} directory",)),
         }
     }
-}
 
-impl PackageStore {
     /// Unpacks a package into a local directory
-    pub async fn unpack(package: &Package) -> miette::Result<()> {
+    pub async fn unpack(&self, package: &Package) -> miette::Result<()> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(package.tgz.clone().reader());
@@ -95,8 +126,7 @@ impl PackageStore {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let pkg_dir =
-            Path::new(Self::PROTO_VENDOR_PATH).join(package.manifest.package.name.as_str());
+        let pkg_dir = self.locate(&package.manifest.package.name);
 
         fs::remove_dir_all(&pkg_dir).await.ok();
 
@@ -127,12 +157,10 @@ impl PackageStore {
 
         Ok(())
     }
-}
 
-impl PackageStore {
     /// Uninstalls a package from the local file system
-    pub async fn uninstall(package: &PackageName) -> miette::Result<()> {
-        let pkg_dir = Path::new(Self::PROTO_VENDOR_PATH).join(package.as_str());
+    pub async fn uninstall(&self, package: &PackageName) -> miette::Result<()> {
+        let pkg_dir = self.proto_vendor_path().join(&**package);
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -141,20 +169,16 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(package: &PackageName) -> miette::Result<Manifest> {
-        Manifest::read_from(Self::locate(package).join(MANIFEST_FILE))
+    pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
+        Manifest::read_from(self.locate(package).join(MANIFEST_FILE))
             .await
             .wrap_err(miette!("failed to resolve package {package}"))
     }
-}
 
-impl PackageStore {
     /// Packages a release from the local file system state
-    pub async fn release() -> miette::Result<Package> {
-        let manifest = Manifest::read().await?;
-
+    pub async fn release(&self, manifest: Manifest) -> miette::Result<Package> {
         ensure!(
-            manifest.package.kind != PackageType::Impl,
+            manifest.package.kind.is_publishable(),
             "packages with type `impl` cannot be published"
         );
 
@@ -164,7 +188,7 @@ impl PackageStore {
         );
 
         for dependency in manifest.dependencies.iter() {
-            let resolved = Self::resolve(&dependency.package).await?;
+            let resolved = self.resolve(&dependency.package).await?;
 
             ensure!(
                 resolved.package.kind == PackageType::Lib,
@@ -173,115 +197,34 @@ impl PackageStore {
             );
         }
 
-        let pkg_path = fs::canonicalize(&Self::PROTO_PATH)
-            .await
-            .into_diagnostic()
-            .wrap_err({
-                miette!(
-                    "failed to locate package folder (expected directory {} to be present)",
-                    Self::PROTO_PATH
-                )
-            })?;
+        let pkg_path = self.proto_path();
+        let mut entries = BTreeMap::new();
 
-        let mut archive = tar::Builder::new(Vec::new());
-
-        let manifest_bytes = {
-            let as_str: String = manifest
-                .clone()
-                .try_into()
-                .into_diagnostic()
-                .wrap_err(SerializationError(ManagedFile::Manifest))?;
-            as_str.into_bytes()
-        };
-
-        let mut header = tar::Header::new_gnu();
-        header.set_size(
-            manifest_bytes
-                .len()
-                .try_into()
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "serialized manifest was too large to fit in a tarball"
-                ))?,
-        );
-        header.set_mode(0o444);
-        archive
-            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
-            .into_diagnostic()
-            .wrap_err(miette!("failed to add manifest to release"))?;
-
-        for entry in Self::collect(&pkg_path).await {
-            let file = File::open(&entry)
-                .into_diagnostic()
-                .wrap_err(miette!("failed to open file {}", entry.display()))?;
-
-            let mut header = tar::Header::new_gnu();
-            header.set_mode(0o444);
-            header.set_size(
-                file.metadata()
-                    .into_diagnostic()
-                    .wrap_err({
-                        miette!("failed to fetch metadata for entry {}", entry.display())
-                    })?
-                    .len(),
-            );
-
-            archive
-                .append_data(
-                    &mut header,
-                    entry
-                        .strip_prefix(&pkg_path)
-                        .into_diagnostic()
-                        .wrap_err(miette!(
-                            "unexpected error: collected file path is not under package prefix"
-                        ))?,
-                    file,
-                )
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "failed to add proto {} to release tar",
-                    entry.display()
-                ))?;
+        for entry in self.collect(&pkg_path).await {
+            let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
+            let contents = tokio::fs::read(&entry).await.unwrap();
+            entries.insert(path.into(), contents.into());
         }
 
-        let tar = archive
-            .into_inner()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to assemble tar package"))?;
-
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-
-        encoder
-            .write_all(&tar)
-            .into_diagnostic()
-            .wrap_err(miette!("failed to compress release"))?;
-
-        let tgz = encoder
-            .finish()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to finalize package"))?
-            .into();
+        let package = Package::create(manifest, entries)?;
 
         tracing::info!(
             ":: packaged {}@{}",
-            manifest.package.name,
-            manifest.package.version
+            package.manifest.package.name,
+            package.manifest.package.version
         );
 
-        Ok(Package::new(manifest, tgz))
+        Ok(package)
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(package: &PackageName) -> PathBuf {
-        PathBuf::from(Self::PROTO_VENDOR_PATH).join(package.as_str())
+    pub fn locate(&self, package: &PackageName) -> PathBuf {
+        self.proto_vendor_path().join(&**package)
     }
 
     /// Collect .proto files in a given path whilst excluding vendored ones
-    pub async fn collect(path: &Path) -> Vec<PathBuf> {
-        let vendor_path = fs::canonicalize(&Self::PROTO_VENDOR_PATH)
-            .await
-            .unwrap_or(Self::PROTO_VENDOR_PATH.into());
-
+    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
+        let vendor_path = self.proto_vendor_path();
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
@@ -315,35 +258,71 @@ impl Package {
         Self { manifest, tgz }
     }
 
-    /// The name of this package
-    #[inline]
-    pub fn name(&self) -> &PackageName {
-        &self.manifest.package.name
-    }
-
-    /// The version of this package
-    #[inline]
-    pub fn version(&self) -> &Version {
-        &self.manifest.package.version
-    }
-
-    /// Lock this package
+    /// Create new [`Package`] from [`Manifest`] and list of files.
     ///
-    /// Note that despite returning a Result this function never fails
-    pub fn lock(
-        &self,
-        registry: RegistryUri,
-        repository: String,
-        dependants: usize,
-    ) -> miette::Result<LockedPackage> {
-        LockedPackage::lock(self, registry, repository, dependants)
+    /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
+    /// lexicographically. This ensures a reproducible output.
+    pub fn create(manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+        let mut archive = tar::Builder::new(Vec::new());
+
+        let manifest_bytes = {
+            let as_str: String = manifest
+                .clone()
+                .try_into()
+                .into_diagnostic()
+                .wrap_err(SerializationError(ManagedFile::Manifest))?;
+            as_str.into_bytes()
+        };
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(
+            manifest_bytes
+                .len()
+                .try_into()
+                .into_diagnostic()
+                .wrap_err(miette!(
+                    "serialized manifest was too large to fit in a tarball"
+                ))?,
+        );
+        header.set_mode(0o444);
+        archive
+            .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
+            .into_diagnostic()
+            .wrap_err(miette!("failed to add manifest to release"))?;
+
+        for (name, contents) in &files {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o444);
+            header.set_size(contents.len() as u64);
+            archive
+                .append_data(&mut header, name, &contents[..])
+                .into_diagnostic()
+                .wrap_err(miette!("failed to add proto {name:?} to release tar"))?;
+        }
+
+        let tar = archive
+            .into_inner()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to assemble tar package"))?;
+
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+
+        encoder
+            .write_all(&tar)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to compress release"))?;
+
+        let tgz = encoder
+            .finish()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to finalize package"))?
+            .into();
+
+        Ok(Package::new(manifest, tgz))
     }
-}
 
-impl TryFrom<Bytes> for Package {
-    type Error = miette::Report;
-
-    fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
+    /// Load a package from a precompressed archive.
+    fn parse(tgz: Bytes) -> miette::Result<Self> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());
@@ -385,16 +364,44 @@ impl TryFrom<Bytes> for Package {
 
         Ok(Self { manifest, tgz })
     }
+
+    /// The name of this package
+    #[inline]
+    pub fn name(&self) -> &PackageName {
+        &self.manifest.package.name
+    }
+
+    /// The version of this package
+    #[inline]
+    pub fn version(&self) -> &Version {
+        &self.manifest.package.version
+    }
+
+    /// Lock this package
+    ///
+    /// Note that despite returning a Result this function never fails
+    pub fn lock(
+        &self,
+        registry: RegistryUri,
+        repository: String,
+        dependants: usize,
+    ) -> miette::Result<LockedPackage> {
+        LockedPackage::lock(self, registry, repository, dependants)
+    }
 }
 
-impl From<&Package> for Bytes {
-    fn from(value: &Package) -> Self {
-        value.tgz.clone()
+impl TryFrom<Bytes> for Package {
+    type Error = miette::Report;
+
+    fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
+        Package::parse(tgz)
     }
 }
 
 /// Package types
-#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageType {
     /// A library package containing primitive type definitions
@@ -404,17 +411,18 @@ pub enum PackageType {
     /// An implementation package that implements an api or library
     ///
     /// Note: Implementation packages can't be published via Buffrs
+    #[default]
     Impl,
 }
 
 impl PackageType {
     /// Whether this package type is publishable
-    pub fn publishable(&self) -> bool {
+    pub fn is_publishable(&self) -> bool {
         *self != Self::Impl
     }
 
     /// Whether this package type is compilable
-    pub fn compilable(&self) -> bool {
+    pub fn is_compilable(&self) -> bool {
         *self != Self::Impl
     }
 }
@@ -429,73 +437,96 @@ impl FromStr for PackageType {
 
 impl fmt::Display for PackageType {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", serde_typename::to_str(self).unwrap_or_default())
-    }
-}
-
-impl Default for PackageType {
-    fn default() -> Self {
-        Self::Impl
+        match serde_typename::to_str(self) {
+            Ok(value) => f.write_str(value),
+            Err(_error) => unreachable!(),
+        }
     }
 }
 
 /// A `buffrs` package name for parsing and type safety
-#[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(try_from = "String", into = "String")]
 pub struct PackageName(String);
 
-impl TryFrom<String> for PackageName {
-    type Error = miette::Report;
+/// Errors that can be generated parsing [`PackageName`][], see [`PackageName::new()`][].
+#[derive(thiserror::Error, Debug, PartialEq)]
+pub enum PackageNameError {
+    /// Incorrect length.
+    #[error("package name must be at least three chars long, but was {0:} long")]
+    Length(usize),
+    /// Invalid start character.
+    #[error("package name must start with alphabetic character, but was {0:}")]
+    InvalidStart(char),
+    /// Invalid character.
+    #[error("package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}")]
+    InvalidCharacter(char, usize),
+}
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        ensure!(
-            value.len() >= 3,
-            "package names must be at least three chars long"
-        );
-
-        let all_lower_alphanum = value
-            .chars()
-            .all(|c| (c.is_ascii_alphanumeric() && !c.is_ascii_uppercase()) || c == '-');
-
-        ensure!(all_lower_alphanum, "invalid package name: {value} - only ASCII lowercase alphanumeric characters and dashes are accepted");
-
-        const UNEXPECTED_MSG: &str =
-            "unexpected error: package name length should be validated prior to first character check";
-
-        ensure!(
-            value
-                .chars()
-                .next()
-                .ok_or(miette!(UNEXPECTED_MSG))?
-                .is_alphabetic(),
-            "package names must begin with an alphabetic letter"
-        );
-
+impl PackageName {
+    /// New package name from string.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, PackageNameError> {
+        let value = value.into();
+        Self::validate(&value)?;
         Ok(Self(value))
     }
-}
 
-impl TryFrom<&str> for PackageName {
-    type Error = miette::Report;
+    /// Determine if this character is allowed at the start of a package name.
+    fn is_allowed_start(c: char) -> bool {
+        c.is_alphabetic()
+    }
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_string())
+    /// Determine if this character is allowed anywhere in a package name.
+    fn is_allowed(c: char) -> bool {
+        let is_ascii_lowercase_alphanumeric =
+            |c: char| c.is_ascii_alphanumeric() && !c.is_ascii_uppercase();
+        match c {
+            '-' => true,
+            c if is_ascii_lowercase_alphanumeric(c) => true,
+            _ => false,
+        }
+    }
+
+    /// Validate a package name.
+    pub fn validate(name: &str) -> Result<(), PackageNameError> {
+        // validate length
+        if name.len() < 3 {
+            return Err(PackageNameError::Length(name.len()));
+        }
+
+        // validate first character
+        match name.chars().next() {
+            Some(c) if Self::is_allowed_start(c) => {}
+            Some(c) => return Err(PackageNameError::InvalidStart(c)),
+            None => unreachable!(),
+        }
+
+        // validate all characters
+        let illegal = name
+            .chars()
+            .enumerate()
+            .find(|(_, c)| !Self::is_allowed(*c));
+        if let Some((index, c)) = illegal {
+            return Err(PackageNameError::InvalidCharacter(c, index));
+        }
+
+        Ok(())
     }
 }
 
-impl TryFrom<&String> for PackageName {
-    type Error = miette::Report;
+impl TryFrom<String> for PackageName {
+    type Error = PackageNameError;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
-        Self::try_from(value.to_owned())
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 
 impl FromStr for PackageName {
     type Err = miette::Report;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::try_from(s)
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        Self::new(input).into_diagnostic()
     }
 }
 
@@ -506,7 +537,7 @@ impl From<PackageName> for String {
 }
 
 impl Deref for PackageName {
-    type Target = String;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -519,201 +550,62 @@ impl fmt::Display for PackageName {
     }
 }
 
-impl fmt::Debug for PackageName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("PackageName")
-            .field(&format!("{self}"))
-            .finish()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_parse_package_name() {
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+        assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
+        assert_eq!(
+            PackageName::new("4abc"),
+            Err(PackageNameError::InvalidStart('4'))
+        );
+        assert_eq!(
+            PackageName::new("serde_typename"),
+            Err(PackageNameError::InvalidCharacter('_', 5))
+        );
     }
-}
 
-/// Represents a dependency contextualized by the current dependency graph
-pub struct ResolvedDependency {
-    /// The materialized package as downloaded from the registry
-    pub package: Package,
-    /// The registry the package was downloaded from
-    pub registry: RegistryUri,
-    /// The repository in the registry where the package can be found
-    pub repository: String,
-    /// Packages that requested this dependency (and what versions they accept)
-    pub dependants: Vec<Dependant>,
-    /// Transitive dependencies
-    pub depends_on: Vec<PackageName>,
-}
+    #[test]
+    fn can_get_proto_path() {
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_path(),
+            PathBuf::from("/tmp/proto")
+        );
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_vendor_path(),
+            PathBuf::from("/tmp/proto/vendor")
+        );
+    }
 
-/// Represents a requester of the associated dependency
-pub struct Dependant {
-    /// Package that requested the dependency
-    pub name: PackageName,
-    /// Version requirement
-    pub version_req: VersionReq,
-}
+    #[test]
+    fn can_check_publishable() {
+        assert!(PackageType::Lib.is_publishable());
+        assert!(PackageType::Api.is_publishable());
+        assert!(!PackageType::Impl.is_publishable());
+    }
 
-/// Represents direct and transitive dependencies of the root package
-pub struct DependencyGraph {
-    entries: HashMap<PackageName, ResolvedDependency>,
-}
+    #[test]
+    fn can_check_compilable() {
+        assert!(PackageType::Lib.is_compilable());
+        assert!(PackageType::Api.is_compilable());
+        assert!(!PackageType::Impl.is_compilable());
+    }
 
-#[derive(Error, Diagnostic, Debug)]
-#[error("failed to download dependency {name}@{version} from the registry")]
-struct DownloadError {
-    name: PackageName,
-    version: VersionReq,
-}
+    #[test]
+    fn can_default_package_type() {
+        assert_eq!(PackageType::default(), PackageType::Impl);
+    }
 
-impl DependencyGraph {
-    /// Recursively resolves dependencies from the manifest to build a dependency graph
-    pub async fn from_manifest(
-        manifest: &Manifest,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-    ) -> miette::Result<Self> {
-        let name = manifest.package.name.clone();
-
-        let mut entries = HashMap::new();
-
-        for dependency in &manifest.dependencies {
-            Self::process_dependency(
-                name.clone(),
-                dependency.clone(),
-                true,
-                lockfile,
-                credentials,
-                &mut entries,
-            )
-            .await?;
+    #[test]
+    fn can_parse_package_type() {
+        let types = [PackageType::Lib, PackageType::Api, PackageType::Impl];
+        for typ in &types {
+            let string = typ.to_string();
+            let parsed: PackageType = string.parse().unwrap();
+            assert_eq!(parsed, *typ);
         }
-
-        Ok(Self { entries })
-    }
-
-    #[async_recursion]
-    async fn process_dependency(
-        name: PackageName,
-        dependency: Dependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
-    ) -> miette::Result<()> {
-        let version_req = dependency.manifest.version.clone();
-        if let Some(entry) = entries.get_mut(&dependency.package) {
-            ensure!(
-                version_req.matches(entry.package.version()),
-                "a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
-                    dependency.package,
-                    dependency.manifest.version,
-                    entry.dependants[0].name.clone(),
-                    dependency.manifest.version,
-                    entry.package.manifest.package.version.clone(),
-            );
-
-            entry.dependants.push(Dependant { name, version_req });
-        } else {
-            let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials).await?;
-
-            let dependency_name = dependency_pkg.name().clone();
-            let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
-            let sub_dependency_names: Vec<_> = sub_dependencies
-                .iter()
-                .map(|sub_dependency| sub_dependency.package.clone())
-                .collect();
-
-            entries.insert(
-                dependency_name.clone(),
-                ResolvedDependency {
-                    package: dependency_pkg,
-                    registry: dependency.manifest.registry,
-                    repository: dependency.manifest.repository,
-                    dependants: vec![Dependant { name, version_req }],
-                    depends_on: sub_dependency_names,
-                },
-            );
-
-            for sub_dependency in sub_dependencies {
-                Self::process_dependency(
-                    dependency_name.clone(),
-                    sub_dependency,
-                    false,
-                    lockfile,
-                    credentials,
-                    entries,
-                )
-                .await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn resolve(
-        dependency: Dependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-    ) -> miette::Result<Package> {
-        if let Some(local_locked) = lockfile.get(&dependency.package) {
-            ensure!(
-                dependency.manifest.version.matches(&local_locked.version),
-                "dependency {} cannot be satisfied - requested {}, but version {} is locked",
-                dependency.package,
-                dependency.manifest.version,
-                local_locked.version,
-            );
-
-            ensure!(
-                is_root || dependency.manifest.registry == local_locked.registry,
-                "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
-                    dependency.package,
-                    dependency.manifest.registry,
-                    local_locked.registry,
-            );
-
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            let package = registry
-                .download(dependency.with_version(&local_locked.version))
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })?;
-
-            local_locked.validate(&package)?;
-
-            Ok(package)
-        } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            registry
-                .download(dependency.clone())
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })
-        }
-    }
-
-    /// Locates and returns a reference to a resolved dependency package by its name
-    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
-        self.entries.get(name)
-    }
-}
-
-impl IntoIterator for DependencyGraph {
-    type Item = ResolvedDependency;
-    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_values()
     }
 }

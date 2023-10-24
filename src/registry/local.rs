@@ -95,12 +95,13 @@ impl LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::{Dependency, Manifest, PackageManifest};
-    use crate::package::{Package, PackageType};
-    use crate::registry::local::LocalRegistry;
+    use crate::{
+        manifest::{Dependency, Manifest, PackageManifest},
+        package::{Package, PackageType},
+        registry::local::LocalRegistry,
+    };
     use bytes::Bytes;
-    use std::env;
-    use std::path::PathBuf;
+    use std::{env, path::PathBuf};
     use tokio::fs;
 
     #[tokio::test]
