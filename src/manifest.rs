@@ -24,7 +24,7 @@ use std::{
 use tokio::fs;
 
 use crate::{
-    errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
+    errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
     ManagedFile,
@@ -91,28 +91,43 @@ impl Manifest {
 
     /// Loads the manifest from the current directory
     pub async fn read() -> miette::Result<Self> {
-        Self::read_from(MANIFEST_FILE).await
+        Self::try_read()
+            .await?
+            .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
+    }
+
+    /// Tries to load the manifest from the given filepath
+    pub async fn try_read() -> miette::Result<Option<Self>> {
+        Self::try_read_from(MANIFEST_FILE).await
+    }
+
+    /// Loads the manifest from the current directory
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
+        Self::try_read_from(path)
+            .await?
+            .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
     }
 
     /// Loads the manifest from the given path
-    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
-        let path_ref = path.as_ref();
+    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Option<Self>> {
+        let contents = match fs::read_to_string(path.as_ref()).await {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(e) => {
+                return Err(e).into_diagnostic().wrap_err(miette!(
+                    "failed to read manifest from `{}`",
+                    path.as_ref().display()
+                ));
+            }
+        };
 
-        match fs::read_to_string(&path_ref).await {
-            Ok(contents) => {
-                let raw: RawManifest = toml::from_str(&contents)
-                    .into_diagnostic()
-                    .wrap_err(DeserializationError(ManagedFile::Manifest))?;
-                Ok(raw.into())
-            }
-            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(FileNotFound(path_ref.display().to_string()).into())
-            }
-            Err(_) => Err(miette!(
-                "failed to read manifest from `{}`",
-                path_ref.display()
-            )),
-        }
+        let raw: RawManifest = toml::from_str(&contents)
+            .into_diagnostic()
+            .wrap_err(DeserializationError(ManagedFile::Manifest))?;
+
+        Ok(Some(raw.into()))
     }
 
     /// Persists the manifest into the current directory

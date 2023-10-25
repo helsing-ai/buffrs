@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use crate::{
-    context::Context,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
@@ -30,7 +29,7 @@ use std::path::PathBuf;
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
-use std::{env, path::Path, sync::Arc};
+use std::{env, path::Path, str::FromStr};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -39,52 +38,56 @@ use tokio::{
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
-impl Context {
-    /// Initializes the project
-    pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
-        if Manifest::exists().await? {
-            bail!("a manifest file was found, project is already initialized");
-        }
-
-        fn curr_dir_name() -> miette::Result<PackageName> {
-            std::env::current_dir()
-                .into_diagnostic()?
-                .file_name()
-                // because the path originates from the current directory, this condition is never met
-                .ok_or(miette!(
-                    "unexpected error: current directory path terminates in .."
-                ))?
-                .to_str()
-                .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
-                .parse()
-        }
-
-        let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
-
-        let manifest = Manifest {
-            package: PackageManifest {
-                kind,
-                name,
-                version: INITIAL_VERSION,
-                description: None,
-            },
-            dependencies: vec![],
-        };
-
-        manifest.write().await?;
-
-        PackageStore::create(std::env::current_dir().unwrap_or_else(|_| ".".into()))
-            .await
-            .wrap_err(miette!("failed to create buffrs project directories"))?;
-        Ok(())
+/// Initializes the project
+pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
+    if Manifest::exists().await? {
+        bail!("a manifest file was found, project is already initialized");
     }
 
-    /// Adds a dependency to this project
-    pub async fn add(
-        self: Arc<Self>,
-        registry: RegistryUri,
-        dependency: &str,
-    ) -> miette::Result<()> {
+    fn curr_dir_name() -> miette::Result<PackageName> {
+        std::env::current_dir()
+            .into_diagnostic()?
+            .file_name()
+            // because the path originates from the current directory, this condition is never met
+            .ok_or(miette!(
+                "unexpected error: current directory path terminates in .."
+            ))?
+            .to_str()
+            .ok_or_else(|| miette!("current directory path is not valid utf-8"))?
+            .parse()
+    }
+
+    let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
+
+    let manifest = Manifest {
+        package: PackageManifest {
+            kind,
+            name,
+            version: INITIAL_VERSION,
+            description: None,
+        },
+        dependencies: vec![],
+    };
+
+    manifest.write().await?;
+
+    PackageStore::create(std::env::current_dir().unwrap_or_else(|_| ".".into()))
+        .await
+        .wrap_err(miette!("failed to create buffrs project directories"))?;
+
+    Ok(())
+}
+
+struct DependencyLocator {
+    repository: String,
+    package: PackageName,
+    version: VersionReq,
+}
+
+impl FromStr for DependencyLocator {
+    type Err = miette::Report;
+
+    fn from_str(dependency: &str) -> miette::Result<Self> {
         let lower_kebab = |c: char| (c.is_lowercase() && c.is_ascii_alphabetic()) || c == '-';
 
         let (repository, dependency) = dependency
@@ -112,211 +115,222 @@ impl Context {
             .into_diagnostic()
             .wrap_err(miette!("not a valid version requirement: {version}"))?;
 
-        let mut manifest = Manifest::read().await?;
+        Ok(Self {
+            repository,
+            package,
+            version,
+        })
+    }
+}
 
-        manifest
-            .dependencies
-            .push(Dependency::new(registry, repository, package, version));
+/// Adds a dependency to this project
+pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
 
-        manifest
-            .write()
-            .await
-            .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
+    let DependencyLocator {
+        repository,
+        package,
+        version,
+    } = dependency.parse()?;
+
+    manifest
+        .dependencies
+        .push(Dependency::new(registry, repository, package, version));
+
+    manifest
+        .write()
+        .await
+        .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
+}
+
+/// Removes a dependency from this project
+pub async fn remove(package: PackageName) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
+    let store = PackageStore::current().await?;
+
+    let dependency = manifest
+        .dependencies
+        .iter()
+        .position(|d| d.package == package)
+        .ok_or_else(|| miette!("package {package} not in manifest"))?;
+
+    let dependency = manifest.dependencies.remove(dependency);
+
+    store.uninstall(&dependency.package).await.ok();
+
+    manifest.write().await
+}
+
+/// Packages the api and writes it to the filesystem
+pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+    let store = PackageStore::current().await?;
+
+    let package = store.release(manifest).await?;
+
+    if dry_run {
+        return Ok(());
     }
 
-    /// Removes a dependency from this project
-    pub async fn remove(self: Arc<Self>, package: PackageName) -> miette::Result<()> {
-        let mut manifest = Manifest::read().await?;
-
-        let match_idx = manifest
-            .dependencies
-            .iter()
-            .position(|d| d.package == package)
-            .ok_or_else(|| miette!("package {package} not in manifest"))?;
-
-        let dependency = manifest.dependencies.remove(match_idx);
-
-        // if PackageStore::uninstall(&dependency.package).await.is_err() {
-        //     tracing::warn!("failed to uninstall package {}", dependency.package);
-        // }
-
-        PackageStore::current()
-            .await?
-            .uninstall(&dependency.package)
-            .await
-            .ok(); // temporary due to broken test
-
-        manifest.write().await
-    }
-
-    /// Packages the api and writes it to the filesystem
-    pub async fn package(
-        self: Arc<Self>,
-        directory: impl AsRef<Path>,
-        dry_run: bool,
-    ) -> miette::Result<()> {
-        let manifest = Manifest::read().await?;
-        let package = PackageStore::current().await?.release(manifest).await?;
-
-        let path = directory.as_ref().join(format!(
+    let path = {
+        let file = format!(
             "{}-{}.tgz",
             package.manifest.package.name, package.manifest.package.version
-        ));
+        );
 
-        if !dry_run {
-            fs::write(path, package.tgz)
-                .await
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "failed to write package release to the current directory"
-                ))?;
+        directory.as_ref().join(file)
+    };
+
+    fs::write(path, package.tgz)
+        .await
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "failed to write package release to the current directory"
+        ))
+}
+
+/// Publishes the api package to the registry
+pub async fn publish(
+    registry: RegistryUri,
+    repository: String,
+    #[cfg(feature = "git")] allow_dirty: bool,
+    dry_run: bool,
+) -> miette::Result<()> {
+    #[cfg(feature = "git")]
+    if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
+        let statuses = repository
+            .statuses(None)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to determine repository status"))?;
+
+        if !allow_dirty && !statuses.is_empty() {
+            tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
+
+            statuses
+                .iter()
+                .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
+
+            tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
+
+            bail!("attempted to publish a dirty repository");
+        }
+    }
+
+    let manifest = Manifest::read().await?;
+    let credentials = Credentials::load().await?;
+    let store = PackageStore::current().await?;
+    let artifactory = Artifactory::new(registry, &credentials)?;
+
+    let package = store.release(manifest).await?;
+
+    if dry_run {
+        tracing::warn!(":: aborting upload due to dry run");
+        return Ok(());
+    }
+
+    artifactory.publish(package, repository).await
+}
+
+/// Installs dependencies
+pub async fn install() -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+    let lockfile = Lockfile::read_or_default().await?;
+    let store = PackageStore::current().await?;
+    let credentials = Credentials::load().await?;
+
+    let dependency_graph =
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
+            .await
+            .wrap_err(miette!("dependency resolution failed"))?;
+
+    let mut locked = Vec::new();
+
+    #[async_recursion]
+    async fn traverse_and_install(
+        name: &PackageName,
+        graph: &DependencyGraph,
+        store: &PackageStore,
+        locked: &mut Vec<LockedPackage>,
+        prefix: String,
+    ) -> miette::Result<()> {
+        let resolved = graph.get(name).ok_or(miette!(
+            "unexpected error: missing dependency in dependency graph"
+        ))?;
+
+        store.unpack(&resolved.package).await.wrap_err(miette!(
+            "failed to unpack package {}",
+            &resolved.package.name()
+        ))?;
+
+        tracing::info!(
+            "{} installed {}@{}",
+            if prefix.is_empty() { "::" } else { &prefix },
+            name,
+            resolved.package.version()
+        );
+
+        locked.push(resolved.package.lock(
+            resolved.registry.clone(),
+            resolved.repository.clone(),
+            resolved.dependants.len(),
+        )?);
+
+        for (index, dependency) in resolved.depends_on.iter().enumerate() {
+            let tree_char = if index + 1 == resolved.depends_on.len() {
+                '┗'
+            } else {
+                '┣'
+            };
+
+            let new_prefix = format!(
+                "{} {tree_char}",
+                if prefix.is_empty() { "  " } else { &prefix }
+            );
+
+            traverse_and_install(dependency, graph, store, locked, new_prefix).await?;
         }
 
         Ok(())
     }
 
-    /// Publishes the api package to the registry
-    pub async fn publish(
-        self: Arc<Self>,
-        registry: RegistryUri,
-        repository: String,
-        #[cfg(feature = "git")] allow_dirty: bool,
-        dry_run: bool,
-    ) -> miette::Result<()> {
-        #[cfg(feature = "git")]
-        if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
-            let statuses = repository
-                .statuses(None)
-                .into_diagnostic()
-                .wrap_err(miette!("failed to determine repository status"))?;
-
-            if !allow_dirty && !statuses.is_empty() {
-                tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
-
-                statuses
-                    .iter()
-                    .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
-
-                tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
-
-                bail!("attempted to publish a dirty repository");
-            }
-        }
-
-        let artifactory = Artifactory::new(registry, self.credentials())?;
-
-        let manifest = Manifest::read().await?;
-        let package = PackageStore::current().await?.release(manifest).await?;
-
-        if dry_run {
-            tracing::warn!(":: aborting upload due to dry run");
-            return Ok(());
-        }
-
-        artifactory.publish(package, repository).await
+    for dependency in manifest.dependencies {
+        traverse_and_install(
+            &dependency.package,
+            &dependency_graph,
+            &store,
+            &mut locked,
+            String::new(),
+        )
+        .await?;
     }
 
-    /// Installs dependencies
-    pub async fn install(self: Arc<Self>) -> miette::Result<()> {
-        let manifest = Manifest::read().await?;
-        let lockfile = Lockfile::read_or_default().await?;
-        let dependency_graph =
-            DependencyGraph::from_manifest(&manifest, &lockfile, self.credentials())
-                .await
-                .wrap_err(miette!("dependency resolution failed"))?;
+    Lockfile::from_iter(locked.into_iter()).write().await
+}
 
-        let mut locked = Vec::new();
+/// Uninstalls dependencies
+pub async fn uninstall() -> miette::Result<()> {
+    PackageStore::current().await?.clear().await
+}
 
-        #[async_recursion]
-        async fn traverse_and_install(
-            name: &PackageName,
-            graph: &DependencyGraph,
-            locked: &mut Vec<LockedPackage>,
-            prefix: String,
-        ) -> miette::Result<()> {
-            let resolved = graph.get(name).ok_or(miette!(
-                "unexpected error: missing dependency in dependency graph"
-            ))?;
-
-            PackageStore::current()
-                .await?
-                .unpack(&resolved.package)
-                .await
-                .wrap_err(miette!(
-                    "failed to unpack package {}",
-                    &resolved.package.name()
-                ))?;
-
-            tracing::info!(
-                "{} installed {}@{}",
-                if prefix.is_empty() { "::" } else { &prefix },
-                name,
-                resolved.package.version()
-            );
-
-            locked.push(resolved.package.lock(
-                resolved.registry.clone(),
-                resolved.repository.clone(),
-                resolved.dependants.len(),
-            )?);
-
-            for (index, dependency) in resolved.depends_on.iter().enumerate() {
-                let tree_char = if index + 1 == resolved.depends_on.len() {
-                    '┗'
-                } else {
-                    '┣'
-                };
-
-                let new_prefix = format!(
-                    "{} {tree_char}",
-                    if prefix.is_empty() { "  " } else { &prefix }
-                );
-                traverse_and_install(dependency, graph, locked, new_prefix).await?;
-            }
-
-            Ok(())
-        }
-
-        for dependency in manifest.dependencies {
-            traverse_and_install(
-                &dependency.package,
-                &dependency_graph,
-                &mut locked,
-                String::new(),
-            )
-            .await?;
-        }
-
-        Lockfile::from_iter(locked.into_iter()).write().await
-    }
-
-    /// Uninstalls dependencies
-    pub async fn uninstall(self: Arc<Self>) -> miette::Result<()> {
-        PackageStore::current().await?.clear().await
-    }
-
-    /// Generate bindings for a given language
-    #[cfg(feature = "build")]
-    pub async fn generate(
-        self: Arc<Self>,
-        language: Language,
-        out_dir: PathBuf,
-    ) -> miette::Result<()> {
-        Generator::Protoc { language, out_dir }
-            .generate()
-            .await
-            .wrap_err(miette!("failed to generate {language} bindings"))
-    }
+/// Generate bindings for a given language
+#[cfg(feature = "build")]
+pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
+    Generator::Protoc { language, out_dir }
+        .generate()
+        .await
+        .wrap_err(miette!("failed to generate {language} bindings"))
 }
 
 /// Logs you in for a registry
-pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
+pub async fn login(registry: RegistryUri) -> miette::Result<()> {
+    let mut credentials = Credentials::load().await?;
+
+    tracing::info!(":: please enter your artifactory token:");
+
     let token = {
-        tracing::info!("Please enter your artifactory token:");
-
         let mut raw = String::new();
-
         let mut reader = BufReader::new(io::stdin());
+
         reader
             .read_line(&mut raw)
             .await
@@ -339,7 +353,8 @@ pub async fn login(mut credentials: Credentials, registry: RegistryUri) -> miett
 }
 
 /// Logs you out from a registry
-pub async fn logout(mut credentials: Credentials, registry: RegistryUri) -> miette::Result<()> {
+pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
+    let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
 }

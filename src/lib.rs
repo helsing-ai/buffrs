@@ -17,8 +17,6 @@
 
 /// CLI command implementations
 pub mod command;
-/// Shared context.
-pub mod context;
 /// Credential management
 pub mod credentials;
 /// Common error types
@@ -43,17 +41,15 @@ pub mod resolver;
 #[cfg(feature = "build")]
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
-    let context = context::Context::open_current().await?;
+    let store = package::PackageStore::current().await?;
 
     println!(
         "cargo:rerun-if-changed={}",
-        context.store().proto_vendor_path().display()
+        store.proto_vendor_path().display()
     );
 
-    // install dependencies
-    context.install().await?;
+    command::install().await?;
 
-    // run code generation
     generator::Generator::Tonic.generate().await?;
 
     Ok(())

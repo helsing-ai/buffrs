@@ -23,7 +23,7 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, IntoDiagnostic, WrapErr};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
