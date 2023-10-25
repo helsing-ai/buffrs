@@ -41,6 +41,12 @@ pub struct Package {
     pub tgz: Bytes,
 }
 
+pub type Files = BTreeMap<PathBuf, Bytes>;
+
+fn check_path(path: &Path) -> miette::Result<()> {
+    Ok(())
+}
+
 impl Package {
     /// Creates a new package
     pub fn new(manifest: Manifest, tgz: Bytes) -> Self {
@@ -108,6 +114,28 @@ impl Package {
             .into();
 
         Ok(Package::new(manifest, tgz))
+    }
+
+    /// Decompress package files.
+    pub fn files(&self) -> miette::Result<Files> {
+        let mut tar = Vec::new();
+        let mut gz = flate2::read::GzDecoder::new(self.tgz.clone().reader());
+
+        gz.read_to_end(&mut tar)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to decompress package {}", self.name()))?;
+
+        let mut tar = tar::Archive::new(Bytes::from(tar).reader());
+
+        let mut files = Files::new();
+
+        for entry in tar.entries().into_diagnostic()? {
+            let entry = entry.into_diagnostic()?;
+            let path = entry.path().unwrap();
+            check_path(&path)?;
+        }
+
+        Ok(files)
     }
 
     /// Unpack a package to a specific path.
