@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 
 use buffrs::command;
+use buffrs::generator::Language;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
@@ -102,7 +103,7 @@ enum Command {
         /// Language used for code generation
         #[clap(long = "lang")]
         #[arg(value_enum)]
-        language: buffrs::generator::Language,
+        language: Language,
         /// Directory where generated code should be created
         #[clap(long = "out-dir")]
         out_dir: PathBuf,
