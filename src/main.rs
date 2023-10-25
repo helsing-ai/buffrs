@@ -150,24 +150,26 @@ async fn main() -> miette::Result<()> {
                 PackageType::Impl
             };
 
-            Context::init(kind, package).await.wrap_err(miette!(
-                "failed to initialize {}{kind} package",
-                package.map(|p| format!("`{p}` as ")).unwrap_or_default()
-            ))?;
+            Context::init(kind, package.to_owned())
+                .await
+                .wrap_err(miette!(
+                    "failed to initialize {}{kind} package",
+                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+                ))?;
 
             return Ok(());
         }
         Command::Login { registry } => {
             let credentials = Credentials::load().await?;
 
-            return command::login(credentials, registry)
+            return command::login(credentials, registry.to_owned())
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"));
         }
         Command::Logout { registry } => {
             let credentials = Credentials::load().await?;
 
-            return command::logout(credentials, registry)
+            return command::logout(credentials, registry.to_owned())
                 .await
                 .wrap_err(miette!("failed to logout from `{registry}`"));
         }
@@ -184,10 +186,13 @@ async fn main() -> miette::Result<()> {
         Command::Add {
             registry,
             dependency,
-        } => context.add(registry, &dependency).await.wrap_err(miette!(
-            "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-        )),
-        Command::Remove { package } => context.remove(package).await.wrap_err(miette!(
+        } => context
+            .add(registry.to_owned(), &dependency)
+            .await
+            .wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            )),
+        Command::Remove { package } => context.remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
         )),
         Command::Package {
@@ -210,7 +215,7 @@ async fn main() -> miette::Result<()> {
             .await
             .wrap_err(miette!(
                 "failed to publish `{}` to `{}:{}`",
-                Manifest::read().await?.package.name,
+                context.manifest.package.name,
                 registry,
                 repository
             )),
