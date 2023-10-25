@@ -170,9 +170,12 @@ impl PackageStore {
 
     /// Resolves a package in the local file system
     pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
-        Manifest::read_from(self.locate(package).join(MANIFEST_FILE))
+        let manifest = Manifest::try_read_from(self.locate(package).join(MANIFEST_FILE))
             .await
-            .wrap_err(miette!("failed to resolve package {package}"))
+            .wrap_err(miette!("failed to resolve package {package}"))?
+            .ok_or(miette!("package store is corrupt, please clear it"))?;
+
+        Ok(manifest)
     }
 
     /// Packages a release from the local file system state

@@ -91,19 +91,7 @@ impl Manifest {
 
     /// Loads the manifest from the current directory
     pub async fn read() -> miette::Result<Self> {
-        Self::try_read()
-            .await?
-            .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
-    }
-
-    /// Tries to load the manifest from the given filepath
-    pub async fn try_read() -> miette::Result<Option<Self>> {
-        Self::try_read_from(MANIFEST_FILE).await
-    }
-
-    /// Loads the manifest from the current directory
-    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
-        Self::try_read_from(path)
+        Self::try_read_from(MANIFEST_FILE)
             .await?
             .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
     }
