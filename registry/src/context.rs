@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::proto::buffrs::registry::{
-    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse,
+    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse, VersionsRequest, VersionsResponse,
 };
 use async_trait::async_trait;
 use sqlx::PgPool;
