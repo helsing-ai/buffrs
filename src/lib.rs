@@ -15,16 +15,8 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
-use std::fmt::Display;
-
-use credentials::CREDENTIALS_FILE;
-use lock::LOCKFILE;
-use manifest::MANIFEST_FILE;
-
 /// CLI command implementations
 pub mod command;
-/// Shared context.
-pub mod context;
 /// Credential management
 pub mod credentials;
 /// Common error types
@@ -49,17 +41,13 @@ pub mod resolver;
 #[cfg(feature = "build")]
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
-    let context = context::Context::open_current().await?;
-
     println!(
         "cargo:rerun-if-changed={}",
-        context.store().proto_vendor_path().display()
+        package::PackageStore::PROTO_PATH
     );
 
-    // install dependencies
-    context.install().await?;
+    command::install().await?;
 
-    // run code generation
     generator::Generator::Tonic.generate().await?;
 
     Ok(())
@@ -88,6 +76,10 @@ pub(crate) enum ManagedFile {
 
 impl ManagedFile {
     fn name(&self) -> &str {
+        use credentials::CREDENTIALS_FILE;
+        use lock::LOCKFILE;
+        use manifest::MANIFEST_FILE;
+
         match self {
             ManagedFile::Manifest => MANIFEST_FILE,
             ManagedFile::Lock => LOCKFILE,
@@ -96,7 +88,7 @@ impl ManagedFile {
     }
 }
 
-impl Display for ManagedFile {
+impl std::fmt::Display for ManagedFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.name())
     }
