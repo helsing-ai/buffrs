@@ -48,7 +48,7 @@ impl FromStr for DigestAlgorithm {
 #[test]
 fn can_parse_digest_algorithm() {
     assert!(matches!("sha256".parse(), Ok(DigestAlgorithm::SHA256)));
-    assert!(matches!("md5".parse::<DigestAlgorithm>(), Err(_)));
+    assert!("md5".parse::<DigestAlgorithm>().is_err());
 }
 
 impl fmt::Display for DigestAlgorithm {
