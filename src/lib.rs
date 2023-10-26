@@ -41,11 +41,9 @@ pub mod resolver;
 #[cfg(feature = "build")]
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
-    let store = package::PackageStore::current().await?;
-
     println!(
         "cargo:rerun-if-changed={}",
-        store.proto_vendor_path().display()
+        package::PackageStore::PROTO_PATH
     );
 
     command::install().await?;

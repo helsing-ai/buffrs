@@ -35,9 +35,9 @@ pub struct PackageStore {
 
 impl PackageStore {
     /// Path to the proto directory
-    const PROTO_PATH: &str = "proto";
+    pub const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
-    const PROTO_VENDOR_PATH: &str = "proto/vendor";
+    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     fn new(root: PathBuf) -> Self {
         Self { root }
@@ -133,9 +133,8 @@ impl PackageStore {
         let manifest = self.locate(package).join(MANIFEST_FILE);
 
         let manifest = Manifest::try_read_from(manifest)
-            .await
-            .wrap_err(miette!("failed to resolve package {package}"))?
-            .ok_or(miette!("package store is be corrupted"))?;
+            .await?
+            .ok_or(miette!("the package store is corrupted"))?;
 
         Ok(manifest)
     }
