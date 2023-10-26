@@ -100,6 +100,8 @@ impl FromStr for DependencyLocator {
             "repository {repository} is not in kebab case"
         );
 
+        ensure!(!repository.is_empty(), "repository must not be empty");
+
         let repository = repository.into();
 
         let (package, version) = dependency.split_once('@').ok_or_else(|| {
@@ -357,4 +359,34 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DependencyLocator;
+
+    #[test]
+    fn valid_dependency_locator() {
+        assert!("repo/pkg@1.0.0".parse::<DependencyLocator>().is_ok());
+        assert!("repo/pkg@=1.0".parse::<DependencyLocator>().is_ok());
+        assert!("repo-with-dash/pkg@=1.0"
+            .parse::<DependencyLocator>()
+            .is_ok());
+        assert!("repo-with-dash/pkg-with-dash@=1.0"
+            .parse::<DependencyLocator>()
+            .is_ok());
+        assert!("repo/pkg@=1.0.0-with-prerelease"
+            .parse::<DependencyLocator>()
+            .is_ok());
+    }
+
+    #[test]
+    fn invalid_dependency_locators() {
+        assert!("/xyz@1.0.0".parse::<DependencyLocator>().is_err());
+        assert!("repo/@1.0.0".parse::<DependencyLocator>().is_err());
+        assert!("repo@1.0.0".parse::<DependencyLocator>().is_err());
+        assert!("repo/pkg".parse::<DependencyLocator>().is_err());
+        assert!("repo/pkg@=1#meta".parse::<DependencyLocator>().is_err());
+        assert!("repo/PKG@=1.0".parse::<DependencyLocator>().is_err());
+    }
 }
