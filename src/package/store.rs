@@ -35,9 +35,9 @@ pub struct PackageStore {
 
 impl PackageStore {
     /// Path to the proto directory
-    const PROTO_PATH: &str = "proto";
+    pub const PROTO_PATH: &str = "proto";
     /// Path to the dependency store
-    const PROTO_VENDOR_PATH: &str = "proto/vendor";
+    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
 
     fn new(root: PathBuf) -> Self {
         Self { root }
@@ -130,9 +130,13 @@ impl PackageStore {
 
     /// Resolves a package in the local file system
     pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
-        Manifest::read_from(self.locate(package).join(MANIFEST_FILE))
-            .await
-            .wrap_err(miette!("failed to resolve package {package}"))
+        let manifest = self.locate(package).join(MANIFEST_FILE);
+
+        let manifest = Manifest::try_read_from(manifest)
+            .await?
+            .ok_or(miette!("the package store is corrupted"))?;
+
+        Ok(manifest)
     }
 
     /// Packages a release from the local file system state

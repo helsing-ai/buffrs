@@ -1,6 +1,6 @@
 [package]
 name = "buffrs"
-version = "0.6.4"
+version = "0.7.0"
 edition = "2021"
 description = "Modern protobuf package management"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
@@ -66,6 +66,3 @@ predicates = "3.0"
 pretty_assertions = "1.4"
 ring = "0.16.20"
 hex = "0.4.3"
-
-[workspace]
-members = [".", "registry"]
