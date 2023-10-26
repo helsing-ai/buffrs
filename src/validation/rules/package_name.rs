@@ -41,15 +41,16 @@ impl Rule for PackageName {
     }
 
     fn check_package(&mut self, package: &Package) -> Violations {
-        if is_prefix(&self.name, &package.name) {
-            Violations::default()
-        } else {
+        if !is_prefix(&self.name, &package.name) {
             let message = violation::Message {
                 message: format!("package name is {} but should have {} prefix", package.name, self.name),
                 help: "Make sure the file name matches the package. For example, a package with the name `package.subpackage` should be stored in `proto/package/subpackage.proto`.".into(),
             };
-            vec![self.to_violation(message)]
+
+            return vec![self.to_violation(message)];
         }
+
+        Violations::default()
     }
 }
 

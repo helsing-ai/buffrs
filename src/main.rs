@@ -218,7 +218,7 @@ async fn main() -> miette::Result<()> {
         } => context
             .lint()
             .await
-            .wrap_err(miette!("lint command failed")),
+            .wrap_err(miette!("failed to lint protocol buffers in `proto/`")),
         Command::Install => context
             .install()
             .await

@@ -33,10 +33,7 @@ impl Rule for FileName {
 
     fn check_package(&mut self, package: &Package) -> Violations {
         let candidate = file_name(&package.name);
-        let correct = candidate == package.file;
-        if correct {
-            Violations::default()
-        } else {
+        if candidate != package.file {
             let message = violation::Message {
                 message: format!(
                     "file name should be {candidate:?} but is {:?}",
@@ -44,8 +41,11 @@ impl Rule for FileName {
                 ),
                 help: "Try to rename the file to align with the package name.".into(),
             };
-            vec![self.to_violation(message)]
+
+            return vec![self.to_violation(message)];
         }
+
+        Violations::default()
     }
 }
 

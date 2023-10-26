@@ -40,20 +40,13 @@ pub struct Location {
 }
 
 /// Violation message.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct Message {
     /// Message describing violation
     pub message: String,
     /// Information on what went wrong
     pub help: String,
-}
-
-impl std::error::Error for Message {}
-
-impl Display for Message {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.message)
-    }
 }
 
 impl Diagnostic for Message {}

@@ -37,6 +37,7 @@ impl Parser {
         let mut parser = protobuf_parse::Parser::new();
         parser.pure();
         parser.include(root);
+
         Self { parser }
     }
 
@@ -48,10 +49,12 @@ impl Parser {
     /// Parse into [`Packages`].
     pub fn parse(self) -> Result<Packages, ParseError> {
         let fds = self.parser.file_descriptor_set()?;
+
         let mut packages = Packages::default();
         for file in &fds.file {
             packages.add(file)?;
         }
+
         Ok(packages)
     }
 }
