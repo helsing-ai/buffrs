@@ -14,12 +14,14 @@
 
 use std::path::PathBuf;
 
-use buffrs::{
-    command, context::Context, credentials::Credentials, package::PackageName,
-    package::PackageType, registry::RegistryUri,
-};
+use buffrs::command;
+use buffrs::generator::Language;
+use buffrs::manifest::Manifest;
+use buffrs::package::{PackageName, PackageStore};
+use buffrs::registry::RegistryUri;
+use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
-use miette::{miette, Context as _};
+use miette::{miette, IntoDiagnostic, WrapErr};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -47,19 +49,7 @@ enum Command {
     },
 
     /// Check rule violations for this package.
-    Lint {
-        /// Allow these rules to be violated.
-        #[clap(long, short)]
-        allow: Vec<String>,
-
-        /// Treat these rule violations as errors.
-        #[clap(long, short)]
-        deny: Vec<String>,
-
-        /// Treat these rule violations as warnings.
-        #[clap(long, short)]
-        warn: Vec<String>,
-    },
+    Lint,
 
     /// Adds dependencies to a manifest file
     Add {
@@ -116,7 +106,7 @@ enum Command {
         /// Language used for code generation
         #[clap(long = "lang")]
         #[arg(value_enum)]
-        language: buffrs::generator::Language,
+        language: Language,
         /// Directory where generated code should be created
         #[clap(long = "out-dir")]
         out_dir: PathBuf,
@@ -152,8 +142,17 @@ async fn main() -> miette::Result<()> {
 
     let cli = Cli::parse();
 
-    // all of the commands that do not assume an initialised project.
-    let context = match cli.command {
+    let manifest = if Manifest::exists().await? {
+        Some(Manifest::read().await?)
+    } else {
+        None
+    };
+
+    let package: PackageName = manifest
+        .map(|m| m.package.name)
+        .unwrap_or(PackageName::new("unknown").into_diagnostic()?);
+
+    match cli.command {
         Command::Init { lib, api, package } => {
             let kind = if lib {
                 PackageType::Lib
@@ -163,73 +162,65 @@ async fn main() -> miette::Result<()> {
                 PackageType::Impl
             };
 
-            Context::init(kind, package)
+            command::init(kind, package.to_owned())
                 .await
-                .wrap_err(miette!("init command failed"))?;
-            return Ok(());
+                .wrap_err(miette!(
+                    "failed to initialize {}{kind} package",
+                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+                ))
         }
-        Command::Login { registry } => {
-            let credentials = Credentials::load().await?;
-            return command::login(credentials, registry).await;
-        }
-        Command::Logout { registry } => {
-            let credentials = Credentials::load().await?;
-            return command::logout(credentials, registry).await;
-        }
-        _ => Context::open_current().await.wrap_err("Opening context")?,
-    };
-
-    // handle all other commands
-    match cli.command {
-        Command::Init { .. } => unreachable!(),
-        Command::Login { .. } => unreachable!(),
-        Command::Logout { .. } => unreachable!(),
+        Command::Login { registry } => command::login(registry.to_owned())
+            .await
+            .wrap_err(miette!("failed to login to `{registry}`")),
+        Command::Logout { registry } => command::logout(registry.to_owned())
+            .await
+            .wrap_err(miette!("failed to logout from `{registry}`")),
         Command::Add {
             registry,
             dependency,
-        } => context
-            .add(registry, &dependency)
+        } => command::add(registry.to_owned(), &dependency)
             .await
-            .wrap_err(miette!("add command failed")),
-        Command::Remove { package } => context
-            .remove(package)
-            .await
-            .wrap_err(miette!("remove command failed")),
+            .wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            )),
+        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
+            "failed to remove `{package}` from `{MANIFEST_FILE}`"
+        )),
         Command::Package {
             output_directory,
             dry_run,
-        } => context
-            .package(output_directory, dry_run)
+        } => command::package(output_directory, dry_run)
             .await
-            .wrap_err(miette!("package command failed")),
+            .wrap_err(miette!(
+                "failed to export `{package}` into the buffrs package format"
+            )),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
-        } => context
-            .publish(registry, repository, allow_dirty, dry_run)
+        } => command::publish(
+            registry.to_owned(),
+            repository.to_owned(),
+            allow_dirty,
+            dry_run,
+        )
+        .await
+        .wrap_err(miette!(
+            "failed to publish `{package}` to `{registry}:{repository}`",
+        )),
+        Command::Lint => command::lint().await.wrap_err(miette!(
+            "failed to lint protocol buffers in `{}`",
+            PackageStore::PROTO_PATH
+        )),
+        Command::Install => command::install()
             .await
-            .wrap_err(miette!("publish command failed")),
-        Command::Lint {
-            allow: _,
-            warn: _,
-            deny: _,
-        } => context
-            .lint()
+            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        Command::Uninstall => command::uninstall()
             .await
-            .wrap_err(miette!("failed to lint protocol buffers in `proto/`")),
-        Command::Install => context
-            .install()
+            .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
+        Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
-            .wrap_err(miette!("install command failed")),
-        Command::Uninstall => context
-            .uninstall()
-            .await
-            .wrap_err(miette!("uninstall command failed")),
-        Command::Generate { language, out_dir } => context
-            .generate(language, out_dir)
-            .await
-            .wrap_err(miette!("generate command failed")),
+            .wrap_err(miette!("failed to generate {language} language bindings")),
     }
 }

@@ -51,6 +51,7 @@ impl Parser {
         let fds = self.parser.file_descriptor_set()?;
 
         let mut packages = Packages::default();
+
         for file in &fds.file {
             packages.add(file)?;
         }
