@@ -12,4 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-::buffrs::include!();
+use sqlx::PgPool;
+
+pub async fn connect(string: &str) -> eyre::Result<PgPool> {
+    let pool = PgPool::connect(string).await?;
+
+    sqlx::migrate!().run(&pool).await?;
+
+    Ok(pool)
+}

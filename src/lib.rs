@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
 /// CLI command implementations
 pub mod command;
 /// Credential management
 pub mod credentials;
+/// Common error types
+pub mod errors;
 /// Code generator
 #[cfg(feature = "build")]
 pub mod generator;
@@ -29,26 +32,23 @@ pub mod manifest;
 pub mod package;
 /// Supported registries
 pub mod registry;
+/// Resolve package dependencies.
+pub mod resolver;
 
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
-pub fn build() -> eyre::Result<()> {
-    use credentials::Credentials;
-    use package::PackageStore;
+#[tokio::main(flavor = "current_thread")]
+pub async fn build() -> miette::Result<()> {
+    println!(
+        "cargo:rerun-if-changed={}",
+        package::PackageStore::PROTO_PATH
+    );
 
-    async fn install() -> eyre::Result<()> {
-        let credentials = Credentials::read().await?;
-        command::install(credentials).await
-    }
+    command::install().await?;
 
-    println!("cargo:rerun-if-changed={}", PackageStore::PROTO_VENDOR_PATH);
-
-    let rt = tokio::runtime::Runtime::new()?;
-
-    rt.block_on(install())?;
-    rt.block_on(generator::Generator::Tonic.generate())?;
+    generator::Generator::Tonic.generate().await?;
 
     Ok(())
 }
@@ -65,4 +65,31 @@ macro_rules! include {
     () => {
         ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
     };
+}
+
+#[derive(Debug)]
+pub(crate) enum ManagedFile {
+    Credentials,
+    Manifest,
+    Lock,
+}
+
+impl ManagedFile {
+    fn name(&self) -> &str {
+        use credentials::CREDENTIALS_FILE;
+        use lock::LOCKFILE;
+        use manifest::MANIFEST_FILE;
+
+        match self {
+            ManagedFile::Manifest => MANIFEST_FILE,
+            ManagedFile::Lock => LOCKFILE,
+            ManagedFile::Credentials => CREDENTIALS_FILE,
+        }
+    }
+}
+
+impl std::fmt::Display for ManagedFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }

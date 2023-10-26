@@ -1,6 +1,6 @@
 CREATE TABLE versions (
     id            SERIAL PRIMARY KEY,
-    package_id    INTEGER NOT NULL FOREIGN KEY on(packages) ON DELETE RESTRICT,
+    package_id    INTEGER NOT NULL REFERENCES packages(id) ON DELETE RESTRICT,
     version       TEXT NOT NULL,
 
     checksum      TEXT NOT NULL, -- sha3 256bit
@@ -26,7 +26,7 @@ CREATE TABLE version_dependencies (
     id          SERIAL PRIMARY KEY,
     version_id  INTEGER NOT NULL,
     package_id  INTEGER NOT NULL,
-    requirement TEXT NOT NULL,
+    requirement TEXT NOT NULL
 );
 
 CREATE TABLE categories (

@@ -12,4 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-::buffrs::include!();
+mod compressed;
+mod name;
+mod store;
+mod r#type;
+
+pub use self::{compressed::Package, name::PackageName, r#type::PackageType, store::PackageStore};

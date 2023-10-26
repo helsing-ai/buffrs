@@ -15,10 +15,13 @@
 use std::path::PathBuf;
 
 use buffrs::command;
+use buffrs::generator::Language;
+use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
-use buffrs::{credentials::Credentials, package::PackageType};
+use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
+use miette::{miette, IntoDiagnostic, WrapErr};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -100,7 +103,7 @@ enum Command {
         /// Language used for code generation
         #[clap(long = "lang")]
         #[arg(value_enum)]
-        language: buffrs::generator::Language,
+        language: Language,
         /// Directory where generated code should be created
         #[clap(long = "out-dir")]
         out_dir: PathBuf,
@@ -120,11 +123,9 @@ enum Command {
     },
 }
 
-#[tokio::main]
-async fn main() -> eyre::Result<()> {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
-
-    color_eyre::install()?;
 
     tracing_subscriber::fmt()
         .compact()
@@ -137,11 +138,20 @@ async fn main() -> eyre::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let credentials = Credentials::load().await?;
+
+    let manifest = if Manifest::exists().await? {
+        Some(Manifest::read().await?)
+    } else {
+        None
+    };
+
+    let package: PackageName = manifest
+        .map(|m| m.package.name)
+        .unwrap_or(PackageName::new("unknown").into_diagnostic()?);
 
     match cli.command {
         Command::Init { lib, api, package } => {
-            let r#type = if lib {
+            let kind = if lib {
                 PackageType::Lib
             } else if api {
                 PackageType::Api
@@ -149,27 +159,61 @@ async fn main() -> eyre::Result<()> {
                 PackageType::Impl
             };
 
-            command::init(r#type, package).await
+            command::init(kind, package.to_owned())
+                .await
+                .wrap_err(miette!(
+                    "failed to initialize {}{kind} package",
+                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+                ))
         }
+        Command::Login { registry } => command::login(registry.to_owned())
+            .await
+            .wrap_err(miette!("failed to login to `{registry}`")),
+        Command::Logout { registry } => command::logout(registry.to_owned())
+            .await
+            .wrap_err(miette!("failed to logout from `{registry}`")),
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry, &dependency).await,
-        Command::Remove { package } => command::remove(package).await,
+        } => command::add(registry.to_owned(), &dependency)
+            .await
+            .wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            )),
+        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
+            "failed to remove `{package}` from `{MANIFEST_FILE}`"
+        )),
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run).await,
+        } => command::package(output_directory, dry_run)
+            .await
+            .wrap_err(miette!(
+                "failed to export `{package}` into the buffrs package format"
+            )),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
-        } => command::publish(credentials, registry, repository, allow_dirty, dry_run).await,
-        Command::Install => command::install(credentials).await,
-        Command::Uninstall => command::uninstall().await,
-        Command::Generate { language, out_dir } => command::generate(language, out_dir).await,
-        Command::Login { registry } => command::login(credentials, registry).await,
-        Command::Logout { registry } => command::logout(credentials, registry).await,
+        } => command::publish(
+            registry.to_owned(),
+            repository.to_owned(),
+            allow_dirty,
+            dry_run,
+        )
+        .await
+        .wrap_err(miette!(
+            "failed to publish `{package}` to `{registry}:{repository}`",
+        )),
+        Command::Install => command::install()
+            .await
+            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        Command::Uninstall => command::uninstall()
+            .await
+            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        Command::Generate { language, out_dir } => command::generate(language, out_dir)
+            .await
+            .wrap_err(miette!("failed to generate {language} language bindings")),
     }
 }
