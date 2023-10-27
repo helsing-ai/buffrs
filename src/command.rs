@@ -325,7 +325,7 @@ pub async fn lint() -> miette::Result<()> {
     violations
         .into_iter()
         .map(miette::Report::new)
-        .for_each(|r| println!("{r:?}"));
+        .for_each(|r| eprintln!("{r:?}"));
 
     Ok(())
 }

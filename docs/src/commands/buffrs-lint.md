@@ -1,7 +1,7 @@
 ## buffrs lint
 
 Lints your protocol buffers for the ([Buffrs Protocol Buffer
-Rules](../reference/protocol-buffer-rules.md)
+Rules](../reference/protocol-buffer-rules.md))
 
 ### Synopsis
 
