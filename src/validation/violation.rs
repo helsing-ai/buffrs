@@ -83,10 +83,9 @@ impl Diagnostic for Violation {
     }
 
     fn url<'a>(&'a self) -> Option<Box<dyn Display + 'a>> {
-        Some(Box::new(format!(
-            "https://helsing-ai.github.io/buffrs/rules/{}",
-            self.rule
-        )))
+        Some(Box::new(
+            "https://helsing-ai.github.io/buffrs/reference/protocol-buffer-rules.html",
+        ))
     }
 
     fn severity(&self) -> Option<Severity> {
