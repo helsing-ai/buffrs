@@ -50,11 +50,12 @@ impl Parser {
     pub fn parse(self) -> Result<Packages, ParseError> {
         let fds = self.parser.file_descriptor_set()?;
 
-        let mut packages = Packages::default();
-
-        for file in &fds.file {
-            packages.add(file)?;
-        }
+        let packages = fds
+            .file
+            .iter()
+            .try_fold(Packages::default(), |mut packages, item| {
+                packages.add(item).map(|_| packages)
+            })?;
 
         Ok(packages)
     }
