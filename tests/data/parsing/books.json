@@ -1,0 +1,86 @@
+{
+  "packages": {
+    "com.book": {
+      "name": "com.book",
+      "file": "books.proto",
+      "entities": {
+        "Book": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "isbn",
+              "type_": "int64",
+              "label": "optional",
+              "default": null
+            },
+            "2": {
+              "name": "title",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            },
+            "3": {
+              "name": "author",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            }
+          }
+        },
+        "BookService": {
+          "kind": "service"
+        },
+        "BookStore": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "name",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            },
+            "2": {
+              "name": "books",
+              "type_": "message",
+              "label": "repeated",
+              "default": null
+            }
+          }
+        },
+        "EnumSample": {
+          "kind": "enum",
+          "values": {
+            "0": {
+              "name": "UNKNOWN"
+            },
+            "1": {
+              "name": "RUNNING"
+            }
+          }
+        },
+        "GetBookRequest": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "isbn",
+              "type_": "int64",
+              "label": "optional",
+              "default": null
+            }
+          }
+        },
+        "GetBookViaAuthor": {
+          "kind": "message",
+          "fields": {
+            "1": {
+              "name": "author",
+              "type_": "string",
+              "label": "optional",
+              "default": null
+            }
+          }
+        }
+      }
+    }
+  }
+}

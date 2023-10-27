@@ -139,6 +139,24 @@ impl PackageStore {
         Ok(manifest)
     }
 
+    /// Validate this package
+    #[cfg(feature = "validation")]
+    pub async fn validate(
+        &self,
+        manifest: &Manifest,
+    ) -> miette::Result<crate::validation::Violations> {
+        let pkg_path = self.proto_path();
+        let source_files = self.collect(&pkg_path).await;
+
+        let mut parser = crate::validation::Validator::new(&pkg_path, &manifest.package.name);
+
+        for file in &source_files {
+            parser.input(file);
+        }
+
+        parser.validate()
+    }
+
     /// Packages a release from the local file system state
     pub async fn release(&self, manifest: Manifest) -> miette::Result<Package> {
         ensure!(

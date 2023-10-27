@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use buffrs::command;
 use buffrs::generator::Language;
 use buffrs::manifest::Manifest;
-use buffrs::package::PackageName;
+use buffrs::package::{PackageName, PackageStore};
 use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
@@ -47,6 +47,9 @@ enum Command {
         #[clap(requires = "pkg")]
         package: Option<PackageName>,
     },
+
+    /// Check rule violations for this package.
+    Lint,
 
     /// Adds dependencies to a manifest file
     Add {
@@ -206,12 +209,16 @@ async fn main() -> miette::Result<()> {
         .wrap_err(miette!(
             "failed to publish `{package}` to `{registry}:{repository}`",
         )),
+        Command::Lint => command::lint().await.wrap_err(miette!(
+            "failed to lint protocol buffers in `{}`",
+            PackageStore::PROTO_PATH
+        )),
         Command::Install => command::install()
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()
             .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+            .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
             .wrap_err(miette!("failed to generate {language} language bindings")),

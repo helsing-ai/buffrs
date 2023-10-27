@@ -314,6 +314,22 @@ pub async fn uninstall() -> miette::Result<()> {
     PackageStore::current().await?.clear().await
 }
 
+/// Parses current package and validates rules.
+#[cfg(feature = "validation")]
+pub async fn lint() -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+    let store = PackageStore::current().await?;
+
+    let violations = store.validate(&manifest).await?;
+
+    violations
+        .into_iter()
+        .map(miette::Report::new)
+        .for_each(|r| println!("{r:?}"));
+
+    Ok(())
+}
+
 /// Generate bindings for a given language
 #[cfg(feature = "build")]
 pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
