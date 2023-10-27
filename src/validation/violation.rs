@@ -60,7 +60,7 @@ pub struct Violation {
     pub level: Level,
     /// Message
     pub message: Message,
-    /// Location where violation occured
+    /// Location where violation occurred
     pub location: Location,
     /// Help text
     pub info: String,
