@@ -14,8 +14,6 @@
 
 /// Parsed protocol buffer definitions.
 pub mod data;
-/// Rules for checking package differences.
-pub mod diff;
 /// Rules for protocol buffer definitions.
 pub mod rules;
 /// Serde utilities.
