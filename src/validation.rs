@@ -14,20 +14,20 @@
 
 /// Parsed protocol buffer definitions.
 mod data;
+mod parse;
 /// Rules for protocol buffer definitions.
 mod rules;
 /// Serde utilities.
 pub(crate) mod serde;
-
-mod parse;
 mod violation;
 
-use self::parse::*;
-
-pub use self::violation::*;
+pub use violation::*;
 
 use miette::IntoDiagnostic;
 use std::path::Path;
+
+use self::parse::*;
+use crate::package::PackageName;
 
 /// Validates buffrs packages.
 ///
@@ -39,10 +39,10 @@ pub struct Validator {
 
 impl Validator {
     /// Create new parser with a given root path.
-    pub fn new(root: &Path, package: &str) -> Self {
+    pub fn new(root: &Path, package: &PackageName) -> Self {
         Self {
             parser: Parser::new(root),
-            package: package.into(),
+            package: package.to_string(),
         }
     }
 
