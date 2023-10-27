@@ -112,12 +112,11 @@ impl Package {
         rules
             .check_package(self)
             .into_iter()
-            .chain(self.entities.iter().flat_map(|(name, entity)| {
-                rules
-                    .check_entity(name, entity)
-                    .into_iter()
-                    .chain(entity.check(rules).into_iter())
-            }))
+            .chain(
+                self.entities
+                    .iter()
+                    .flat_map(|(name, entity)| rules.check_entity(name, entity).into_iter()),
+            )
             .map(|mut violation| {
                 violation.location.file = Some(self.file.display().to_string());
                 violation.location.package = Some(self.name.clone());

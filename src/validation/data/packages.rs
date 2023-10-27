@@ -72,11 +72,6 @@ impl Packages {
         }
     }
 
-    /// Generate a diff between two parsed [`Packages`].
-    pub fn diff(&self, other: &Self) -> <Self as Diff>::Repr {
-        Diff::diff(self, other)
-    }
-
     /// Run checks against this.
     pub fn check(&self, rules: &mut RuleSet) -> Violations {
         let mut violations = rules.check_packages(self);

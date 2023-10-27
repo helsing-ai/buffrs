@@ -47,10 +47,3 @@ impl From<Message> for Entity {
         Self::Message(entity)
     }
 }
-
-impl Entity {
-    /// Check [`Entity`] against [`RuleSet`] for [`Violations`].
-    pub fn check(&self, _rules: &mut RuleSet) -> Violations {
-        Violations::default()
-    }
-}

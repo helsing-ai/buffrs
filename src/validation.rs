@@ -20,8 +20,6 @@ mod rules;
 pub(crate) mod serde;
 
 mod parse;
-#[cfg(test)]
-mod tests;
 mod violation;
 
 use self::parse::*;
@@ -31,6 +29,9 @@ pub use self::violation::*;
 use miette::IntoDiagnostic;
 use std::path::Path;
 
+/// Validates buffrs packages.
+///
+/// This allows running validations on top of buffrs packages.
 pub struct Validator {
     parser: parse::Parser,
     package: String,
@@ -40,18 +41,49 @@ impl Validator {
     /// Create new parser with a given root path.
     pub fn new(root: &Path, package: &str) -> Self {
         Self {
-            parser: parse::Parser::new(root),
+            parser: Parser::new(root),
             package: package.into(),
         }
     }
 
+    /// Add file to be validated.
     pub fn input(&mut self, file: &Path) {
         self.parser.input(file);
     }
 
+    /// Run validation.
+    ///
+    /// This produces a list of [`Violation`]. These implement the
+    /// [`Diagnostic`](miette::Diagnostic) trait which gives them important metadata, such as the
+    /// severity.
     pub fn validate(self) -> miette::Result<Violations> {
         let parsed = self.parser.parse().into_diagnostic()?;
         let mut rule_set = rules::package_rules(&self.package);
         Ok(parsed.check(&mut rule_set))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use paste::paste;
+
+    macro_rules! parse_test {
+        ($name:ident) => {
+            paste! {
+                #[test]
+                fn [< can_parse_ $name >]() {
+                    use std::path::Path;
+                    let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
+                    parser.input(std::path::Path::new(concat!("tests/data/parsing/", stringify!($name), ".proto")));
+                    let packages = parser.parse().unwrap();
+                    let expected = include_str!(concat!("../tests/data/parsing/", stringify!($name), ".json"));
+                    let expected = serde_json::from_str(&expected).unwrap();
+                    similar_asserts::assert_eq!(packages, expected);
+                }
+            }
+        };
+    }
+
+    parse_test!(books);
+    parse_test!(addressbook);
 }
