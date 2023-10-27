@@ -13,9 +13,9 @@
 // limitations under the License.
 
 /// Parsed protocol buffer definitions.
-pub mod data;
+mod data;
 /// Rules for protocol buffer definitions.
-pub mod rules;
+mod rules;
 /// Serde utilities.
 pub(crate) mod serde;
 
@@ -24,7 +24,34 @@ mod parse;
 mod tests;
 mod violation;
 
-pub use self::{
-    parse::{ParseError, Parser},
-    violation::*,
-};
+use self::parse::*;
+
+pub use self::violation::*;
+
+use miette::IntoDiagnostic;
+use std::path::Path;
+
+pub struct Validator {
+    parser: parse::Parser,
+    package: String,
+}
+
+impl Validator {
+    /// Create new parser with a given root path.
+    pub fn new(root: &Path, package: &str) -> Self {
+        Self {
+            parser: parse::Parser::new(root),
+            package: package.into(),
+        }
+    }
+
+    pub fn input(&mut self, file: &Path) {
+        self.parser.input(file);
+    }
+
+    pub fn validate(self) -> miette::Result<Violations> {
+        let parsed = self.parser.parse().into_diagnostic()?;
+        let mut rule_set = rules::package_rules(&self.package);
+        Ok(parsed.check(&mut rule_set))
+    }
+}

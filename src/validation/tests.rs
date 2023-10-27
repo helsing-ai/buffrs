@@ -21,7 +21,7 @@ macro_rules! parse_test {
             #[test]
             fn [< can_parse_ $name >]() {
                 use std::path::Path;
-                let mut parser = Parser::new(Path::new("tests/data/parsing"));
+                let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
                 parser.input(std::path::Path::new(concat!("tests/data/parsing/", stringify!($name), ".proto")));
                 let packages = parser.parse().unwrap();
                 let expected = include_str!(concat!("../../tests/data/parsing/", stringify!($name), ".json"));

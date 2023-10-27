@@ -148,13 +148,13 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let source_files = self.collect(&pkg_path).await;
 
-        let mut parser = crate::validation::Parser::new(&pkg_path);
+        let mut parser = crate::validation::Validator::new(&pkg_path, &manifest.package.name);
+
         for file in &source_files {
             parser.input(file);
         }
-        let parsed = parser.parse().into_diagnostic()?;
-        let mut rule_set = crate::validation::rules::package_rules(&manifest.package.name);
-        Ok(parsed.check(&mut rule_set))
+
+        parser.validate()
     }
 
     /// Packages a release from the local file system state
