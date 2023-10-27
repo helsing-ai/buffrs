@@ -26,7 +26,7 @@
     * [Cargo](integrations/cargo.md)
     * [Poetry]()
 
-* [Buffrs Reference]()
+* [Buffrs Reference](reference/index.md)
     * [Specifying Dependencies]()
         * [Overriding Dependencies]()
     * [The Manifest Format]()
@@ -35,6 +35,7 @@
     * [Build Configuration]()
     * [Publishing on buff.rs]()
     * [Package Name Specifications]()
+    * [Protocol Buffer Rules](reference/protocol-buffer-rules.md)
     * [Dependency Resolution]()
     * [SemVer Compatibility]()
 
@@ -66,6 +67,7 @@
         * [buffrs update]()
     * [Package Commands](commands/package-commands.md)
         * [buffrs init](commands/buffrs-init.md)
+        * [buffrs lint](commands/buffrs-lint.md)
         * [buffrs package](commands/buffrs-package.md)
         * [buffrs install](commands/buffrs-install.md)
         * [buffrs uninstall](commands/buffrs-uninstall.md)

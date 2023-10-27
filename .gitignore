@@ -1,5 +1,7 @@
 target
 Cargo.lock
 /docs/book/
+/.direnv
+/result
 
 .DS_Store

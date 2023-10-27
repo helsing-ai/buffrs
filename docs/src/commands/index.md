@@ -1,4 +1,4 @@
-# Buffrs commands
+# Buffrs Commands
 
 This section covers detailed documentation on operating the Buffrs CLI. Some of
 the content may also apply to the library, particularly the `command` module.
@@ -22,6 +22,7 @@ generally be more up-to-date.
     * [buffrs remove](buffrs-remove.md)
 * [Package Commands](package-commands.md)
     * [buffrs init](buffrs-init.md)
+    * [buffrs lint](buffrs-lint.md)
     * [buffrs package](buffrs-package.md)
     * [buffrs install](buffrs-install.md)
     * [buffrs uninstall](buffrs-uninstall.md)

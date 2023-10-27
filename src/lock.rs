@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::HashMap, fmt, str::FromStr};
+use std::collections::HashMap;
 
 use miette::{ensure, miette, Context, IntoDiagnostic};
-use ring::digest;
 use semver::Version;
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
 
@@ -28,117 +27,11 @@ use crate::{
     ManagedFile,
 };
 
+mod digest;
+pub use digest::{Digest, DigestAlgorithm};
+
 /// File name of the lockfile
 pub const LOCKFILE: &str = "Proto.lock";
-
-/// Supported types of digest algorithms
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum DigestAlgorithm {
-    // Do not reorder variants: the ordering is significant, see #38 and #106.
-    /// 256 bits variant of SHA-2
-    #[serde(rename = "sha256")]
-    SHA256,
-}
-
-/// Represents a ring digest algorithm that isn't supported by Buffrs
-#[derive(Error, Debug)]
-#[error("unsupported digest algorithm: {0}")]
-pub struct UnsupportedAlgorithm(String);
-
-impl FromStr for DigestAlgorithm {
-    type Err = UnsupportedAlgorithm;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match serde_typename::from_str(input) {
-            Ok(value) => Ok(value),
-            _other => Err(UnsupportedAlgorithm(input.into())),
-        }
-    }
-}
-
-impl fmt::Display for DigestAlgorithm {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match serde_typename::to_str(self) {
-            Ok(name) => fmt.write_str(name),
-            Err(error) => unreachable!("cannot convert DigestAlgorithm to string: {error}"),
-        }
-    }
-}
-
-/// A representation of a cryptographic digest for data integrity validation
-#[derive(Clone, PartialEq, Eq, Ord, PartialOrd)]
-pub struct Digest {
-    // Do not reorder fields: the ordering is significant, see #38 and #106.
-    algorithm: DigestAlgorithm,
-    bytes: Vec<u8>,
-}
-
-impl TryFrom<digest::Digest> for Digest {
-    type Error = UnsupportedAlgorithm;
-
-    fn try_from(value: digest::Digest) -> Result<Self, Self::Error> {
-        let algorithm = if value.algorithm() == &digest::SHA256 {
-            DigestAlgorithm::SHA256
-        } else {
-            return Err(UnsupportedAlgorithm(format!("{:?}", value.algorithm())));
-        };
-
-        Ok(Self {
-            bytes: value.as_ref().to_vec(),
-            algorithm,
-        })
-    }
-}
-
-impl fmt::Display for Digest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}", self.algorithm, hex::encode(&self.bytes))
-    }
-}
-
-impl Serialize for Digest {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-struct DigestVisitor;
-
-impl<'de> Visitor<'de> for DigestVisitor {
-    type Value = Digest;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("a hexadecimal encoded cryptographic digest")
-    }
-
-    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        let mut parts = value.split(':');
-        let algorithm_tag = parts.next().ok_or(E::missing_field("algorithm"))?;
-        let algorithm = algorithm_tag
-            .parse::<DigestAlgorithm>()
-            .map_err(|_| E::custom("invalid digest algorithm"))?;
-        let bytes = parts
-            .next()
-            .ok_or(E::missing_field("bytes"))
-            .and_then(|h| hex::decode(h).map_err(|_| E::custom("invalid encoding")))?;
-        Ok(Self::Value { algorithm, bytes })
-    }
-}
-
-impl<'de> Deserialize<'de> for Digest {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_str(DigestVisitor)
-    }
-}
 
 /// Captures immutable metadata about a given package
 ///
@@ -173,7 +66,7 @@ impl LockedPackage {
         repository: String,
         dependants: usize,
     ) -> miette::Result<Self> {
-        let digest = digest::digest(&digest::SHA256, &package.tgz)
+        let digest = ring::digest::digest(&ring::digest::SHA256, &package.tgz)
             .try_into()
             .into_diagnostic()
             .wrap_err(miette!("unexpected error: only SHA256 is supported"))?;
@@ -196,7 +89,7 @@ impl LockedPackage {
 
     /// Validates if another LockedPackage matches this one
     pub fn validate(&self, package: &Package) -> miette::Result<()> {
-        let digest: Digest = digest::digest(&digest::SHA256, &package.tgz)
+        let digest: Digest = ring::digest::digest(&ring::digest::SHA256, &package.tgz)
             .try_into()
             .unwrap();
 
