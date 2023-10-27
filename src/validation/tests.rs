@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::validation::*;
+use crate::validation::*;
 use paste::paste;
 
 macro_rules! parse_test {
@@ -24,8 +24,7 @@ macro_rules! parse_test {
                 let mut parser = Parser::new(Path::new("tests/data/parsing"));
                 parser.input(std::path::Path::new(concat!("tests/data/parsing/", stringify!($name), ".proto")));
                 let packages = parser.parse().unwrap();
-                let parsed_file = concat!("tests/data/parsing/", stringify!($name), ".json");
-                let expected = std::fs::read_to_string(parsed_file).unwrap();
+                let expected = include_str!(concat!("../../tests/data/parsing/", stringify!($name), ".json"));
                 let expected = serde_json::from_str(&expected).unwrap();
                 similar_asserts::assert_eq!(packages, expected);
             }

@@ -14,19 +14,17 @@
 
 /// Parsed protocol buffer definitions.
 pub mod data;
-
+/// Rules for checking package differences.
+pub mod diff;
 /// Rules for protocol buffer definitions.
 pub mod rules;
-
-mod parse;
-
 /// Serde utilities.
 pub(crate) mod serde;
 
+mod parse;
+#[cfg(test)]
+mod tests;
 mod violation;
-
-/// Rules for checking package differences.
-pub mod diff;
 
 pub use self::{
     parse::{ParseError, Parser},

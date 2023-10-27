@@ -21,9 +21,6 @@ name = "e2e"
 path = "tests/lib.rs"
 test = true
 
-[[test]]
-name = "validation"
-required-features = ["validation"]
 
 [features]
 default = ["build", "git", "validation"]

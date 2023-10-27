@@ -49,81 +49,86 @@ impl Rule for FileName {
     }
 }
 
-#[test]
-fn file_name_package() {
-    assert_eq!(file_name("physics"), PathBuf::from("physics.proto"));
-    assert_eq!(
-        file_name("physics.rotation"),
-        PathBuf::from("physics/rotation.proto")
-    );
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn correct_file_name() {
-    let package = Package {
-        name: "my_package".into(),
-        file: "my_package.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = FileName;
-    assert!(rule.check_package(&package).is_empty());
-}
+    #[test]
+    fn file_name_package() {
+        assert_eq!(file_name("physics"), PathBuf::from("physics.proto"));
+        assert_eq!(
+            file_name("physics.rotation"),
+            PathBuf::from("physics/rotation.proto")
+        );
+    }
 
-#[test]
-fn correct_file_name_subpackage() {
-    let package = Package {
-        name: "my_package.subpackage".into(),
-        file: "my_package/subpackage.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = FileName;
-    assert!(rule.check_package(&package).is_empty());
-}
+    #[test]
+    fn correct_file_name() {
+        let package = Package {
+            name: "my_package".into(),
+            file: "my_package.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = FileName;
+        assert!(rule.check_package(&package).is_empty());
+    }
 
-#[test]
-fn incorrect_file_name() {
-    let package = Package {
-        name: "my_package".into(),
-        file: "my_package_other.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = FileName;
-    assert_eq!(
-        rule.check_package(&package),
-        vec![Violation {
-            rule: "FileName".into(),
-            level: Level::Error,
-            location: Default::default(),
-            info: rule.rule_info().into(),
-            message: violation::Message {
-                message:
-                    r#"file name should be "my_package.proto" but is "my_package_other.proto""#
-                        .into(),
-                help: "Try to rename the file to align with the package name.".into(),
-            }
-        }]
-    );
-}
+    #[test]
+    fn correct_file_name_subpackage() {
+        let package = Package {
+            name: "my_package.subpackage".into(),
+            file: "my_package/subpackage.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = FileName;
+        assert!(rule.check_package(&package).is_empty());
+    }
 
-#[test]
-fn incorrect_file_name_subpackage() {
-    let package = Package {
-        name: "my_package.subpackage".into(),
-        file: "my_package/my_subpackage.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = FileName;
-    assert_eq!(
-        rule.check_package(&package),
-        vec![Violation {
-            rule: "FileName".into(),
-            level: Level::Error,
-            location: Default::default(),
-            info: rule.rule_info().into(),
-            message: violation::Message {
-                message: r#"file name should be "my_package/subpackage.proto" but is "my_package/my_subpackage.proto""#.into(),
-                help: "Try to rename the file to align with the package name.".into(),
-            }
-        }]
-    );
+    #[test]
+    fn incorrect_file_name() {
+        let package = Package {
+            name: "my_package".into(),
+            file: "my_package_other.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = FileName;
+        assert_eq!(
+            rule.check_package(&package),
+            vec![Violation {
+                rule: "FileName".into(),
+                level: Level::Error,
+                location: Default::default(),
+                info: rule.rule_info().into(),
+                message: violation::Message {
+                    message:
+                        r#"file name should be "my_package.proto" but is "my_package_other.proto""#
+                            .into(),
+                    help: "Try to rename the file to align with the package name.".into(),
+                }
+            }]
+        );
+    }
+
+    #[test]
+    fn incorrect_file_name_subpackage() {
+        let package = Package {
+            name: "my_package.subpackage".into(),
+            file: "my_package/my_subpackage.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = FileName;
+        assert_eq!(
+            rule.check_package(&package),
+            vec![Violation {
+                rule: "FileName".into(),
+                level: Level::Error,
+                location: Default::default(),
+                info: rule.rule_info().into(),
+                message: violation::Message {
+                    message: r#"file name should be "my_package/subpackage.proto" but is "my_package/my_subpackage.proto""#.into(),
+                    help: "Try to rename the file to align with the package name.".into(),
+                }
+            }]
+        );
+    }
 }

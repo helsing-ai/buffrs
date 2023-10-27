@@ -54,64 +54,69 @@ impl Rule for PackageName {
     }
 }
 
-#[test]
-fn can_check_prefix() {
-    // any value is a prefix of itself
-    assert!(is_prefix("abc", "abc"));
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    assert!(is_prefix("abc", "abc.def"));
-    assert!(is_prefix("abc", "abc.def.ghi"));
-}
+    #[test]
+    fn can_check_prefix() {
+        // any value is a prefix of itself
+        assert!(is_prefix("abc", "abc"));
 
-#[test]
-fn can_fail_wrong_prefix() {
-    assert!(!is_prefix("abc", "def"));
-    assert!(!is_prefix("abc", "abcdef"));
-    assert!(!is_prefix("abc", ""));
-    assert!(!is_prefix("abc", "ab"));
-}
+        assert!(is_prefix("abc", "abc.def"));
+        assert!(is_prefix("abc", "abc.def.ghi"));
+    }
 
-#[test]
-fn correct_package_name() {
-    let package = Package {
-        name: "my_package".into(),
-        file: "ignored.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = PackageName::new("my_package");
-    assert!(rule.check_package(&package).is_empty());
-}
+    #[test]
+    fn can_fail_wrong_prefix() {
+        assert!(!is_prefix("abc", "def"));
+        assert!(!is_prefix("abc", "abcdef"));
+        assert!(!is_prefix("abc", ""));
+        assert!(!is_prefix("abc", "ab"));
+    }
 
-#[test]
-fn correct_package_name_submodule() {
-    let package = Package {
-        name: "my_package.submodule".into(),
-        file: "ignored.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = PackageName::new("my_package");
-    assert!(rule.check_package(&package).is_empty());
-}
+    #[test]
+    fn correct_package_name() {
+        let package = Package {
+            name: "my_package".into(),
+            file: "ignored.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my_package");
+        assert!(rule.check_package(&package).is_empty());
+    }
 
-#[test]
-fn incorrect_package_name() {
-    let package = Package {
-        name: "my_package_other".into(),
-        file: "ignored.proto".into(),
-        entities: Default::default(),
-    };
-    let mut rule = PackageName::new("my_package");
-    assert_eq!(
-        rule.check_package(&package),
-        vec![Violation {
-            rule: "PackageName".into(),
-            level: Level::Error,
-            location: Default::default(),
-            info: rule.rule_info().into(),
-            message: violation::Message {
-                message: "package name is my_package_other but should have my_package prefix".into(),
-                help: "Make sure the file name matches the package. For example, a package with the name `package.subpackage` should be stored in `proto/package/subpackage.proto`.".into(),
-            }
-        }]
-    );
+    #[test]
+    fn correct_package_name_submodule() {
+        let package = Package {
+            name: "my_package.submodule".into(),
+            file: "ignored.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my_package");
+        assert!(rule.check_package(&package).is_empty());
+    }
+
+    #[test]
+    fn incorrect_package_name() {
+        let package = Package {
+            name: "my_package_other".into(),
+            file: "ignored.proto".into(),
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my_package");
+        assert_eq!(
+            rule.check_package(&package),
+            vec![Violation {
+                rule: "PackageName".into(),
+                level: Level::Error,
+                location: Default::default(),
+                info: rule.rule_info().into(),
+                message: violation::Message {
+                    message: "package name is my_package_other but should have my_package prefix".into(),
+                    help: "Make sure the file name matches the package. For example, a package with the name `package.subpackage` should be stored in `proto/package/subpackage.proto`.".into(),
+                }
+            }]
+        );
+    }
 }
