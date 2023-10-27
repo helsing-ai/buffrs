@@ -67,6 +67,7 @@
         * [buffrs update]()
     * [Package Commands](commands/package-commands.md)
         * [buffrs init](commands/buffrs-init.md)
+        * [buffrs lint](commands/buffrs-lint.md)
         * [buffrs package](commands/buffrs-package.md)
         * [buffrs install](commands/buffrs-install.md)
         * [buffrs uninstall](commands/buffrs-uninstall.md)
