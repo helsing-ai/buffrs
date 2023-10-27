@@ -16,7 +16,7 @@ use super::*;
 
 /// Error converting parsed protobuf fileset into custom representation.
 #[derive(Error, Debug, Diagnostic)]
-#[allow(missing_docs)]
+#[allow(missing_docs, clippy::enum_variant_names)]
 pub enum MessageError {
     #[error("field number missing")]
     FieldNumberMissing,
