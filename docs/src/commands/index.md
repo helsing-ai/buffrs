@@ -1,4 +1,4 @@
-# Buffrs commands
+# Buffrs Commands
 
 This section covers detailed documentation on operating the Buffrs CLI. Some of
 the content may also apply to the library, particularly the `command` module.
