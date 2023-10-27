@@ -13,7 +13,7 @@ This command lints your local package (defined in `proto/*.proto`) for a set of
 rules defined in the ([Buffrs Protocol Buffer
 Rules](../reference/protocol-buffer-rules.md)). They contain a set of rules
 ranging from style to package layout (like filenaming, package declaration
-etc.). This enables a comman flavor to Buffrs packages which affect users.
+etc.). This enables a common flavor to Buffrs packages which affect users.
 
 One good example why this is required is the enforcement of euqality between
 the package declaration in the protocol buffers files (`*.proto`) and the
