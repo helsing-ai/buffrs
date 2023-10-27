@@ -41,6 +41,7 @@ Usage: buffrs <COMMAND>
 
 Commands:
   init       Initializes a buffrs setup
+  lint       Check rule violations for this package
   add        Adds dependencies to a manifest file
   remove     Removes dependencies from a manifest file
   package    Exports the current package into a distributable tgz archive
