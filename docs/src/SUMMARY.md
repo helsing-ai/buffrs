@@ -26,7 +26,7 @@
     * [Cargo](integrations/cargo.md)
     * [Poetry]()
 
-* [Buffrs Reference]()
+* [Buffrs Reference](reference/index.md)
     * [Specifying Dependencies]()
         * [Overriding Dependencies]()
     * [The Manifest Format]()
@@ -35,6 +35,7 @@
     * [Build Configuration]()
     * [Publishing on buff.rs]()
     * [Package Name Specifications]()
+    * [Protocol Buffer Rules](reference/protocol-buffer-rules.md)
     * [Dependency Resolution]()
     * [SemVer Compatibility]()
 
