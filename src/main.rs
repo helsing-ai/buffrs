@@ -100,8 +100,9 @@ enum Command {
     /// Uninstalls dependencies
     Uninstall,
 
-    /// Lists all `.proto` files managed by Buffrs to stdout
-    Ls,
+    /// Lists all protobuf files managed by Buffrs to stdout
+    #[clap(alias = "ls")]
+    List,
 
     /// Generate code from installed buffrs packages
     #[clap(alias = "gen")]
@@ -222,8 +223,8 @@ async fn main() -> miette::Result<()> {
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
-        Command::Ls => command::ls().await.wrap_err(miette!(
-            "failed to list installed protocol buffers for `{package}`"
+        Command::List => command::list().await.wrap_err(miette!(
+            "failed to list installed protobuf files for `{package}`"
         )),
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await

@@ -60,6 +60,7 @@
         * [buffrs clean]()
         * [buffrs doc]()
         * [buffrs generate](commands/buffrs-generate.md)
+        * [buffrs list](commands/buffrs-list.md)
     * [Manifest Commands](commands/manifest-commands.md)
         * [buffrs add](commands/buffrs-add.md)
         * [buffrs lock]()
