@@ -12,41 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::types::PackageVersion;
 use bytes::Bytes;
-use miette::{IntoDiagnostic, Result};
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
-mod filesystem;
 #[cfg(feature = "storage-cache")]
 mod cache;
+mod filesystem;
+#[cfg(test)]
+mod tests;
 
-#[derive(thiserror::Error, Debug)]
-pub enum PackagePutError {
+#[cfg(feature = "storage-cache")]
+pub use cache::Cache;
+pub use filesystem::Filesystem;
+
+/// Error putting a package into storage.
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum StorageError {
     #[error("package exists")]
     PackageExists,
 
-    #[error(transparent)]
-    Other(#[from] Box<dyn std::error::Error>),
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum PackageGetError {
     #[error("package missing")]
     PackageMissing,
 
     #[error(transparent)]
-    Other(#[from] Box<dyn std::error::Error>),
+    Other(#[from] Arc<dyn std::error::Error + Send + Sync>),
 }
 
 /// Storage for package sources
+///
+/// Package sources are immutable once written, which allows us to do some simple caching of data.
 #[async_trait::async_trait]
-pub trait Storage {
+pub trait Storage: Send + Sync + fmt::Debug {
     /// Write new package to storage.
-    async fn package_put(&self, package: &str, version: &str, data: &[u8]) -> Result<()>;
+    async fn package_put(&self, version: &PackageVersion, data: &[u8]) -> Result<(), StorageError>;
 
     /// Get package from storage.
-    async fn package_get(&self, package: &str, version: &str) -> Result<Bytes>;
+    async fn package_get(&self, version: &PackageVersion) -> Result<Bytes, StorageError>;
 }
-
-pub type GenericStorage = Arc<dyn Storage>;
-

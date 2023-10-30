@@ -18,9 +18,9 @@
 //! be used directly. Instead, the necessary types should be exported from this module.
 
 mod entities;
+mod postgres;
 #[cfg(all(test, feature = "test-database"))]
 mod tests;
-mod postgres;
 
 use async_trait::async_trait;
 pub use entities::*;
@@ -38,9 +38,15 @@ pub enum AuthError {
     TokenDeleted,
 }
 
+#[async_trait]
+pub trait Pool: Send + Sync {
+    async fn get(&self) -> Result<Box<dyn Database>, ()>;
+    async fn begin(&self) -> Result<Box<dyn Transaction>, ()>;
+}
+
 /// Database interactions.
 #[async_trait]
-pub trait Database {
+pub trait Database: Send + Sync {
     /// Lookup a user by token.
     async fn user_lookup(&mut self, user: &str) -> User;
 
@@ -63,11 +69,32 @@ pub trait Database {
     async fn package_create(&mut self, package: &str) -> Result<(), ()>;
 
     /// Create a new package version.
-    async fn package_version_create(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()>;
+    async fn package_version_create(
+        &mut self,
+        package: &str,
+        version: &str,
+        signature: &str,
+    ) -> Result<(), ()>;
 
     /// Yank this package version.
-    async fn package_version_yank(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()>;
+    async fn package_version_yank(
+        &mut self,
+        package: &str,
+        version: &str,
+        signature: &str,
+    ) -> Result<(), ()>;
 
     /// Increment package version download counter.
-    async fn package_version_download(&mut self, package: &str, version: &str, count: u64) -> Result<(), ()>;
+    async fn package_version_download(
+        &mut self,
+        package: &str,
+        version: &str,
+        count: u64,
+    ) -> Result<(), ()>;
+}
+
+/// Database transaction.
+#[async_trait]
+pub trait Transaction: Database + Send + Sync {
+    async fn commit(self) -> Result<(), ()>;
 }

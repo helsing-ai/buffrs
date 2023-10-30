@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod context;
-pub mod db;
-pub mod options;
-pub mod proto;
-pub mod schema;
-pub mod storage;
-pub mod types;
+use proptest::strategy::Strategy;
+use std::sync::Arc;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+pub struct PackageVersion {
+    /// Package name
+    pub package: Arc<str>,
+    /// Package version
+    pub version: Arc<str>,
+}

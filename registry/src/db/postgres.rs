@@ -13,22 +13,33 @@
 // limitations under the License.
 
 pub use super::*;
-pub use sqlx::{Error, PgConnection as Connection, PgPool as Pool};
+pub use sqlx::{Error, PgConnection, PgPool};
 
 /// Connect to the database.
-pub async fn connect(url: &Url) -> Result<Pool, Error> {
-    let pool = Pool::connect(url.as_str()).await?;
+pub async fn connect(url: &Url) -> Result<PgPool, Error> {
+    let pool = PgPool::connect(url.as_str()).await?;
     Ok(pool)
 }
 
 /// Migrate database.
-pub async fn migrate(pool: &Pool) -> Result<(), Error> {
+pub async fn migrate(pool: &PgPool) -> Result<(), Error> {
     sqlx::migrate!().run(pool).await?;
     Ok(())
 }
 
 #[async_trait]
-impl Database for Connection {
+impl Pool for PgPool {
+    async fn get(&self) -> Result<Box<dyn Database>, ()> {
+        todo!()
+    }
+
+    async fn begin(&self) -> Result<Box<dyn Transaction>, ()> {
+        todo!()
+    }
+}
+
+#[async_trait]
+impl Database for PgConnection {
     async fn user_lookup(&mut self, handle: &str) -> User {
         query_as("SELECT * FROM users WHERE handle = $1")
             .bind(handle)
@@ -79,15 +90,30 @@ impl Database for Connection {
         todo!()
     }
 
-    async fn package_version_create(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()> {
+    async fn package_version_create(
+        &mut self,
+        package: &str,
+        version: &str,
+        signature: &str,
+    ) -> Result<(), ()> {
         todo!()
     }
 
-    async fn package_version_yank(&mut self, package: &str, version: &str, signature: &str) -> Result<(), ()> {
+    async fn package_version_yank(
+        &mut self,
+        package: &str,
+        version: &str,
+        signature: &str,
+    ) -> Result<(), ()> {
         todo!()
     }
 
-    async fn package_version_download(&mut self, package: &str, version: &str, count: u64) -> Result<(), ()> {
+    async fn package_version_download(
+        &mut self,
+        package: &str,
+        version: &str,
+        count: u64,
+    ) -> Result<(), ()> {
         todo!()
     }
 }

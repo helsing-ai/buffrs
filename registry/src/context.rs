@@ -12,19 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::db::Database;
 use crate::proto::buffrs::registry::{
-    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse, VersionsRequest, VersionsResponse,
+    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse,
+    VersionsRequest, VersionsResponse,
 };
+use crate::storage::Storage;
 use async_trait::async_trait;
 use sqlx::PgPool;
+use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Context {
-    pub database: PgPool,
+    database: Arc<dyn Database>,
+    storage: Arc<dyn Storage>,
 }
 
-impl Context {}
+impl Context {
+    pub fn new<D: Database + 'static, S: Storage + 'static>(database: D, storage: S) -> Self {
+        Self {
+            database: Arc::new(database),
+            storage: Arc::new(storage),
+        }
+    }
+
+    pub fn database(&self) -> &dyn Database {
+        &*self.database
+    }
+
+    pub fn storage(&self) -> &dyn Storage {
+        &*self.storage
+    }
+}
 
 #[async_trait]
 impl Registry for Context {

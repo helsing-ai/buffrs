@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Registry for buffrs, a modern protocol buffer package manager"
 license = "Apache-2.0"
+default-run = "buffrs-registry"
 
 [dependencies]
 buffrs = { path = "../", version = "0.7.0" }
@@ -24,6 +25,8 @@ ssh-key = { version = "0.6.2", features = ["ed25519"] }
 bytes = "1.5.0"
 miette = "5.10.0"
 moka = { version = "0.12.1", optional = true, features = ["future"] }
+test-strategy = "0.3.1"
+proptest = "1.3.1"
 
 [build-dependencies]
 buffrs = { path = "../", version = "0.7.0" }
@@ -36,3 +39,4 @@ storage-cache = ["dep:moka"]
 [dev-dependencies]
 proptest = "1.3.1"
 tempdir = "0.3.7"
+test-strategy = "0.3.1"
