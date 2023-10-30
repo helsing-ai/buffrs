@@ -18,7 +18,7 @@
     * [Creating a Package](guide/creating-a-new-package.md)
     * [Consuming Packages](guide/consuming-packages.md)
     * [Project Layout](guide/project-layout.md)
-    * [Proto.toml vs Proto.lock]()
+    * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)
     * [Continuous Integration]()
     * [Buffrs Home]()
 
@@ -30,6 +30,7 @@
     * [Specifying Dependencies]()
         * [Overriding Dependencies]()
     * [The Manifest Format]()
+    * [The Lockfile Format]()
     * [Configuration]()
     * [Environment Variables]()
     * [Build Configuration]()
