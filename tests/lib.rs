@@ -6,7 +6,7 @@ use std::{
 use assert_fs::TempDir;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
-use ring::digest;
+use sha2::Digest;
 
 mod cmd;
 
@@ -150,10 +150,11 @@ impl VirtualFileSystem {
                     }
                     FileType::Binary => {
                         let hash_file = |path| {
-                            hex::encode(digest::digest(
-                                &digest::SHA256,
-                                fs::read(path).expect("file cannot be read").as_slice(),
-                            ))
+                            let contents = fs::read(path).expect("file cannot be read");
+                            let digest = sha2::Sha256::new()
+                                .chain_update(contents.as_slice())
+                                .finalize();
+                            hex::encode(digest)
                         };
 
                         let expected_hash = hash_file(expected);
