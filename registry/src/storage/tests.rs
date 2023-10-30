@@ -15,6 +15,14 @@
 use super::*;
 use tempdir::TempDir;
 use test_strategy::proptest;
+use std::time::Duration;
+
+// we have to set the timeout for missing entries to zero because we don't want the tests to
+// have to wait for entries to expire.
+const TEST_CACHE_CONFIG: CacheConfig = CacheConfig {
+    timeout_missing: Duration::from_secs(0),
+    capacity: 16 * 1024 * 1024,
+};
 
 async fn test_package_put(storage: &dyn Storage, version: &PackageVersion, bytes: &[u8]) {
     let result = storage.package_get(&version).await;
@@ -26,9 +34,20 @@ async fn test_package_put(storage: &dyn Storage, version: &PackageVersion, bytes
     assert_eq!(result, bytes);
 }
 
-//#[proptest(async = "tokio")]
+#[proptest(async = "tokio")]
 async fn filesystem_package_put(version: PackageVersion, bytes: Vec<u8>) {
     let dir = TempDir::new("storage").unwrap();
     let storage = Filesystem::new(dir.path());
+
+    test_package_put(&storage, &version, &bytes).await
+}
+
+#[proptest(async = "tokio")]
+async fn filesystem_cache_package_put(version: PackageVersion, bytes: Vec<u8>) {
+    let dir = TempDir::new("storage").unwrap();
+    let storage = Filesystem::new(dir.path());
+
+    let storage = Cache::new(storage, TEST_CACHE_CONFIG);
+
     test_package_put(&storage, &version, &bytes).await
 }

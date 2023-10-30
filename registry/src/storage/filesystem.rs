@@ -82,7 +82,7 @@ impl<P: AsRef<Path>> Filesystem<P> {
 
     async fn do_package_get(&self, name: &str, version: &str) -> Result<Bytes, FilesystemError> {
         let path = self.package_path(name, version);
-        tokio::fs::read(&name)
+        tokio::fs::read(&path)
             .await
             .map(Into::into)
             .map_err(|error| FilesystemError { path, error })

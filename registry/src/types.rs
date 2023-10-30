@@ -15,11 +15,19 @@
 use proptest::strategy::Strategy;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(test, derive(test_strategy::Arbitrary))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, test_strategy::Arbitrary)]
 pub struct PackageVersion {
+    #[filter(!#package.contains("/") && !#package.contains("."))]
     /// Package name
     pub package: Arc<str>,
+    #[filter(!#version.contains("/") && !#version.contains("."))]
     /// Package version
     pub version: Arc<str>,
+}
+
+impl PackageVersion {
+    pub fn file_name(&self) -> String {
+        let Self { package, version } = &self;
+        format!("{package}-{version}.tar.gz")
+    }
 }

@@ -23,7 +23,7 @@ mod filesystem;
 mod tests;
 
 #[cfg(feature = "storage-cache")]
-pub use cache::Cache;
+pub use cache::{Cache, CacheConfig};
 pub use filesystem::Filesystem;
 
 /// Error putting a package into storage.

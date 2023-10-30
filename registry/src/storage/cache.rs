@@ -40,9 +40,9 @@ impl Entry {
     }
 }
 
-/// Configuration for storage [`Cache`].
+/// CacheConfiguration for storage [`Cache`].
 #[derive(Clone, Copy, Debug)]
-pub struct Config {
+pub struct CacheConfig {
     /// Capacity of cache, in bytes.
     ///
     /// You should set this to however much memory you are willing to use for the cache. In
@@ -59,7 +59,7 @@ pub struct Config {
     pub timeout_missing: Duration,
 }
 
-impl Default for Config {
+impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             capacity: 16 * 1024 * 1024,
@@ -68,7 +68,7 @@ impl Default for Config {
     }
 }
 
-impl Expiry<PackageVersion, Entry> for Config {
+impl Expiry<PackageVersion, Entry> for CacheConfig {
     fn expire_after_create(
         &self,
         key: &PackageVersion,
@@ -95,9 +95,9 @@ pub struct Cache<S: Storage> {
 impl<S: Storage> Cache<S> {
     /// Create new caching layer on top of a storage.
     ///
-    /// You can use [`Config::default()`] to use defaults, which should be sane. Read the
-    /// documentation on [`Config`] for more information on what can be tuned.
-    pub fn new(storage: S, config: Config) -> Self {
+    /// You can use [`CacheConfig::default()`] to use defaults, which should be sane. Read the
+    /// documentation on [`CacheConfig`] for more information on what can be tuned.
+    pub fn new(storage: S, config: CacheConfig) -> Self {
         let cache = MokaCache::builder()
             .weigher(|_key, value: &Entry| -> u32 { value.weight().try_into().unwrap_or(u32::MAX) })
             .max_capacity(config.capacity)
