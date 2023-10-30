@@ -43,7 +43,6 @@ protobuf = { version = "3.3.0", optional = true }
 protobuf-parse = { version = "3.3.0", optional = true }
 protoc-bin-vendored = { version = "3.0.0", optional = true }
 reqwest = { version = "0.11", features = ["rustls-tls-native-roots"], default-features = false }
-ring = "0.16"
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_typename = "0.1"
@@ -56,6 +55,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 url = { version = "2.4", features = ["serde"] }
 walkdir = "2"
+sha2 = "0.10.8"
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -65,7 +65,6 @@ hex = "0.4.3"
 paste = "1.0.14"
 predicates = "3.0"
 pretty_assertions = "1.4"
-ring = "0.16.20"
 serde_json = { version = "1.0.107" }
 serde_test = "1.0.176"
 similar-asserts = "1.5.0"

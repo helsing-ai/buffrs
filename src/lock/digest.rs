@@ -15,6 +15,7 @@
 use std::{fmt, str::FromStr};
 
 use serde::{de::Visitor, Deserialize, Serialize};
+use sha2::Digest as _;
 use thiserror::Error;
 
 /// Supported types of digest algorithms.
@@ -24,6 +25,20 @@ pub enum DigestAlgorithm {
     /// SHA-2 with 256 bits
     #[serde(rename = "sha256")]
     SHA256,
+}
+
+impl DigestAlgorithm {
+    /// Create a digest of some data using this algorithm.
+    pub fn digest(&self, data: &[u8]) -> Digest {
+        let digest = match self {
+            DigestAlgorithm::SHA256 => sha2::Sha256::new().chain_update(data).finalize().to_vec(),
+        };
+
+        Digest {
+            algorithm: *self,
+            digest,
+        }
+    }
 }
 
 /// Error parsing a [`DigestAlgorithm`].
@@ -84,26 +99,6 @@ impl Digest {
     /// Digest as raw byte data.
     pub fn as_bytes(&self) -> &[u8] {
         &self.digest
-    }
-}
-
-impl TryFrom<ring::digest::Digest> for Digest {
-    type Error = DigestAlgorithmError;
-
-    fn try_from(value: ring::digest::Digest) -> Result<Self, Self::Error> {
-        let algorithm = if value.algorithm() == &ring::digest::SHA256 {
-            DigestAlgorithm::SHA256
-        } else {
-            return Err(DigestAlgorithmError::UnsupportedAlgorithm(format!(
-                "{:?}",
-                value.algorithm()
-            )));
-        };
-
-        Ok(Self {
-            digest: value.as_ref().to_vec(),
-            algorithm,
-        })
     }
 }
 
@@ -196,8 +191,7 @@ mod tests {
 
     #[test]
     fn can_convert_digest() {
-        let digest = ring::digest::digest(&ring::digest::SHA256, "hello".as_bytes());
-        let digest: Digest = digest.try_into().unwrap();
+        let digest = DigestAlgorithm::SHA256.digest("hello".as_bytes());
         assert_eq!(digest.to_string(), HELLO_DIGEST);
     }
 

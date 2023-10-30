@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, Context, IntoDiagnostic};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -66,16 +66,11 @@ impl LockedPackage {
         repository: String,
         dependants: usize,
     ) -> miette::Result<Self> {
-        let digest = ring::digest::digest(&ring::digest::SHA256, &package.tgz)
-            .try_into()
-            .into_diagnostic()
-            .wrap_err(miette!("unexpected error: only SHA256 is supported"))?;
-
         Ok(Self {
             name: package.name().to_owned(),
             registry,
             repository,
-            digest,
+            digest: DigestAlgorithm::SHA256.digest(&package.tgz),
             version: package.version().to_owned(),
             dependencies: package
                 .manifest
@@ -89,9 +84,7 @@ impl LockedPackage {
 
     /// Validates if another LockedPackage matches this one
     pub fn validate(&self, package: &Package) -> miette::Result<()> {
-        let digest: Digest = ring::digest::digest(&ring::digest::SHA256, &package.tgz)
-            .try_into()
-            .unwrap();
+        let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
 
         #[derive(Error, Debug)]
         #[error("{property} mismatch - expected {expected}, actual {actual}")]
