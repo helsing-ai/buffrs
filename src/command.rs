@@ -322,19 +322,19 @@ pub async fn list() -> miette::Result<()> {
     let cwd = {
         let cwd = std::env::current_dir()
             .into_diagnostic()
-            .wrap_err("failed to get current directory")?;
+            .wrap_err(miette!("failed to get current directory"))?;
 
         fs::canonicalize(cwd)
             .await
             .into_diagnostic()
-            .wrap_err("failed to canonicalize current directory")?
+            .wrap_err(miette!("failed to canonicalize current directory"))?
     };
 
     for proto in protos.iter() {
         let rel = proto
             .strip_prefix(&cwd)
             .into_diagnostic()
-            .wrap_err("failed to transform protobuf path")?;
+            .wrap_err(miette!("failed to transform protobuf path"))?;
 
         print!("{} ", rel.display())
     }
