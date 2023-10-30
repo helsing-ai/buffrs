@@ -136,16 +136,53 @@ impl fmt::Display for PackageName {
     }
 }
 
-#[test]
-fn can_parse_package_name() {
-    assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
-    assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
-    assert_eq!(
-        PackageName::new("4abc"),
-        Err(PackageNameError::InvalidStart('4'))
-    );
-    assert_eq!(
-        PackageName::new("serde_typename"),
-        Err(PackageNameError::InvalidCharacter('_', 5))
-    );
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn ascii_lowercase() {
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+    }
+
+    #[test]
+    fn short() {
+        assert_eq!(PackageName::new("a"), Ok(PackageName("a".into())));
+        assert_eq!(PackageName::new("ab"), Ok(PackageName("ab".into())));
+    }
+
+    #[test]
+    fn long() {
+        assert_eq!(
+            PackageName::new("a".repeat(128)),
+            Ok(PackageName("a".repeat(128)))
+        );
+
+        assert_eq!(
+            PackageName::new("a".repeat(129)),
+            Err(PackageNameError::TooLong(129))
+        );
+    }
+
+    #[test]
+    fn empty() {
+        assert_eq!(PackageName::new(""), Err(PackageNameError::Empty));
+    }
+
+    #[test]
+    fn numeric_start() {
+        assert_eq!(
+            PackageName::new("4abc"),
+            Err(PackageNameError::InvalidStart('4'))
+        );
+    }
+
+    #[test]
+    fn snake_case() {
+        assert_eq!(
+            PackageName::new("serde_typename"),
+            Err(PackageNameError::InvalidCharacter('_', 5))
+        );
+    }
 }
