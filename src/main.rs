@@ -100,6 +100,9 @@ enum Command {
     /// Uninstalls dependencies
     Uninstall,
 
+    /// Lists all `.proto` files managed by Buffrs to stdout
+    Ls,
+
     /// Generate code from installed buffrs packages
     #[clap(alias = "gen")]
     Generate {
@@ -219,6 +222,9 @@ async fn main() -> miette::Result<()> {
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
+        Command::Ls => command::ls().await.wrap_err(miette!(
+            "failed to list installed protocol buffers for `{package}`"
+        )),
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
             .wrap_err(miette!("failed to generate {language} language bindings")),
