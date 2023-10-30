@@ -9,7 +9,7 @@ Lists all protobuf files (`.proto`) managed by Buffrs to standard out.
 ### Description
 
 This command lists all protobuf files managed by Buffrs. This way the
-output can be feeded dynamically into external code generation tools like
+output can be fed dynamically into external code generation tools like
 `protoc` to do customize the behavior of the generator beyond the capabilities
 that Buffrs provides out of the box through [`buffrs
 generate`](./buffrs-generate.md).
