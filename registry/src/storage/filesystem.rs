@@ -25,7 +25,7 @@ use tokio::{
 
 /// Filesystem-backed storage for packages.
 #[derive(Clone, Debug)]
-pub struct Filesystem<P: AsRef<Path>> {
+pub struct Filesystem<P: AsRef<Path> = PathBuf> {
     path: P,
 }
 
@@ -48,17 +48,16 @@ impl<P: AsRef<Path>> Filesystem<P> {
         self.path.as_ref()
     }
 
-    fn package_path(&self, name: &str, version: &str) -> PathBuf {
-        self.path().join(format!("{name}-{version}.tar.gz"))
+    fn package_path(&self, version: &PackageVersion) -> PathBuf {
+        self.path().join(version.file_name())
     }
 
     async fn do_package_put(
         &self,
-        name: &str,
-        version: &str,
+        version: &PackageVersion,
         data: &[u8],
     ) -> Result<(), FilesystemError> {
-        let path = self.package_path(name, version);
+        let path = self.package_path(&version);
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -80,8 +79,8 @@ impl<P: AsRef<Path>> Filesystem<P> {
         Ok(())
     }
 
-    async fn do_package_get(&self, name: &str, version: &str) -> Result<Bytes, FilesystemError> {
-        let path = self.package_path(name, version);
+    async fn do_package_get(&self, version: &PackageVersion) -> Result<Bytes, FilesystemError> {
+        let path = self.package_path(version);
         tokio::fs::read(&path)
             .await
             .map(Into::into)
@@ -92,19 +91,14 @@ impl<P: AsRef<Path>> Filesystem<P> {
 #[async_trait::async_trait]
 impl<P: AsRef<Path> + Send + Sync + Debug> Storage for Filesystem<P> {
     async fn package_put(&self, version: &PackageVersion, data: &[u8]) -> Result<(), StorageError> {
-        match self
-            .do_package_put(&version.package, &version.version, data)
-            .await
-        {
+        match self.do_package_put(&version, data).await {
             Ok(()) => Ok(()),
             Err(error) => todo!(),
         }
     }
 
     async fn package_get(&self, version: &PackageVersion) -> Result<Bytes, StorageError> {
-        let result = self
-            .do_package_get(&version.package, &version.version)
-            .await;
+        let result = self.do_package_get(&version).await;
         match result {
             Ok(bytes) => Ok(bytes),
             Err(error) if error.error.kind() == ErrorKind::NotFound => {
@@ -119,35 +113,31 @@ impl<P: AsRef<Path> + Send + Sync + Debug> Storage for Filesystem<P> {
 mod tests {
     use super::*;
     use tempdir::TempDir;
+    use test_strategy::proptest;
 
-    #[tokio::test]
-    async fn can_write_package() {
+    #[proptest(async = "tokio")]
+    async fn can_write_package(version: PackageVersion, contents: Vec<u8>) {
         let dir = TempDir::new("storage").unwrap();
         let storage = Filesystem::new(dir.path());
-        let contents = b"0xdeadbeef";
 
-        storage
-            .do_package_put("mypackage", "0.1.5", contents)
-            .await
-            .unwrap();
+        storage.do_package_put(&version, &contents).await.unwrap();
 
-        let path = storage.path().join("mypackage-0.1.5.tar.gz");
+        let path = storage.path().join(version.file_name());
         assert!(tokio::fs::try_exists(&path).await.unwrap());
         let found = tokio::fs::read(&path).await.unwrap();
         assert_eq!(found, contents);
     }
 
-    #[tokio::test]
-    async fn cannot_write_package_existing() {
+    #[proptest(async = "tokio")]
+    async fn cannot_write_package_existing(version: PackageVersion, contents: Vec<u8>) {
         let dir = TempDir::new("storage").unwrap();
         let storage = Filesystem::new(dir.path());
-        let contents = b"0xdeadbeef";
 
-        let path = storage.path().join("mypackage-0.1.5.tar.gz");
-        tokio::fs::write(&path, contents).await.unwrap();
+        let path = storage.path().join(version.file_name());
+        tokio::fs::write(&path, &contents).await.unwrap();
 
         let error = storage
-            .do_package_put("mypackage", "0.1.5", contents)
+            .do_package_put(&version, &contents)
             .await
             .err()
             .unwrap();
@@ -156,35 +146,29 @@ mod tests {
         assert_eq!(error.error.kind(), ErrorKind::AlreadyExists);
     }
 
-    #[tokio::test]
-    async fn cannot_read_package_missing() {
+    #[proptest(async = "tokio")]
+    async fn cannot_read_package_missing(version: PackageVersion) {
         let dir = TempDir::new("storage").unwrap();
         let storage = Filesystem::new(dir.path());
-        let contents = b"0xdeadbeef";
 
-        let path = storage.path().join("mypackage-0.1.5.tar.gz");
+        let path = storage.path().join(version.file_name());
 
-        let error = storage
-            .do_package_get("mypackage", "0.1.5")
-            .await
-            .err()
-            .unwrap();
+        let error = storage.do_package_get(&version).await.err().unwrap();
 
         assert_eq!(error.path, path);
         assert_eq!(error.error.kind(), ErrorKind::NotFound);
     }
 
-    #[tokio::test]
-    async fn can_read_package() {
+    #[proptest(async = "tokio")]
+    async fn can_read_package(version: PackageVersion, contents: Vec<u8>) {
         let dir = TempDir::new("storage").unwrap();
         let storage = Filesystem::new(dir.path());
-        let contents = b"0xdeadbeef";
 
-        let path = storage.path().join("mypackage-0.1.5.tar.gz");
-        tokio::fs::write(&path, contents).await.unwrap();
+        let path = storage.path().join(version.file_name());
+        tokio::fs::write(&path, &contents).await.unwrap();
 
-        let found = storage.do_package_get("mypackage", "0.1.5").await.unwrap();
+        let found = storage.do_package_get(&version).await.unwrap();
 
-        assert_eq!(&found[..], contents);
+        assert_eq!(&found[..], &contents);
     }
 }

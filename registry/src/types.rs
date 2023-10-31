@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use buffrs::package::PackageName;
 use proptest::strategy::Strategy;
+use semver::Version;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, test_strategy::Arbitrary)]

@@ -19,12 +19,16 @@ use std::{fmt, sync::Arc};
 #[cfg(feature = "storage-cache")]
 mod cache;
 mod filesystem;
+#[cfg(feature = "storage-s3")]
+mod s3;
 #[cfg(test)]
 mod tests;
 
 #[cfg(feature = "storage-cache")]
 pub use cache::{Cache, CacheConfig};
 pub use filesystem::Filesystem;
+#[cfg(feature = "storage-s3")]
+pub use s3::S3;
 
 /// Error putting a package into storage.
 #[derive(thiserror::Error, Debug, Clone)]

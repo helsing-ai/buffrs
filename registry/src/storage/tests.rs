@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use super::*;
+use std::time::Duration;
 use tempdir::TempDir;
 use test_strategy::proptest;
-use std::time::Duration;
 
 // we have to set the timeout for missing entries to zero because we don't want the tests to
 // have to wait for entries to expire.

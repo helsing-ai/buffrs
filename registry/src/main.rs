@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{context::Context, db::connect, options::Options, storage::Filesystem};
+use buffrs_registry::{context::Context, db::connect, storage::Filesystem};
 use clap::Parser;
+
+mod options;
+use options::Options;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let config = Options::parse();
+    let options = Options::parse();
     tracing_subscriber::fmt::init();
-    let database = connect(&config.database).await.unwrap();
-    let storage = Filesystem::new(&".");
+    let database = connect(&options.database).await.unwrap();
+    let storage = options.storage.build().await?;
     //let context = Context::new(database, storage);
     Ok(())
 }

@@ -14,7 +14,6 @@
 
 pub mod context;
 pub mod db;
-pub mod options;
 pub mod proto;
 pub mod schema;
 pub mod storage;
