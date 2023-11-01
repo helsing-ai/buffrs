@@ -28,8 +28,9 @@ pub struct PackageVersion {
 }
 
 impl PackageVersion {
+    /// Determine the file name of a package.
     pub fn file_name(&self) -> String {
         let Self { package, version } = &self;
-        format!("{package}-{version}.tar.gz")
+        format!("{package}_{version}.tar.gz")
     }
 }

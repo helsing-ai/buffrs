@@ -33,19 +33,34 @@ pub struct Options {
     pub storage: StorageOptions,
 }
 
+#[cfg(feature = "storage-s3")]
+const DEFAULT_STORAGE: &'static str = "s3";
+#[cfg(not(feature = "storage-s3"))]
+const DEFAULT_STORAGE: &'static str = "filesystem";
+
 /// Options for storage.
 #[derive(Parser, Clone, Debug)]
 pub struct StorageOptions {
     /// Which storage backend to use.
-    #[clap(long, default_value = "s3")]
+    #[clap(long, default_value = DEFAULT_STORAGE)]
     pub storage: StorageKind,
 
     #[clap(flatten)]
     pub filesystem: FilesystemStorageOptions,
 
     #[clap(flatten)]
+    #[cfg(feature = "storage-s3")]
     pub s3: S3StorageOptions,
 
+    #[clap(flatten)]
+    #[cfg(feature = "storage-cache")]
+    pub cache: StorageCacheOptions,
+}
+
+/// Options for storage cache
+#[derive(Parser, Clone, Debug)]
+#[cfg(feature = "storage-cache")]
+pub struct StorageCacheOptions {
     /// Enables storage cache with the specified capacity.
     #[clap(long, env)]
     pub storage_cache: bool,
@@ -57,6 +72,23 @@ pub struct StorageOptions {
     /// Timeout for package missing entries in the cache.
     #[clap(long, requires("storage_cache"), env, default_value = "60")]
     pub storage_cache_missing_timeout: u64,
+}
+
+#[cfg(feature = "storage-cache")]
+impl StorageCacheOptions {
+    fn maybe_cache<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
+        if self.storage_cache {
+            let config = CacheConfig {
+                capacity: self.storage_cache_capacity,
+                timeout_missing: Duration::from_secs(self.storage_cache_missing_timeout),
+                ..Default::default()
+            };
+            let cache = Cache::new(storage, config);
+            Arc::new(cache)
+        } else {
+            Arc::new(storage)
+        }
+    }
 }
 
 #[derive(Parser, Clone, Debug)]
@@ -73,6 +105,7 @@ pub struct S3StorageOptions {}
 #[derive(ValueEnum, Clone, Debug)]
 pub enum StorageKind {
     Filesystem,
+    #[cfg(feature = "storage-s3")]
     S3,
 }
 
@@ -82,6 +115,7 @@ impl FilesystemStorageOptions {
     }
 }
 
+#[cfg(feature = "storage-s3")]
 impl S3StorageOptions {
     async fn build(&self) -> Result<S3> {
         todo!()
@@ -90,22 +124,16 @@ impl S3StorageOptions {
 
 impl StorageOptions {
     fn maybe_cache<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
-        if self.storage_cache {
-            let config = CacheConfig {
-                capacity: self.storage_cache_capacity,
-                timeout_missing: Duration::from_secs(self.storage_cache_missing_timeout),
-                ..Default::default()
-            };
-            let cache = Cache::new(storage, config);
-            Arc::new(cache)
-        } else {
-            Arc::new(storage)
-        }
+        #[cfg(feature = "storage-cache")]
+        return self.cache.maybe_cache(storage);
+        #[cfg(not(feature = "storage-cache"))]
+        Arc::new(storage)
     }
 
     pub async fn build(&self) -> Result<Arc<dyn Storage>> {
         let storage = match self.storage {
             StorageKind::Filesystem => self.maybe_cache(self.filesystem.build().await?),
+            #[cfg(feature = "storage-s3")]
             StorageKind::S3 => self.maybe_cache(self.s3.build().await?),
         };
 

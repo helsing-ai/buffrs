@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Storage traits and implementations
+//!
+//! This module contains the [`Storage`] trait, which is used by the buffrs registry to store
+//! packages in arbitrary places. Depending on the enabled features, this contains implementations
+//! and layers that can be used by the registry.
+
 use crate::types::PackageVersion;
 use bytes::Bytes;
 use std::{fmt, sync::Arc};
@@ -22,7 +28,7 @@ mod filesystem;
 #[cfg(feature = "storage-s3")]
 mod s3;
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 #[cfg(feature = "storage-cache")]
 pub use cache::{Cache, CacheConfig};
@@ -33,15 +39,17 @@ pub use s3::S3;
 /// Error putting a package into storage.
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum StorageError {
-    #[error("package exists")]
-    PackageExists,
-
     #[error("package missing")]
-    PackageMissing,
+    PackageMissing(#[source] Error),
 
     #[error(transparent)]
-    Other(#[from] Arc<dyn std::error::Error + Send + Sync>),
+    Other(#[from] Error),
 }
+
+/// Error type.
+pub type Error = Arc<dyn std::error::Error + Send + Sync>;
+
+pub type AnyStorage = Arc<dyn Storage>;
 
 /// Storage for package sources
 ///

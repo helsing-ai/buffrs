@@ -24,15 +24,45 @@ use tokio::{
 };
 
 /// Filesystem-backed storage for packages.
+///
+/// This storage layer needs a root path, which should be a folder. It will store packages as files
+/// in the root path, named after the package name and version.
+///
+/// For example, if the root path is `/path/to/storage`, then a package might be stored at
+/// `/path/to/storage/mypackage_0.1.5.tar.gz`. See [`Filesystem::package_path()`] for more
+/// information.
+///
+/// # Examples
+///
+/// Create a new filesystem storage instance:
+///
+/// ```rust
+/// # use buffrs_registry::{types::PackageVersion, storage::Filesystem};
+/// # use std::path::Path;
+/// let filesystem = Filesystem::new("/path/to/storage");
+///
+/// let package = PackageVersion {
+///     package: "mypackage".to_string().into(),
+///     version: "0.1.5".to_string().into(),
+/// };
+///
+/// assert_eq!(filesystem.package_path(&package), Path::new("/path/to/storage/mypackage_0.1.5.tar.gz"));
+/// ```
 #[derive(Clone, Debug)]
 pub struct Filesystem<P: AsRef<Path> = PathBuf> {
     path: P,
 }
 
+/// Error interacting with the filesystem.
+///
+/// This error adds some context to the underlying [`std::io::Error`], such as the path that was
+/// being written to.
 #[derive(thiserror::Error, Debug)]
 #[error("error writing to {path:?}")]
 pub struct FilesystemError {
+    /// Path that was being written to or read from.
     path: PathBuf,
+    /// Error that occured.
     #[source]
     error: std::io::Error,
 }
@@ -48,7 +78,10 @@ impl<P: AsRef<Path>> Filesystem<P> {
         self.path.as_ref()
     }
 
-    fn package_path(&self, version: &PackageVersion) -> PathBuf {
+    /// Get the full path of a package version.
+    ///
+    /// Uses [`PackageVersion::file_name()`] to determine the file name.
+    pub fn package_path(&self, version: &PackageVersion) -> PathBuf {
         self.path().join(version.file_name())
     }
 
@@ -60,7 +93,8 @@ impl<P: AsRef<Path>> Filesystem<P> {
         let path = self.package_path(&version);
         let mut file = OpenOptions::new()
             .write(true)
-            .create_new(true)
+            .create(true)
+            .truncate(true)
             .open(&path)
             .await
             .map_err(|error| FilesystemError {
@@ -102,7 +136,7 @@ impl<P: AsRef<Path> + Send + Sync + Debug> Storage for Filesystem<P> {
         match result {
             Ok(bytes) => Ok(bytes),
             Err(error) if error.error.kind() == ErrorKind::NotFound => {
-                Err(StorageError::PackageMissing)
+                Err(StorageError::PackageMissing(Arc::new(error)))
             }
             Err(error) => Err(StorageError::Other(Arc::new(error))),
         }
@@ -110,65 +144,82 @@ impl<P: AsRef<Path> + Send + Sync + Debug> Storage for Filesystem<P> {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
+    //! Unit tests for [`Filesystem`].
+    //!
+    //! These test verify that the filesystem storage layer is implemented correctly. Every single
+    //! test uses a new temporary filesystem location created by [`temp_filesystem`] to ensure that
+    //! tests do not interfere with each other. Every single test performs some setup using manual
+    //! filesystem interactions, run at most one method under test, and verify the outputs and the
+    //! filesystem side effects.
+
     use super::*;
+    use crate::storage::tests::{with, Cleanup};
     use tempdir::TempDir;
     use test_strategy::proptest;
 
-    #[proptest(async = "tokio")]
-    async fn can_write_package(version: PackageVersion, contents: Vec<u8>) {
+    /// Create a temporary filesystem storage.
+    pub async fn temp_filesystem() -> (Filesystem, Cleanup) {
         let dir = TempDir::new("storage").unwrap();
-        let storage = Filesystem::new(dir.path());
-
-        storage.do_package_put(&version, &contents).await.unwrap();
-
-        let path = storage.path().join(version.file_name());
-        assert!(tokio::fs::try_exists(&path).await.unwrap());
-        let found = tokio::fs::read(&path).await.unwrap();
-        assert_eq!(found, contents);
+        let storage = Filesystem::new(dir.path().to_path_buf());
+        let cleanup = async move {
+            dir.close().unwrap();
+        };
+        (storage, Box::pin(cleanup))
     }
 
     #[proptest(async = "tokio")]
-    async fn cannot_write_package_existing(version: PackageVersion, contents: Vec<u8>) {
-        let dir = TempDir::new("storage").unwrap();
-        let storage = Filesystem::new(dir.path());
+    async fn can_write_package(version: PackageVersion, contents: Vec<u8>) {
+        with(temp_filesystem, |storage| async move {
+            storage.package_put(&version, &contents).await.unwrap();
 
-        let path = storage.path().join(version.file_name());
-        tokio::fs::write(&path, &contents).await.unwrap();
+            let path = storage.path().join(version.file_name());
+            let found = tokio::fs::read(&path).await.unwrap();
+            assert_eq!(found, contents);
+        })
+        .await;
+    }
 
-        let error = storage
-            .do_package_put(&version, &contents)
-            .await
-            .err()
-            .unwrap();
+    #[proptest(async = "tokio")]
+    async fn can_write_package_existing(
+        version: PackageVersion,
+        previous: Vec<u8>,
+        contents: Vec<u8>,
+    ) {
+        with(temp_filesystem, |storage| async move {
+            let path = storage.path().join(version.file_name());
+            tokio::fs::write(&path, &previous).await.unwrap();
 
-        assert_eq!(error.path, path);
-        assert_eq!(error.error.kind(), ErrorKind::AlreadyExists);
+            storage.package_put(&version, &contents).await.unwrap();
+
+            let found = tokio::fs::read(&path).await.unwrap();
+            assert_eq!(found, contents);
+        })
+        .await;
     }
 
     #[proptest(async = "tokio")]
     async fn cannot_read_package_missing(version: PackageVersion) {
-        let dir = TempDir::new("storage").unwrap();
-        let storage = Filesystem::new(dir.path());
+        with(temp_filesystem, |storage| async move {
+            let path = storage.path().join(version.file_name());
 
-        let path = storage.path().join(version.file_name());
+            let error = storage.package_get(&version).await.err().unwrap();
 
-        let error = storage.do_package_get(&version).await.err().unwrap();
-
-        assert_eq!(error.path, path);
-        assert_eq!(error.error.kind(), ErrorKind::NotFound);
+            assert!(matches!(error, StorageError::PackageMissing(_)));
+        })
+        .await;
     }
 
     #[proptest(async = "tokio")]
     async fn can_read_package(version: PackageVersion, contents: Vec<u8>) {
-        let dir = TempDir::new("storage").unwrap();
-        let storage = Filesystem::new(dir.path());
+        with(temp_filesystem, |storage| async move {
+            let path = storage.path().join(version.file_name());
+            tokio::fs::write(&path, &contents).await.unwrap();
 
-        let path = storage.path().join(version.file_name());
-        tokio::fs::write(&path, &contents).await.unwrap();
+            let found = storage.package_get(&version).await.unwrap();
 
-        let found = storage.do_package_get(&version).await.unwrap();
-
-        assert_eq!(&found[..], &contents);
+            assert_eq!(&found[..], &contents);
+        })
+        .await;
     }
 }
