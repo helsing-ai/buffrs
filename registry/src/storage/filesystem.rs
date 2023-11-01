@@ -125,10 +125,9 @@ impl<P: AsRef<Path>> Filesystem<P> {
 #[async_trait::async_trait]
 impl<P: AsRef<Path> + Send + Sync + Debug> Storage for Filesystem<P> {
     async fn package_put(&self, version: &PackageVersion, data: &[u8]) -> Result<(), StorageError> {
-        match self.do_package_put(&version, data).await {
-            Ok(()) => Ok(()),
-            Err(error) => todo!(),
-        }
+        self.do_package_put(&version, data)
+            .await
+            .map_err(|error| StorageError::Other(Arc::new(error)))
     }
 
     async fn package_get(&self, version: &PackageVersion) -> Result<Bytes, StorageError> {

@@ -23,7 +23,13 @@ use aws_sdk_s3::{
 use bytes::Bytes;
 use std::sync::Arc;
 
-/// S3-backend storage.
+/// # S3-backed package storage.
+///
+/// This storage implementation keeps packages in an S3 bucket using the `aws_sdk` crate. The
+/// packages are named similar to how they are named in the filesystem.
+///
+/// For example, a package named `mypackage` with version `0.1.5` would be stored as
+/// `mypackage_0.1.5.tar.gz` in the bucket.
 #[derive(Clone, Debug)]
 pub struct S3 {
     client: Client,
@@ -31,24 +37,34 @@ pub struct S3 {
 }
 
 impl S3 {
+    /// Create new instance given an S3 [`Client`] and a bucket name.
     pub fn new(client: Client, bucket: String) -> Self {
         Self { client, bucket }
+    }
+
+    /// Get reference to the S3 client being used.
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Get reference to the name of the bucket that this instance writes to.
+    pub fn bucket(&self) -> &str {
+        &self.bucket
     }
 }
 
 #[async_trait::async_trait]
 impl Storage for S3 {
     async fn package_put(&self, version: &PackageVersion, data: &[u8]) -> Result<(), StorageError> {
-        let body = SdkBody::from(data);
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(version.file_name())
-            .body(ByteStream::new(SdkBody::from(body)))
+            .body(ByteStream::new(SdkBody::from(data)))
             .send()
             .await
-            .map_err(|error| StorageError::Other(Arc::new(error)))?;
-        Ok(())
+            .map(|_| ())
+            .map_err(|error| StorageError::Other(Arc::new(error)))
     }
 
     async fn package_get(&self, version: &PackageVersion) -> Result<Bytes, StorageError> {
@@ -60,7 +76,7 @@ impl Storage for S3 {
             .send()
             .await;
 
-        // determine if this is a package missing
+        // determine if this is a no such key error and translate into package missing
         match &response {
             Err(SdkError::ServiceError(error)) => match error.err() {
                 GetObjectError::NoSuchKey(error) => {
@@ -71,7 +87,7 @@ impl Storage for S3 {
             _ => {}
         }
 
-        // return other errors
+        // return other errors as-is
         let response = match response {
             Ok(response) => response,
             Err(error) => return Err(StorageError::Other(Arc::new(error))),

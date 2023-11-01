@@ -14,7 +14,7 @@
 
 //! # Storage cache layer.
 
-use crate::storage::{Error, Storage, StorageError};
+use crate::storage::{SharedError, Storage, StorageError};
 use crate::types::PackageVersion;
 use bytes::Bytes;
 use moka::{future::Cache as MokaCache, Expiry};
@@ -24,9 +24,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Cached error.
+///
+/// This type adds context to the error it contains to communicate to users that this error may
+/// have been cached.
 #[derive(Debug, thiserror::Error)]
 #[error("cached error")]
-struct CachedError(#[from] Error);
+struct CachedError(#[from] SharedError);
 
 /// Cache entry for one crate lookup.
 #[derive(Clone, Debug)]
@@ -118,7 +122,9 @@ impl Expiry<PackageVersion, Entry> for CacheConfig {
 /// ```
 #[derive(Clone, Debug)]
 pub struct Cache<S: Storage> {
+    /// Underlying storage implementation
     storage: Arc<S>,
+    /// Cache used for package sources
     cache: MokaCache<PackageVersion, Entry>,
 }
 
