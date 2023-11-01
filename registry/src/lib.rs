@@ -38,7 +38,7 @@
 //! endpoints however.
 
 pub mod context;
-pub mod db;
+pub mod metadata;
 pub mod proto;
 pub mod schema;
 pub mod storage;

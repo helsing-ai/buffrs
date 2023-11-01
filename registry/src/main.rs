@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{context::Context, db::connect, storage::Filesystem};
+use buffrs_registry::{context::Context, metadata::connect, storage::Filesystem};
 use clap::Parser;
 
 mod options;

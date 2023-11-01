@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::db::Database;
+use crate::metadata::Database;
 use crate::proto::buffrs::registry::{
     registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse,
     VersionsRequest, VersionsResponse,

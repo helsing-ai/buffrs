@@ -1,4 +1,4 @@
 [package]
 type = "api"
-name = "buffrs-registry"
+name = "buffrs"
 version = "0.0.1"
