@@ -13,76 +13,84 @@
 // limitations under the License.
 
 pub use super::*;
-pub use sqlx::{Error, PgConnection, PgPool};
+pub use sqlx::{pool::PoolConnection, Error, PgConnection, PgPool, Transaction};
+use std::ops::DerefMut;
 
-/// Connect to the database.
-pub async fn connect(url: &Url) -> Result<PgPool, Error> {
-    let pool = PgPool::connect(url.as_str()).await?;
-    Ok(pool)
+/// Postgres metadata implementation.
+///
+/// This implements the [`Metadata`] trait using a postgres database, using the `sqlx` crate for
+/// interactions with the database.
+#[derive(Clone, Debug)]
+pub struct Postgres {
+    pool: PgPool,
 }
 
-/// Migrate database.
-pub async fn migrate(pool: &PgPool) -> Result<(), Error> {
-    sqlx::migrate!().run(pool).await?;
-    Ok(())
+impl Postgres {
+    /// Connect to the database.
+    pub async fn connect(url: &Url) -> Result<Self, Error> {
+        let pool = PgPool::connect(url.as_str()).await?;
+        Ok(Self { pool })
+    }
+
+    /// Migrate database.
+    pub async fn migrate(&self) -> Result<(), Error> {
+        sqlx::migrate!().run(&self.pool).await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
-impl Pool for PgPool {
-    async fn get(&self) -> Result<Box<dyn Database>, ()> {
-        todo!()
+impl Metadata for Postgres {
+    async fn write(&self) -> Result<Box<dyn WriteHandle>, BoxError> {
+        Ok(Box::new(self.pool.begin().await.map_err(|e| Box::new(e))?))
     }
 
-    async fn begin(&self) -> Result<Box<dyn Transaction>, ()> {
-        todo!()
+    async fn read(&self) -> Result<Box<dyn ReadHandle>, BoxError> {
+        Ok(Box::new(
+            self.pool.acquire().await.map_err(|e| Box::new(e))?,
+        ))
     }
 }
 
 #[async_trait]
-impl Database for PgConnection {
+impl<T: DerefMut<Target = PgConnection> + Send + Sync> ReadHandle for T {
     async fn user_lookup(&mut self, handle: &str) -> User {
         query_as("SELECT * FROM users WHERE handle = $1")
             .bind(handle)
-            .fetch_one(self)
+            .fetch_one(self.deref_mut())
             .await
             .unwrap()
     }
 
+    async fn user_info(&mut self, user: &str) -> String {
+        todo!()
+    }
+
+    async fn package_metadata(&mut self, package: &str) -> String {
+        todo!()
+    }
+
+    async fn package_version(&mut self, package: &str) -> Vec<String> {
+        todo!()
+    }
+}
+
+#[async_trait]
+impl WriteHandle for Transaction<'static, sqlx::Postgres> {
     async fn user_create(&mut self, user: &str) -> Result<(), ()> {
         let result = query("INSERT INTO users(handle) VALUES ($1) RETURNING (id)")
             .bind(user)
-            .fetch_one(self)
+            .fetch_one(&mut **self)
             .await
             .unwrap();
         Ok(())
     }
 
-    async fn user_token_auth(&mut self, token: &str) -> Result<(), ()> {
-        query("SELECT 1").bind(token).fetch_one(self).await.unwrap();
-        Ok(())
-    }
-
-    async fn user_cert_create(&mut self, user: &str, token: &str) -> Result<(), ()> {
-        query(
-            "INSERT INTO user_tokens(user_id, token)
-            VALUES (
-                (SELECT id FROM users WHERE handle = $1),
-                $2
-            )",
-        )
-        .bind(user)
-        .bind(token)
-        .execute(self)
-        .await
-        .unwrap();
-        Ok(())
-    }
-
-    async fn user_cert_list(&mut self, user: &str) -> Result<Vec<String>, ()> {
+    async fn user_token_create(&mut self, user: &str, token: &str) -> Result<(), ()> {
         todo!()
     }
 
-    async fn user_cert_delete(&mut self, user: &str, token: &str) -> Result<(), ()> {
+    async fn user_token_delete(&mut self, user: &str, token: &str) -> Result<(), ()> {
         todo!()
     }
 
@@ -116,4 +124,14 @@ impl Database for PgConnection {
     ) -> Result<(), ()> {
         todo!()
     }
+
+    async fn commit(self) -> Result<(), ()> {
+        Transaction::commit(self).await.unwrap();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
 }

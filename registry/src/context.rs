@@ -12,60 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::metadata::Database;
-use crate::proto::buffrs::registry::{
-    registry_server::Registry, DownloadRequest, DownloadResponse, PublishRequest, PublishResponse,
-    VersionsRequest, VersionsResponse,
-};
-use crate::storage::Storage;
-use async_trait::async_trait;
-use sqlx::PgPool;
-use std::sync::Arc;
-use tonic::{Request, Response, Status};
+//! Buffrs Registry Context
+//!
+//! This type holds the necessary context for a buffrs registry. It is used to implement the
+//! various APIs that this registry provides.
 
-#[derive(Clone)]
+use crate::{metadata::AnyMetadata, storage::AnyStorage};
+
+/// Context
+///
+/// This contains all context needed for a buffrs registry.
+#[derive(Clone, Debug)]
 pub struct Context {
-    database: Arc<dyn Database>,
-    storage: Arc<dyn Storage>,
+    metadata: AnyMetadata,
+    storage: AnyStorage,
 }
 
 impl Context {
-    pub fn new<D: Database + 'static, S: Storage + 'static>(database: D, storage: S) -> Self {
-        Self {
-            database: Arc::new(database),
-            storage: Arc::new(storage),
-        }
+    /// Create a new context from a metadata instance and a storage instance.
+    pub fn new(metadata: AnyMetadata, storage: AnyStorage) -> Self {
+        Self { metadata, storage }
     }
 
-    pub fn database(&self) -> &dyn Database {
-        &*self.database
+    /// Get reference to the metadata instance.
+    pub fn metadata(&self) -> &AnyMetadata {
+        &self.metadata
     }
 
-    pub fn storage(&self) -> &dyn Storage {
-        &*self.storage
-    }
-}
-
-#[async_trait]
-impl Registry for Context {
-    async fn publish(
-        &self,
-        request: Request<PublishRequest>,
-    ) -> Result<Response<PublishResponse>, Status> {
-        todo!()
-    }
-
-    async fn download(
-        &self,
-        request: Request<DownloadRequest>,
-    ) -> Result<Response<DownloadResponse>, Status> {
-        todo!()
-    }
-
-    async fn versions(
-        &self,
-        request: Request<VersionsRequest>,
-    ) -> Result<Response<VersionsResponse>, Status> {
-        todo!()
+    /// Get reference to the storage instance.
+    pub fn storage(&self) -> &AnyStorage {
+        &self.storage
     }
 }

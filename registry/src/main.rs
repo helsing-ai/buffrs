@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{context::Context, metadata::connect, storage::Filesystem};
+use buffrs_registry::{context::Context, storage::Filesystem};
 use clap::Parser;
 
 mod options;
@@ -22,8 +22,6 @@ use options::Options;
 async fn main() -> eyre::Result<()> {
     let options = Options::parse();
     tracing_subscriber::fmt::init();
-    let database = connect(&options.database).await.unwrap();
-    let storage = options.storage.build().await?;
-    //let context = Context::new(database, storage);
+    let context = options.build().await?;
     Ok(())
 }

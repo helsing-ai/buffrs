@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::storage::*;
+use buffrs_registry::{context::Context, metadata::*, storage::*};
 use clap::{Parser, ValueEnum};
 use eyre::Result;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
@@ -24,13 +24,36 @@ pub struct Options {
     #[clap(long, short, env, default_value = "0.0.0.0:4367")]
     pub listen: SocketAddr,
 
+    /// Metadata related options.
+    #[clap(flatten)]
+    pub metadata: MetadataOptions,
+
+    /// Storage related options.
+    #[clap(flatten)]
+    pub storage: StorageOptions,
+}
+
+impl Options {
+    pub async fn build(&self) -> Result<Context> {
+        let storage = self.storage.build().await?;
+        let metadata = self.metadata.build().await?;
+        Ok(Context::new(metadata, storage))
+    }
+}
+
+/// Options for metadata.
+#[derive(Parser, Clone, Debug)]
+pub struct MetadataOptions {
     /// URL of Postgres database to connect to.
     #[clap(long, short, env)]
     #[cfg_attr(dev, clap(default_value = "postgres://buffrs:buffrs@localhost"))]
-    pub database: Url,
+    pub postgres_url: Url,
+}
 
-    #[clap(flatten)]
-    pub storage: StorageOptions,
+impl MetadataOptions {
+    pub async fn build(&self) -> Result<AnyMetadata> {
+        Ok(Arc::new(Postgres::connect(&self.postgres_url).await?))
+    }
 }
 
 #[cfg(feature = "storage-s3")]

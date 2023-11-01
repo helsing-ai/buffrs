@@ -1,23 +1,17 @@
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use super::*;
 use proptest::prelude::*;
 use sqlx::testing::{TestArgs, TestFn};
-
-#[sqlx::test]
-async fn can_migrate(pool: Pool) {}
-
-#[sqlx::test]
-async fn can_create_user(pool: Pool) {
-    let mut conn = pool.acquire().await.unwrap();
-    let user = "abc";
-    conn.user_create(user).await.unwrap();
-    let user = conn.user_lookup(user).await;
-}
-
-#[sqlx::test]
-async fn can_create_token(pool: Pool) {
-    let mut conn = pool.acquire().await.unwrap();
-    let user = "abc";
-    conn.user_create(user).await.unwrap();
-    let token = "asda";
-    conn.user_token_create(user, token).await.unwrap();
-}

@@ -37,9 +37,9 @@
 //! by simpler clients to access packages. It is not possible to publish packages using these
 //! endpoints however.
 
+pub mod api;
 pub mod context;
 pub mod metadata;
 pub mod proto;
-pub mod schema;
 pub mod storage;
 pub mod types;
