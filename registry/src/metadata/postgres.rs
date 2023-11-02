@@ -16,10 +16,13 @@ pub use super::*;
 pub use sqlx::{pool::PoolConnection, Error, PgConnection, PgPool, Transaction};
 use std::ops::DerefMut;
 
-/// Postgres metadata implementation.
+/// Postgres-backed metadata store
 ///
-/// This implements the [`Metadata`] trait using a postgres database, using the `sqlx` crate for
-/// interactions with the database.
+/// This implements a [`Metadata`] store using a Postgres database. The [`WriteHandle`] is
+/// implemented as a transaction, while the [`ReadHandle`] is implementated as a regular
+/// connection.
+///
+/// Internally, it uses the `sqlx` crate for interactions with the database.
 #[derive(Clone, Debug)]
 pub struct Postgres {
     pool: PgPool,
@@ -27,12 +30,18 @@ pub struct Postgres {
 
 impl Postgres {
     /// Connect to the database.
+    ///
+    /// This expects a [`Url`] in the shape of `postgres://username:password@hostname`. See the
+    /// documentation of the `sqlx` crate for information on what else this may contain.
     pub async fn connect(url: &Url) -> Result<Self, Error> {
         let pool = PgPool::connect(url.as_str()).await?;
         Ok(Self { pool })
     }
 
     /// Migrate database.
+    ///
+    /// This applies the migrations stored in the repository to the connected database. This is not
+    /// done automatically on startup, but must rather be performed explicitly.
     pub async fn migrate(&self) -> Result<(), Error> {
         sqlx::migrate!().run(&self.pool).await?;
         Ok(())
@@ -41,60 +50,102 @@ impl Postgres {
 
 #[async_trait]
 impl Metadata for Postgres {
-    async fn write(&self) -> Result<Box<dyn WriteHandle>, BoxError> {
-        Ok(Box::new(self.pool.begin().await.map_err(|e| Box::new(e))?))
+    async fn write(&self) -> Result<Box<dyn WriteHandle>, SharedError> {
+        Ok(Box::new(
+            self.pool
+                .begin()
+                .await
+                .map_err(|e| Arc::new(e) as SharedError)?,
+        ))
     }
 
-    async fn read(&self) -> Result<Box<dyn ReadHandle>, BoxError> {
+    async fn read(&self) -> Result<Box<dyn ReadHandle>, SharedError> {
         Ok(Box::new(
-            self.pool.acquire().await.map_err(|e| Box::new(e))?,
+            self.pool
+                .begin()
+                .await
+                .map_err(|e| Arc::new(e) as SharedError)?,
         ))
     }
 }
 
 #[async_trait]
 impl<T: DerefMut<Target = PgConnection> + Send + Sync> ReadHandle for T {
-    async fn user_lookup(&mut self, handle: &str) -> User {
-        query_as("SELECT * FROM users WHERE handle = $1")
-            .bind(handle)
+    async fn user_info(&mut self, handle: &Handle) -> Result<UserInfo, ReadError> {
+        let result = query_as("SELECT * FROM users_active WHERE handle = $1")
+            .bind(&**handle)
             .fetch_one(self.deref_mut())
             .await
-            .unwrap()
+            .unwrap();
+        Ok(result)
     }
 
-    async fn user_info(&mut self, user: &str) -> String {
+    async fn token_check(&mut self, user: &Token) -> Result<TokenInfo, ReadError> {
         todo!()
     }
 
-    async fn package_metadata(&mut self, package: &str) -> String {
+    async fn token_info(&mut self, user: &TokenPrefix) -> Result<TokenInfo, ReadError> {
         todo!()
     }
 
-    async fn package_version(&mut self, package: &str) -> Vec<String> {
+    async fn package_metadata(&mut self, package: &str) -> Result<String, ReadError> {
+        todo!()
+    }
+
+    async fn package_versions(&mut self, package: &str) -> Result<Vec<String>, ReadError> {
         todo!()
     }
 }
 
 #[async_trait]
 impl WriteHandle for Transaction<'static, sqlx::Postgres> {
-    async fn user_create(&mut self, user: &str) -> Result<(), ()> {
-        let result = query("INSERT INTO users(handle) VALUES ($1) RETURNING (id)")
-            .bind(user)
+    async fn user_create(&mut self, user: &Handle) -> Result<(), WriteError> {
+        let result = query("INSERT INTO users(handle) VALUES ($1) RETURNING *")
+            .bind(&**user)
             .fetch_one(&mut **self)
             .await
             .unwrap();
         Ok(())
     }
 
-    async fn user_token_create(&mut self, user: &str, token: &str) -> Result<(), ()> {
+    async fn user_token_create(
+        &mut self,
+        user: &Handle,
+        token: &Token,
+        permissions: &TokenPermissions,
+    ) -> Result<(), WriteError> {
+        query(
+            "INSERT INTO user_tokens(user, prefix, hash, allow_publish, allow_update, allow_yank)
+            VALUES (
+                (SELECT id FROM users WHERE handle = $1),
+                $2,
+                $3,
+                $4,
+                $5,
+                $6
+            )",
+        )
+        .bind(&**user)
+        .bind(&**token)
+        .bind(&**token)
+        .bind(permissions.allow_publish)
+        .bind(permissions.allow_update)
+        .bind(permissions.allow_yank)
+        .execute(&mut **self)
+        .await
+        .unwrap();
+        Ok(())
+    }
+
+    async fn user_token_delete(
+        &mut self,
+        user: &Handle,
+        token: &TokenPrefix,
+    ) -> Result<(), WriteError> {
         todo!()
     }
 
-    async fn user_token_delete(&mut self, user: &str, token: &str) -> Result<(), ()> {
-        todo!()
-    }
-
-    async fn package_create(&mut self, package: &str) -> Result<(), ()> {
+    async fn package_create(&mut self, package: &str) -> Result<(), WriteError> {
         todo!()
     }
 
@@ -103,7 +154,7 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
         package: &str,
         version: &str,
         signature: &str,
-    ) -> Result<(), ()> {
+    ) -> Result<(), WriteError> {
         todo!()
     }
 
@@ -112,7 +163,7 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
         package: &str,
         version: &str,
         signature: &str,
-    ) -> Result<(), ()> {
+    ) -> Result<(), WriteError> {
         todo!()
     }
 
@@ -121,11 +172,11 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
         package: &str,
         version: &str,
         count: u64,
-    ) -> Result<(), ()> {
+    ) -> Result<(), WriteError> {
         todo!()
     }
 
-    async fn commit(self: Box<Self>) -> Result<(), ()> {
+    async fn commit(self: Box<Self>) -> Result<(), WriteError> {
         Transaction::commit(*self).await.unwrap();
         Ok(())
     }
@@ -181,7 +232,17 @@ pub mod tests {
     }
 
     #[proptest(async = "tokio", cases = 10)]
-    async fn test_something(name: String) {
+    async fn can_write_user(name: Handle) {
+        with(temp_postgres, |postgres| async move {
+            let mut writer = postgres.write().await.unwrap();
+            writer.user_create(&name).await.unwrap();
+            writer.commit().await.unwrap();
+        })
+        .await;
+    }
+
+    #[proptest(async = "tokio", cases = 10)]
+    async fn can_read_user(name: Handle) {
         with(temp_postgres, |postgres| async move {
             let mut writer = postgres.write().await.unwrap();
             writer.user_create(&name).await.unwrap();
