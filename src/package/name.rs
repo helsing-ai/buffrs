@@ -25,9 +25,12 @@ pub struct PackageName(String);
 /// Errors that can be generated parsing [`PackageName`][], see [`PackageName::new()`][].
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum PackageNameError {
-    /// Incorrect length.
-    #[error("package name must be at least three chars long, but was {0:} long")]
-    Length(usize),
+    /// Empty package name.
+    #[error("package name must be at least one character long, but was empty")]
+    Empty,
+    /// Too long.
+    #[error("package names must be at most 128 characters long, but was {0:}")]
+    TooLong(usize),
     /// Invalid start character.
     #[error("package name must start with alphabetic character, but was {0:}")]
     InvalidStart(char),
@@ -37,6 +40,9 @@ pub enum PackageNameError {
 }
 
 impl PackageName {
+    const MIN_LENGTH: usize = 1;
+    const MAX_LENGTH: usize = 128;
+
     /// New package name from string.
     pub fn new<S: Into<String>>(value: S) -> Result<Self, PackageNameError> {
         let value = value.into();
@@ -61,10 +67,16 @@ impl PackageName {
     }
 
     /// Validate a package name.
-    pub fn validate(name: &str) -> Result<(), PackageNameError> {
+    pub fn validate(name: impl AsRef<str>) -> Result<(), PackageNameError> {
+        let name = name.as_ref();
+
         // validate length
-        if name.len() < 3 {
-            return Err(PackageNameError::Length(name.len()));
+        if name.len() < Self::MIN_LENGTH {
+            return Err(PackageNameError::Empty);
+        }
+
+        if name.len() > Self::MAX_LENGTH {
+            return Err(PackageNameError::TooLong(name.len()));
         }
 
         // validate first character
@@ -79,6 +91,7 @@ impl PackageName {
             .chars()
             .enumerate()
             .find(|(_, c)| !Self::is_allowed(*c));
+
         if let Some((index, c)) = illegal {
             return Err(PackageNameError::InvalidCharacter(c, index));
         }
@@ -123,16 +136,53 @@ impl fmt::Display for PackageName {
     }
 }
 
-#[test]
-fn can_parse_package_name() {
-    assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
-    assert_eq!(PackageName::new("a"), Err(PackageNameError::Length(1)));
-    assert_eq!(
-        PackageName::new("4abc"),
-        Err(PackageNameError::InvalidStart('4'))
-    );
-    assert_eq!(
-        PackageName::new("serde_typename"),
-        Err(PackageNameError::InvalidCharacter('_', 5))
-    );
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn ascii_lowercase() {
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+    }
+
+    #[test]
+    fn short() {
+        assert_eq!(PackageName::new("a"), Ok(PackageName("a".into())));
+        assert_eq!(PackageName::new("ab"), Ok(PackageName("ab".into())));
+    }
+
+    #[test]
+    fn long() {
+        assert_eq!(
+            PackageName::new("a".repeat(128)),
+            Ok(PackageName("a".repeat(128)))
+        );
+
+        assert_eq!(
+            PackageName::new("a".repeat(129)),
+            Err(PackageNameError::TooLong(129))
+        );
+    }
+
+    #[test]
+    fn empty() {
+        assert_eq!(PackageName::new(""), Err(PackageNameError::Empty));
+    }
+
+    #[test]
+    fn numeric_start() {
+        assert_eq!(
+            PackageName::new("4abc"),
+            Err(PackageNameError::InvalidStart('4'))
+        );
+    }
+
+    #[test]
+    fn snake_case() {
+        assert_eq!(
+            PackageName::new("serde_typename"),
+            Err(PackageNameError::InvalidCharacter('_', 5))
+        );
+    }
 }
