@@ -215,7 +215,7 @@ impl PackageStore {
                     return true;
                 }
 
-                !path.starts_with(&self.proto_vendor_path())
+                !path.starts_with(self.proto_vendor_path())
             })
             .filter(|path| {
                 let ext = path.extension().map(|s| s.to_str());
