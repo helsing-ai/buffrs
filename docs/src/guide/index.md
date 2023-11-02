@@ -10,6 +10,6 @@ Buffrs to develop and consume protocol buffer packages.
 * [Creating a Package](./creating-a-new-package.md)
 * [Consuming Packages](./consuming-packages.md)
 * [Project Layout](./project-layout.md)
-* [Proto.toml vs Proto.lock](./proto-toml-vs-proto-lock.md)
+* [Manifest vs Lockfile](./manifest-vs-lockfile.md)
 * [Continuous Integration](./continuous-integration.md)
 * [Buffrs Home](./buffrs-home.md)

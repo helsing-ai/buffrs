@@ -1,12 +1,11 @@
 use crate::VirtualFileSystem;
 
 #[test]
-#[ignore = "sha mismatch, tar files should be compared by contents!"]
 fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
     crate::cli!()
-        .arg("package")
+        .arg("ls")
         .current_dir(vfs.root())
         .assert()
         .success()
