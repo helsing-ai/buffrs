@@ -64,7 +64,7 @@ impl Generator {
         std::env::set_var("PROTOC", protoc.clone());
 
         let store = PackageStore::current().await?;
-        let protos = store.collect(&store.proto_path()).await;
+        let protos = store.collect(&store.proto_path(), true).await;
         let includes = &[store.proto_path()];
 
         match self {

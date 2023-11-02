@@ -317,7 +317,7 @@ pub async fn uninstall() -> miette::Result<()> {
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
     let store = PackageStore::current().await?;
-    let protos = store.collect(&store.proto_path()).await;
+    let protos = store.collect(&store.proto_path(), true).await;
 
     let cwd = {
         let cwd = std::env::current_dir()

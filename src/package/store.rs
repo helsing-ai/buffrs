@@ -146,7 +146,7 @@ impl PackageStore {
         manifest: &Manifest,
     ) -> miette::Result<crate::validation::Violations> {
         let pkg_path = self.proto_path();
-        let source_files = self.collect(&pkg_path).await;
+        let source_files = self.collect(&pkg_path, false).await;
 
         let mut parser = crate::validation::Validator::new(&pkg_path, &manifest.package.name);
 
@@ -182,7 +182,7 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
-        for entry in self.collect(&pkg_path).await {
+        for entry in self.collect(&pkg_path, false).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
             entries.insert(path.into(), contents.into());
@@ -205,11 +205,18 @@ impl PackageStore {
     }
 
     /// Collect .proto files in a given path
-    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
+    pub async fn collect(&self, path: &Path, vendored: bool) -> Vec<PathBuf> {
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
+            .filter(|path| {
+                if vendored {
+                    return true;
+                }
+
+                !path.starts_with(&self.proto_vendor_path())
+            })
             .filter(|path| {
                 let ext = path.extension().map(|s| s.to_str());
 
