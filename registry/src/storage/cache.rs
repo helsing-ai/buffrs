@@ -19,7 +19,6 @@ use crate::types::PackageVersion;
 use bytes::Bytes;
 use moka::{future::Cache as MokaCache, Expiry};
 use std::{
-    path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -86,9 +85,9 @@ impl Default for CacheConfig {
 impl Expiry<PackageVersion, Entry> for CacheConfig {
     fn expire_after_create(
         &self,
-        key: &PackageVersion,
+        _key: &PackageVersion,
         value: &Entry,
-        created_at: Instant,
+        _created_at: Instant,
     ) -> Option<Duration> {
         match value {
             Entry::Missing(_) => Some(self.timeout_missing),

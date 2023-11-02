@@ -186,7 +186,7 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
 pub mod tests {
     use super::*;
     use crate::metadata::tests::*;
-    use rand::{distributions::Alphanumeric, thread_rng, Rng};
+    use rand::{thread_rng, Rng};
     use sqlx::query;
 
     /// Generate random name for a bucket.

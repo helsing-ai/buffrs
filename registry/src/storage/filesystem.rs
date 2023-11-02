@@ -18,10 +18,7 @@ use std::{
     io::ErrorKind,
     path::{Path, PathBuf},
 };
-use tokio::{
-    fs::{File, OpenOptions},
-    io::AsyncWriteExt,
-};
+use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 
 /// Filesystem-backed storage for packages.
 ///
@@ -154,6 +151,7 @@ pub mod tests {
 
     use super::*;
     use crate::storage::tests::*;
+    use std::error::Error;
     use tempdir::TempDir;
 
     /// Create a temporary filesystem storage.
@@ -204,6 +202,11 @@ pub mod tests {
             let error = storage.package_get(&version).await.err().unwrap();
 
             assert!(matches!(error, StorageError::PackageMissing(_)));
+            assert_eq!(error.to_string(), format!("package missing"));
+            assert_eq!(
+                error.source().unwrap().to_string(),
+                format!("error writing to {path:?}")
+            );
         })
         .await;
     }

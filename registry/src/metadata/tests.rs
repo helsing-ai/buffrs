@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use super::*;
+
 pub use proptest::prelude::*;
-use sqlx::testing::{TestArgs, TestFn};
-use std::future::Future;
-use std::pin::Pin;
 pub use test_strategy::proptest;
+
+use std::{future::Future, pin::Pin};
 
 /// Generic future used for cleanup tasks.
 pub type Cleanup = Pin<Box<dyn Future<Output = ()>>>;

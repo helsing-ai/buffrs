@@ -20,7 +20,6 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 #[async_trait]
