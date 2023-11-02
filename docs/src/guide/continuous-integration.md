@@ -1,6 +1,6 @@
 ## Continuous Integration
 
-To utilize continous integration for your Buffrs package (e.g. to automate code review and publishing
+To utilize continuous integration for your Buffrs package (e.g. to automate code review and publishing
 of your packages) you can utilize the following templates for GitHub Actions and GitLab CI:
 
 ### GitHub Actions
