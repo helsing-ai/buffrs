@@ -16,10 +16,10 @@
     * [Package Types](guide/package-types.md)
     * [Dependencies](guide/dependencies.md)
     * [Creating a Package](guide/creating-a-package.md)
-    * [Consuming Packages](guide/consuming-packages.md)
+    * [Using Packages](guide/using-packages.md)
     * [Project Layout](guide/project-layout.md)
     * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)
-    * [Continuous Integration]()
+    * [Continuous Integration](guide/continuous-integration.md)
     * [Buffrs Home]()
 
 * [Buffrs Integrations](integrations/index.md)
