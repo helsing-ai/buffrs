@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::{context::Context, storage::Filesystem};
 use clap::Parser;
 
 mod options;
@@ -23,5 +22,6 @@ async fn main() -> eyre::Result<()> {
     let options = Options::parse();
     tracing_subscriber::fmt::init();
     let context = options.build().await?;
+    context.launch_api().await;
     Ok(())
 }

@@ -13,5 +13,27 @@
 // limitations under the License.
 
 use super::*;
-use proptest::prelude::*;
+pub use proptest::prelude::*;
 use sqlx::testing::{TestArgs, TestFn};
+use std::future::Future;
+use std::pin::Pin;
+pub use test_strategy::proptest;
+
+/// Generic future used for cleanup tasks.
+pub type Cleanup = Pin<Box<dyn Future<Output = ()>>>;
+
+/// Run a closure with a temporary instance and run cleanup afterwards.
+pub async fn with<
+    S: Metadata,
+    O1: Future<Output = (S, Cleanup)>,
+    F1: Fn() -> O1,
+    O2: Future<Output = ()>,
+    F2: FnOnce(S) -> O2,
+>(
+    function: F1,
+    closure: F2,
+) {
+    let (metadata, cleanup) = function().await;
+    closure(metadata).await;
+    cleanup.await;
+}

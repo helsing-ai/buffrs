@@ -16,11 +16,10 @@ use super::*;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
-use tempdir::TempDir;
-use test_strategy::proptest;
+pub use test_strategy::proptest;
 
 /// Generic future used for cleanup tasks.
-pub type Cleanup = Pin<Box<dyn std::future::Future<Output = ()>>>;
+pub type Cleanup = Pin<Box<dyn Future<Output = ()>>>;
 
 /// Cache config used for tests.
 ///

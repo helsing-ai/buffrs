@@ -17,11 +17,16 @@ use proptest::strategy::Strategy;
 use semver::Version;
 use std::sync::Arc;
 
+// FIXME(xfbs): move this to buffrs
+// FIXME(xfbs): build custom strategy
 #[derive(Clone, Debug, PartialEq, Eq, Hash, test_strategy::Arbitrary)]
 pub struct PackageVersion {
+    // FIXME(xfbs): use PackageName here
     #[filter(!#package.contains("/") && !#package.contains("."))]
     /// Package name
     pub package: Arc<str>,
+
+    // FIXME(xfbs): use Version here
     #[filter(!#version.contains("/") && !#version.contains("."))]
     /// Package version
     pub version: Arc<str>,

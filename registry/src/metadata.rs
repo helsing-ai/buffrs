@@ -20,8 +20,8 @@
 
 pub mod entities;
 mod postgres;
-#[cfg(all(test, feature = "test-database"))]
-mod tests;
+#[cfg(test)]
+pub mod tests;
 
 use async_trait::async_trait;
 use entities::*;
@@ -104,5 +104,5 @@ pub trait WriteHandle: ReadHandle + Send + Sync {
     ) -> Result<(), ()>;
 
     /// Commit changes
-    async fn commit(self) -> Result<(), ()>;
+    async fn commit(self: Box<Self>) -> Result<(), ()>;
 }

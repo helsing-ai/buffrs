@@ -113,13 +113,12 @@ pub mod tests {
     //! run at most one method under test, and verify the outputs and the bucket side effects.
 
     use super::*;
-    use crate::storage::tests::{with, Cleanup};
+    use crate::storage::tests::*;
     use aws_config::ConfigLoader;
     use aws_credential_types::Credentials;
     use aws_sdk_s3::{types::*, Config};
     use rand::{distributions::Alphanumeric, thread_rng, Rng};
     use std::error::Error;
-    use test_strategy::proptest;
     use tokio::sync::OnceCell;
 
     /// Generate random name for a bucket.

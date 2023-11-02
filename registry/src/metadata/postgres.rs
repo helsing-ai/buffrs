@@ -125,8 +125,8 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
         todo!()
     }
 
-    async fn commit(self) -> Result<(), ()> {
-        Transaction::commit(self).await.unwrap();
+    async fn commit(self: Box<Self>) -> Result<(), ()> {
+        Transaction::commit(*self).await.unwrap();
         Ok(())
     }
 }
@@ -134,4 +134,59 @@ impl WriteHandle for Transaction<'static, sqlx::Postgres> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::metadata::tests::*;
+    use rand::{distributions::Alphanumeric, thread_rng, Rng};
+    use sqlx::query;
+
+    /// Generate random name for a bucket.
+    fn random_database() -> String {
+        let mut rng = thread_rng();
+        (0..10).map(|_| rng.gen_range('a'..'z')).collect()
+    }
+
+    /// Generate temporary new Postgres instance
+    pub async fn temp_postgres() -> (Postgres, Cleanup) {
+        // connect to root pool
+        let root = PgPool::connect("postgres://buffrs:buffrs@localhost")
+            .await
+            .unwrap();
+
+        // create random database
+        let dbname = random_database();
+        query(&format!("CREATE DATABASE {dbname}"))
+            .execute(&root)
+            .await
+            .unwrap();
+
+        // connect to database
+        let url = format!("postgres://buffrs:buffrs@localhost/{dbname}")
+            .parse()
+            .unwrap();
+        let postgres = Postgres::connect(&url).await.unwrap();
+
+        // migrate
+        postgres.migrate().await.unwrap();
+
+        // cleanup
+        let pool = postgres.pool.clone();
+        let cleanup = async move {
+            pool.close().await;
+            query(&format!("DROP DATABASE {dbname}"))
+                .execute(&root)
+                .await
+                .unwrap();
+        };
+
+        (postgres, Box::pin(cleanup))
+    }
+
+    #[proptest(async = "tokio", cases = 10)]
+    async fn test_something(name: String) {
+        with(temp_postgres, |postgres| async move {
+            let mut writer = postgres.write().await.unwrap();
+            writer.user_create(&name).await.unwrap();
+            writer.commit().await.unwrap();
+        })
+        .await;
+    }
 }

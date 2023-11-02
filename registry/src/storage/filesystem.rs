@@ -153,9 +153,8 @@ pub mod tests {
     //! filesystem side effects.
 
     use super::*;
-    use crate::storage::tests::{with, Cleanup};
+    use crate::storage::tests::*;
     use tempdir::TempDir;
-    use test_strategy::proptest;
 
     /// Create a temporary filesystem storage.
     pub async fn temp_filesystem() -> (Filesystem, Cleanup) {
