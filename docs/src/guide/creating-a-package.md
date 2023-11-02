@@ -87,7 +87,7 @@ definitions, you can publish it to a registry using the buffrs publish command.
 Make sure you're logged in to the registry if required.
 
 ```bash
-buffrs publish --repository tutorial
+buffrs publish --registry https://your.registry.com --repository tutorial
 ```
 
 Your package will be uploaded to the registry, and others can now consume it
