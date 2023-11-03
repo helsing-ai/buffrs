@@ -314,6 +314,34 @@ pub async fn uninstall() -> miette::Result<()> {
     PackageStore::current().await?.clear().await
 }
 
+/// Lists all protobuf files managed by Buffrs to stdout
+pub async fn list() -> miette::Result<()> {
+    let store = PackageStore::current().await?;
+    let protos = store.collect(&store.proto_path(), true).await;
+
+    let cwd = {
+        let cwd = std::env::current_dir()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to get current directory"))?;
+
+        fs::canonicalize(cwd)
+            .await
+            .into_diagnostic()
+            .wrap_err(miette!("failed to canonicalize current directory"))?
+    };
+
+    for proto in protos.iter() {
+        let rel = proto
+            .strip_prefix(&cwd)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to transform protobuf path"))?;
+
+        print!("{} ", rel.display())
+    }
+
+    Ok(())
+}
+
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
 pub async fn lint() -> miette::Result<()> {

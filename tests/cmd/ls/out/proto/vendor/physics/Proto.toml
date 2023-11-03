@@ -1,0 +1,4 @@
+[package]
+name = "physics"
+version = "1.0.0"
+type = "lib"
