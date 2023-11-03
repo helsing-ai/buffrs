@@ -190,9 +190,10 @@ pub mod tests {
     use sqlx::query;
 
     /// Generate random name for a bucket.
-    fn random_database() -> String {
+    fn random_database(prefix: &str) -> String {
         let mut rng = thread_rng();
-        (0..10).map(|_| rng.gen_range('a'..'z')).collect()
+        let name: String = (0..32).map(|_| rng.gen_range('a'..'z')).collect();
+        format!("{prefix}_{name}")
     }
 
     /// Generate temporary new Postgres instance
@@ -203,7 +204,8 @@ pub mod tests {
             .unwrap();
 
         // create random database
-        let dbname = random_database();
+        let dbname = random_database("temp");
+        println!("Creating temporary database {dbname}");
         query(&format!("CREATE DATABASE {dbname}"))
             .execute(&root)
             .await
@@ -222,10 +224,18 @@ pub mod tests {
         let pool = postgres.pool.clone();
         let cleanup = async move {
             pool.close().await;
-            query(&format!("DROP DATABASE {dbname}"))
+
+            println!("Deleting temporary database {dbname}");
+            let result = query(&format!("DROP DATABASE {dbname}"))
                 .execute(&root)
-                .await
-                .unwrap();
+                .await;
+
+            // Sometimes, deleting does not work without an obvious reason. We don't actually care
+            // if deleting works or not, we only try to do it to avoid you ending up with millions
+            // of temporary databases. Here, we just log the error if one occurs and move on.
+            if let Err(error) = &result {
+                println!("Error deleting {dbname}: {error}");
+            }
         };
 
         (postgres, Box::pin(cleanup))
