@@ -46,11 +46,19 @@ your protocol buffers as a package.
 Let us define a dependency of the webserver on a hypothetical library
 called `user` in the `datatypes` repository.
 
-This is done by editing the manifest or by invoking `buffrs add`:
+This is done by invoking `buffrs add`:
+
+```bash
+$ buffrs add --registry https://your.registry.com datatypes/user@=0.1.0
+```
+
+The result is a dependency in the `Proto.toml`:
 
 ```toml
-[dependencies]
-user = { version = "0.1.0", repository = "datatypes" }
+[dependencies.user]
+version = "=0.1.0"
+repository = "datatypes"
+registry = "https://your.registry.com/"
 ```
 
 ### Going further
