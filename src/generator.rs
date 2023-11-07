@@ -124,7 +124,8 @@ impl Generator {
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
         let store = PackageStore::current().await?;
-        let protos = store.collect(&store.proto_path(), true).await;
+        // Collect non-vendored protos
+        let protos = store.collect(&store.proto_path(), false).await;
 
         info!(":: initializing code generator");
 
