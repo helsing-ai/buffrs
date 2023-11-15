@@ -58,6 +58,9 @@ impl PackageStore {
     /// Open given directory.
     pub async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
+        let manifest = Manifest::read().await?;
+
+        store.populate(&manifest).await?;
 
         if !store.exists().await? {
             miette::bail!("package store does not exist");
@@ -228,6 +231,34 @@ impl PackageStore {
         paths.sort();
 
         paths
+    }
+
+    /// Sync this stores proto files to the vendor directory
+    async fn populate(&self, manifest: &Manifest) -> miette::Result<()> {
+        let source_path = self.proto_path();
+        let target_dir = self
+            .proto_vendor_path()
+            .join(manifest.package.name.to_string());
+
+        if tokio::fs::try_exists(&target_dir).await.into_diagnostic()? {
+            tokio::fs::remove_dir_all(&target_dir)
+                .await
+                .into_diagnostic()?;
+        }
+
+        for entry in self.collect(&source_path, false).await {
+            let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
+            let target_path = target_dir.join(file_name);
+            tokio::fs::create_dir_all(target_path.parent().unwrap())
+                .await
+                .into_diagnostic()?;
+
+            tokio::fs::copy(entry, target_path)
+                .await
+                .into_diagnostic()?;
+        }
+
+        Ok(())
     }
 }
 
