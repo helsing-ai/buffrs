@@ -30,6 +30,7 @@ impl PackageName {
 
 fn is_prefix(prefix: &str, package: &str) -> bool {
     prefix
+        .replace('-', "_")
         .split('.')
         .zip(package.split('.'))
         .all(|(a, b)| a == b)
@@ -94,6 +95,17 @@ mod tests {
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");
+        assert!(rule.check_package(&package).is_empty());
+    }
+
+    #[test]
+    fn correct_case_transformation() {
+        let package = Package {
+            name: "my_package.submodule".into(),
+            files: vec!["ignored.proto".into()],
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my-package");
         assert!(rule.check_package(&package).is_empty());
     }
 
