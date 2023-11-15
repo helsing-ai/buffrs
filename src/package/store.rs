@@ -148,10 +148,12 @@ impl PackageStore {
         &self,
         manifest: &Manifest,
     ) -> miette::Result<crate::validation::Violations> {
-        let pkg_path = self.proto_path();
-        let source_files = self.collect(&pkg_path, false).await;
+        let root_path = self.proto_vendor_path();
+        let source_files = self
+            .collect(&root_path.join(manifest.package.name.to_string()), true)
+            .await;
 
-        let mut parser = crate::validation::Validator::new(&pkg_path, &manifest.package.name);
+        let mut parser = crate::validation::Validator::new(&root_path, &manifest.package.name);
 
         for file in &source_files {
             parser.input(file);

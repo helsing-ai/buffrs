@@ -1,1 +1,1 @@
-proto/some.proto proto/vendor/physics/mass.proto proto/vendor/physics/temperature.proto 
+proto/vendor/physics/mass.proto proto/vendor/physics/temperature.proto proto/vendor/test/some.proto 
