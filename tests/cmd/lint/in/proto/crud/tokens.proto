@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package the_api.crud;
+
+service Tokens {
+  rpc CreateToken(CreateTokenRequest)
+    returns (CreateTokenResponse);
+
+  rpc GetToken(GetTokenRequest)
+    returns (GetTokenResponse);
+
+  rpc ListTokens(ListTokensRequest)
+    returns (ListTokensResponse);
+
+  rpc DeleteToken(DeleteTokenRequest)
+    returns (DeleteTokenResponse);
+}
+
+message CreateTokenRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message CreateTokenResponse {
+  string id = 1;
+}
+
+message GetTokenRequest {
+  string id = 1;
+}
+
+message GetTokenResponse {
+  string id = 1;
+}
+
+message ListTokensRequest {}
+
+message ListTokensResponse {
+  repeated GetTokenResponse tokens = 1;
+}
+
+message DeleteTokenRequest {
+  string id = 1;
+}
+
+message DeleteTokenResponse {}

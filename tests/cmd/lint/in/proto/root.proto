@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+import "the-api/crud/tokens.proto";
+import "the-api/types/sub/type_one.proto";
+
+package the_api;
+
+message Message {
+  the_api.types.sub.TypeOneId id = 1;
+  the_api.crud.GetTokenRequest request = 2;
+}

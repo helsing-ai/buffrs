@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package the_api.runtime;
+
+service Jobs {
+  rpc GetJobToExecute(GetJobToExecuteRequest)
+    returns (GetJobToExecuteResponse);
+
+  rpc ReportJobStatus(ReportJobStatusRequest)
+    returns (ReportJobStatusResponse);
+}
+
+message GetJobToExecuteRequest {
+  string id = 1;
+}
+
+message GetJobToExecuteResponse {
+  message Job {
+    string id = 1;
+    repeated Command commands = 2;
+  }
+
+  optional Job job = 1;
+}
+
+message ReportJobStatusRequest {
+  string job_id = 1;
+  string status = 2;
+}
+
+message ReportJobStatusResponse {}
+
+message Command {
+  message CommandOne {
+    string id = 1;
+    string command = 2;
+  }
+
+  message CommandTwo {
+    string id = 1;
+    string another_command = 2;
+    optional string thing = 3;
+  }
+
+  oneof command {
+    CommandOne command_one = 1;
+    CommandTwo command_two = 2;
+  }
+}

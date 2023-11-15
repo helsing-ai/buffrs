@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+// Only the root packages are checked, not vendored dependencies.
+package the_wrong_package;
+
+message Message {
+  string somethin = 1;
+}

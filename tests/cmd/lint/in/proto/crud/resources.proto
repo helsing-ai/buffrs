@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+import "the-api/types/sub/type_one.proto";
+import "the-api/types/sub/type_two.proto";
+import "the-api/crud/tokens.proto";
+
+package the_api.crud;
+
+service Resources {
+  rpc GetResource(GetResourceRequest)
+    returns (GetResourceResponse);
+
+  rpc ListResources(ListResourcesRequest)
+    returns (ListResourcesResponse);
+
+  rpc AssignResource(AssignResourceRequest)
+    returns (AssignResourceResponse);
+
+  rpc DeleteResource(DeleteResourceRequest)
+    returns (DeleteResourceResponse);
+}
+
+message GetResourceRequest { string id = 1; }
+message GetResourceResponse {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+  the_api.crud.GetTokenResponse sibling = 4;
+}
+
+message ListResourcesRequest {}
+message ListResourcesResponse { repeated GetResourceResponse resroucess = 1; }
+
+message AssignResourceRequest { string id = 1; string token_id = 2; }
+message AssignResourceResponse {}
+
+message DeleteResourceRequest { string id = 1; }
+message DeleteResourceResponse {}
