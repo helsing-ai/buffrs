@@ -79,7 +79,7 @@ mod tests {
     fn correct_package_name() {
         let package = Package {
             name: "my_package".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");
@@ -90,7 +90,7 @@ mod tests {
     fn correct_package_name_submodule() {
         let package = Package {
             name: "my_package.submodule".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");
@@ -101,7 +101,7 @@ mod tests {
     fn incorrect_package_name() {
         let package = Package {
             name: "my_package_other".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");

@@ -23,8 +23,8 @@ use super::*;
 pub struct Package {
     /// Name of the package.
     pub name: String,
-    /// File path where this package is defined.
-    pub file: PathBuf,
+    /// File paths where this package is defined.
+    pub files: Vec<PathBuf>,
     /// Entities defined in this package.
     pub entities: BTreeMap<String, Entity>,
 }
@@ -33,12 +33,12 @@ pub struct Package {
 #[derive(Error, Debug, Diagnostic)]
 #[allow(missing_docs)]
 pub enum PackageError {
-    #[error("duplicate entity {entity} in file {file}")]
+    #[error("duplicate entity {entity} in package {package}")]
     #[diagnostic(
-        help = "check to make sure your don't define two entities of the same name",
+        help = "check to make sure you don't define two entities of the same name",
         code = "duplicate_entity"
     )]
-    DuplicateEntity { file: PathBuf, entity: String },
+    DuplicateEntity { package: String, entity: String },
 
     #[error("error parsing message {name}")]
     Message {
@@ -61,13 +61,23 @@ impl Package {
     /// Try to create a new one from a [`FileDescriptorProto`].
     pub fn new(descriptor: &FileDescriptorProto) -> Result<Self, PackageError> {
         let mut package = Self {
-            file: descriptor.name().into(),
+            files: vec![descriptor.name().into()],
             name: descriptor.package().to_string(),
             entities: Default::default(),
         };
 
+        package.parse(descriptor)?;
+
+        Ok(package)
+    }
+
+    pub fn add(&mut self, descriptor: &FileDescriptorProto) {
+        self.parse(descriptor).unwrap();
+    }
+
+    fn parse(&mut self, descriptor: &FileDescriptorProto) -> Result<&Self, PackageError> {
         for message in &descriptor.message_type {
-            package.add_entity(
+            self.add_entity(
                 message.name(),
                 Message::new(message).map_err(|error| PackageError::Message {
                     name: message.name().into(),
@@ -77,7 +87,7 @@ impl Package {
         }
 
         for entity in &descriptor.enum_type {
-            package.add_entity(
+            self.add_entity(
                 entity.name(),
                 Enum::new(entity).map_err(|error| PackageError::Enum {
                     name: entity.name().into(),
@@ -87,10 +97,10 @@ impl Package {
         }
 
         for entity in &descriptor.service {
-            package.add_entity(entity.name(), Service {})?;
+            self.add_entity(entity.name(), Service {})?;
         }
 
-        Ok(package)
+        Ok(self)
     }
 
     /// Try to add an entity.
@@ -101,7 +111,7 @@ impl Package {
                 Ok(())
             }
             Entry::Occupied(_entry) => Err(PackageError::DuplicateEntity {
-                file: self.file.clone(),
+                package: self.name.clone(),
                 entity: name.into(),
             }),
         }
@@ -118,7 +128,7 @@ impl Package {
                     .flat_map(|(name, entity)| rules.check_entity(name, entity).into_iter()),
             )
             .map(|mut violation| {
-                violation.location.file = Some(self.file.display().to_string());
+                violation.location.file = Some(self.files.last().unwrap().display().to_string());
                 violation.location.package = Some(self.name.clone());
                 violation
             })
