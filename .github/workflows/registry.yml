@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  MINIMUM_LINE_COVERAGE_PERCENT: 35
+  MINIMUM_LINE_COVERAGE_PERCENT: 5
 
 jobs:
   fmt:

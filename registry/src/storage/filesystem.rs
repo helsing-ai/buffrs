@@ -39,8 +39,8 @@ use tokio::{fs::OpenOptions, io::AsyncWriteExt};
 /// let filesystem = Filesystem::new("/path/to/storage");
 ///
 /// let package = PackageVersion {
-///     package: "mypackage".to_string().into(),
-///     version: "0.1.5".to_string().into(),
+///     package: "mypackage".parse().unwrap(),
+///     version: "0.1.5".parse().unwrap(),
 /// };
 ///
 /// assert_eq!(filesystem.package_path(&package), Path::new("/path/to/storage/mypackage_0.1.5.tar.gz"));
