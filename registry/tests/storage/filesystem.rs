@@ -9,11 +9,11 @@
 use super::*;
 
 use std::error::Error;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 /// Create a temporary filesystem storage.
 pub async fn temp_filesystem() -> (Filesystem, Cleanup) {
-    let dir = TempDir::new("storage").unwrap();
+    let dir = TempDir::new().unwrap();
     let storage = Filesystem::new(dir.path().to_path_buf());
     let cleanup = async move {
         dir.close().unwrap();

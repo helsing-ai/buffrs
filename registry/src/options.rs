@@ -15,7 +15,7 @@
 use buffrs_registry::{context::Context, storage::*};
 use clap::{Parser, ValueEnum};
 use eyre::Result;
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 #[derive(Parser, Clone, Debug)]
 pub struct Options {
@@ -53,43 +53,6 @@ pub struct StorageOptions {
     #[clap(flatten)]
     #[cfg(feature = "storage-s3")]
     pub s3: S3StorageOptions,
-
-    #[clap(flatten)]
-    #[cfg(feature = "storage-cache")]
-    pub cache: StorageCacheOptions,
-}
-
-/// Options for storage cache
-#[derive(Parser, Clone, Debug)]
-#[cfg(feature = "storage-cache")]
-pub struct StorageCacheOptions {
-    /// Enables storage cache with the specified capacity.
-    #[clap(long, env)]
-    pub storage_cache: bool,
-
-    /// Storage cache capacity, in bytes.
-    #[clap(long, requires("storage_cache"), env, default_value = "16000000")]
-    pub storage_cache_capacity: u64,
-
-    /// Timeout for package missing entries in the cache.
-    #[clap(long, requires("storage_cache"), env, default_value = "60")]
-    pub storage_cache_missing_timeout: u64,
-}
-
-#[cfg(feature = "storage-cache")]
-impl StorageCacheOptions {
-    fn maybe_cache<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
-        if self.storage_cache {
-            let config = CacheConfig {
-                capacity: self.storage_cache_capacity,
-                timeout_missing: Duration::from_secs(self.storage_cache_missing_timeout),
-            };
-            let cache = Cache::new(storage, config);
-            Arc::new(cache)
-        } else {
-            Arc::new(storage)
-        }
-    }
 }
 
 #[derive(Parser, Clone, Debug)]
@@ -125,9 +88,6 @@ impl S3StorageOptions {
 
 impl StorageOptions {
     fn maybe_cache<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
-        #[cfg(feature = "storage-cache")]
-        return self.cache.maybe_cache(storage);
-        #[cfg(not(feature = "storage-cache"))]
         Arc::new(storage)
     }
 

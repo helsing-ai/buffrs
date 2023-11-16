@@ -17,7 +17,6 @@ chrono = "0.4.31"
 clap = { version = "4.3", features = ["cargo", "derive", "env"] }
 eyre = "0.6.8"
 miette = "5.10.0"
-moka = { version = "0.12.1", optional = true, features = ["future"] }
 proptest = "1.3.1"
 prost = "0.12.1"
 semver = "1.0.20"
@@ -35,8 +34,7 @@ url = "2.4.1"
 buffrs = { path = "../", version = "0.7.1" }
 
 [features]
-default = ["storage-cache", "storage-s3"]
-storage-cache = ["dep:moka"]
+default = ["storage-s3"]
 storage-s3 = ["dep:aws-config", "dep:aws-sdk-s3"]
 test-database = []
 
@@ -44,7 +42,7 @@ test-database = []
 aws-credential-types = { version = "0.56.1", features = ["hardcoded-credentials"] }
 proptest = "1.3.1"
 rand = "0.8.5"
-tempdir = "0.3.7"
+tempfile = "3.8.1"
 test-strategy = "0.3.1"
 
 [[test]]

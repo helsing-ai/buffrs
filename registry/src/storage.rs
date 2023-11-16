@@ -26,8 +26,6 @@ use crate::types::PackageVersion;
 use bytes::Bytes;
 use std::{fmt, sync::Arc};
 
-#[cfg(feature = "storage-cache")]
-mod cache;
 mod filesystem;
 #[cfg(feature = "storage-s3")]
 mod s3;

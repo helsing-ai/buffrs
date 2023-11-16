@@ -17,7 +17,6 @@ use buffrs_registry::types::PackageVersion;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
 pub use test_strategy::proptest;
 
 mod filesystem;
@@ -26,16 +25,6 @@ mod s3;
 
 /// Generic future used for cleanup tasks.
 pub type Cleanup = Pin<Box<dyn Future<Output = ()>>>;
-
-/// Cache config used for tests.
-///
-/// This uses default values, but crucially sets the `timeout_missing` to zero. This is needed
-/// because we do not want the tests to have to wait for entries to expire.
-#[cfg(feature = "storage-cache")]
-const TEST_CACHE_CONFIG: CacheConfig = CacheConfig {
-    timeout_missing: Duration::from_secs(0),
-    capacity: 16 * 1024 * 1024,
-};
 
 /// Run a closure with a temporary instance and run cleanup afterwards.
 pub async fn with<
@@ -68,14 +57,6 @@ async fn create_temp_instances<
     let (storage, cleanup) = function().await;
     storages.push(Arc::new(storage));
     cleanups.push(cleanup);
-
-    // create cached instance, if feature is enabled.
-    #[cfg(feature = "storage-cache")]
-    {
-        let (storage, cleanup) = function().await;
-        storages.push(Arc::new(Cache::new(storage, TEST_CACHE_CONFIG)));
-        cleanups.push(cleanup);
-    }
 }
 
 /// Create temporary instances of all storage providers.
