@@ -31,8 +31,8 @@ pub struct VirtualFileSystem {
 }
 
 impl VirtualFileSystem {
-    const VIRTUAL_HOME: &str = "$HOME";
-    const ROOT_NAME: &str = "root";
+    const VIRTUAL_HOME: &'static str = "$HOME";
+    const ROOT_NAME: &'static str = "root";
 
     /// Init an empty virtual file system
     pub fn empty() -> Self {
