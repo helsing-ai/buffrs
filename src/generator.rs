@@ -64,6 +64,10 @@ impl Generator {
         std::env::set_var("PROTOC", protoc.clone());
 
         let store = PackageStore::current().await?;
+        let manifest = Manifest::read().await?;
+
+        store.populate(&manifest).await?;
+
         let protos = store.collect(&store.proto_path(), true).await;
         let includes = &[store.proto_path()];
 
@@ -124,6 +128,9 @@ impl Generator {
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
         let store = PackageStore::current().await?;
+
+        store.populate(&manifest).await?;
+
         // Collect non-vendored protos
         let protos = store.collect(&store.proto_path(), false).await;
 

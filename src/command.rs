@@ -168,6 +168,8 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
+    store.populate(&manifest).await?;
+
     let package = store.release(manifest).await?;
 
     if dry_run {
@@ -223,6 +225,8 @@ pub async fn publish(
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
+    store.populate(&manifest).await?;
+
     let package = store.release(manifest).await?;
 
     if dry_run {
@@ -239,6 +243,8 @@ pub async fn install() -> miette::Result<()> {
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
+
+    store.populate(&manifest).await?;
 
     let dependency_graph =
         DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
@@ -317,6 +323,9 @@ pub async fn uninstall() -> miette::Result<()> {
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
     let store = PackageStore::current().await?;
+    let manifest = Manifest::read().await?;
+
+    store.populate(&manifest).await?;
 
     let protos = store.collect(&store.proto_vendor_path(), true).await;
 
@@ -348,6 +357,8 @@ pub async fn list() -> miette::Result<()> {
 pub async fn lint() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
+
+    store.populate(&manifest).await?;
 
     let violations = store.validate(&manifest).await?;
 

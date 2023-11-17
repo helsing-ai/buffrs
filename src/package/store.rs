@@ -58,9 +58,6 @@ impl PackageStore {
     /// Open given directory.
     pub async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
-        let manifest = Manifest::read().await?;
-
-        store.populate(&manifest).await?;
 
         if !store.exists().await? {
             miette::bail!("package store does not exist");
@@ -236,7 +233,7 @@ impl PackageStore {
     }
 
     /// Sync this stores proto files to the vendor directory
-    async fn populate(&self, manifest: &Manifest) -> miette::Result<()> {
+    pub async fn populate(&self, manifest: &Manifest) -> miette::Result<()> {
         let source_path = self.proto_path();
         let target_dir = self
             .proto_vendor_path()
