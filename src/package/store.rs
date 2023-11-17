@@ -56,7 +56,7 @@ impl PackageStore {
     }
 
     /// Open given directory.
-    pub async fn open(path: &Path) -> miette::Result<Self> {
+    async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
 
         if !store.exists().await? {
