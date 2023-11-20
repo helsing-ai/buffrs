@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use clap::Parser;
-use std::net::SocketAddr;
-use url::Url;
+use buffrs_registry::{context::Context, storage::*};
+use clap::{Parser, ValueEnum};
+use eyre::Result;
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 #[derive(Parser, Clone, Debug)]
 pub struct Options {
@@ -22,8 +23,81 @@ pub struct Options {
     #[clap(long, short, env, default_value = "0.0.0.0:4367")]
     pub listen: SocketAddr,
 
-    /// URL of Postgres database to connect to.
-    #[clap(long, short, env)]
-    #[cfg_attr(dev, clap(default_value = "postgres://buffrs:buffrs@localhost"))]
-    pub database: Url,
+    /// Storage related options.
+    #[clap(flatten)]
+    pub storage: StorageOptions,
+}
+
+impl Options {
+    pub async fn build(&self) -> Result<Context> {
+        let storage = self.storage.build().await?;
+        Ok(Context::new(storage))
+    }
+}
+
+#[cfg(feature = "storage-s3")]
+const DEFAULT_STORAGE: &str = "s3";
+#[cfg(not(feature = "storage-s3"))]
+const DEFAULT_STORAGE: &'static str = "filesystem";
+
+/// Options for storage.
+#[derive(Parser, Clone, Debug)]
+pub struct StorageOptions {
+    /// Which storage backend to use.
+    #[clap(long, default_value = DEFAULT_STORAGE)]
+    pub storage: StorageKind,
+
+    #[clap(flatten)]
+    pub filesystem: FilesystemStorageOptions,
+
+    #[clap(flatten)]
+    #[cfg(feature = "storage-s3")]
+    pub s3: S3StorageOptions,
+}
+
+#[derive(Parser, Clone, Debug)]
+pub struct FilesystemStorageOptions {
+    /// Path to store packages at.
+    #[clap(long, required_if_eq("storage", "filesystem"))]
+    pub filesystem_storage: Option<PathBuf>,
+}
+
+#[derive(Parser, Clone, Debug)]
+pub struct S3StorageOptions {}
+
+/// Kind of storage to use.
+#[derive(ValueEnum, Clone, Debug)]
+pub enum StorageKind {
+    Filesystem,
+    #[cfg(feature = "storage-s3")]
+    S3,
+}
+
+impl FilesystemStorageOptions {
+    async fn build(&self) -> Result<Filesystem> {
+        Ok(Filesystem::new(self.filesystem_storage.clone().unwrap()))
+    }
+}
+
+#[cfg(feature = "storage-s3")]
+impl S3StorageOptions {
+    async fn build(&self) -> Result<S3> {
+        todo!()
+    }
+}
+
+impl StorageOptions {
+    fn wrap<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
+        Arc::new(storage)
+    }
+
+    pub async fn build(&self) -> Result<Arc<dyn Storage>> {
+        let storage = match self.storage {
+            StorageKind::Filesystem => self.wrap(self.filesystem.build().await?),
+            #[cfg(feature = "storage-s3")]
+            StorageKind::S3 => self.wrap(self.s3.build().await?),
+        };
+
+        Ok(storage)
+    }
 }

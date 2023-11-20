@@ -1,0 +1,73 @@
+name: Buffrs CLI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+env:
+  MINIMUM_LINE_COVERAGE_PERCENT: 35
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup update && rustup component add rustfmt
+      - run: cargo fmt --check --all
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup update && rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: "true"
+      - run: rustup update
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+        env:
+          RUST_BACKTRACE: 1
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup update
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deny || true
+      - run: cargo deny --workspace check
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: 'true'
+      - run: rustup update
+      - run: rustup component add llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-llvm-cov || true
+      - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
+
+  typos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install typos-cli || true
+      - run: typos
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cachix/install-nix-action@v22
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - run: nix flake check
