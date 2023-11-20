@@ -137,6 +137,9 @@ enum Command {
     /// Prints the urls and hashes of all files required to resolve the
     /// current buffrs project. Relies on an up-to-date lockfile.
     Dependencies,
+    ChangeVersion {
+        new_version: String,
+    },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -241,5 +244,8 @@ async fn main() -> miette::Result<()> {
         Command::Dependencies => command::dependencies()
             .await
             .wrap_err(miette!("failed to print dependencies")),
+        Command::ChangeVersion { new_version } => command::change_version(new_version)
+            .await
+            .wrap_err(miette!("unable to change version")),
     }
 }

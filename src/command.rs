@@ -411,6 +411,14 @@ pub async fn dependencies() -> miette::Result<()> {
     Ok(())
 }
 
+/// Replaces the version in the manifest. Can be used to prepare for a release.
+pub async fn change_version(new_version: String) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
+    manifest.package.version = Version::from_str(&new_version).into_diagnostic()?;
+    manifest.write().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::DependencyLocator;

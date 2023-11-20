@@ -84,7 +84,7 @@ impl FileRequirement {
         &self.url
     }
 
-    // Construct new file requirement.
+    /// Construct new file requirement.
     pub fn new(
         url: &RegistryUri,
         repository: &String,
