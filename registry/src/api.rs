@@ -19,5 +19,8 @@ use crate::context::Context;
 mod grpc;
 
 impl Context {
-    pub async fn launch_api(&self) {}
+    /// Launch API
+    pub async fn launch_api(&self) {
+        todo!()
+    }
 }

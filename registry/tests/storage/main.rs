@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs_registry::storage::*;
-use buffrs_registry::types::PackageVersion;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::Arc;
-pub use test_strategy::proptest;
+use buffrs_registry::{storage::*, types::PackageVersion};
+use proptest::prop_compose;
+use std::{future::Future, pin::Pin, sync::Arc};
+use test_strategy::{proptest, Arbitrary};
 
 mod filesystem;
 #[cfg(feature = "storage-s3")]
 mod s3;
 
 /// Generic future used for cleanup tasks.
-pub type Cleanup = Pin<Box<dyn Future<Output = ()>>>;
+type Cleanup = Pin<Box<dyn Future<Output = ()>>>;
 
 /// Run a closure with a temporary instance and run cleanup afterwards.
-pub async fn with<
+async fn with<
     S: Storage,
     O1: Future<Output = (S, Cleanup)>,
     F1: Fn() -> O1,
@@ -67,11 +65,9 @@ async fn temp_instances() -> (Vec<AnyStorage>, Cleanup) {
     // create filesystem instances
     create_temp_instances(&mut storage, &mut cleanup, filesystem::temp_filesystem).await;
 
-    /*
     // create s3 instances, if enabled.
     #[cfg(feature = "storage-s3")]
-    create_temp_instances(&mut storage, &mut cleanup, super::s3::tests::temp_s3).await;
-    */
+    create_temp_instances(&mut storage, &mut cleanup, s3::temp_s3).await;
 
     let cleanup = Box::pin(async move {
         for c in cleanup.into_iter() {
@@ -82,8 +78,41 @@ async fn temp_instances() -> (Vec<AnyStorage>, Cleanup) {
     (storage, cleanup)
 }
 
+use buffrs::package::PackageName;
+use semver::{BuildMetadata, Prerelease, Version};
+
+prop_compose! {
+    fn package_name()(name in "[a-z][a-z0-9-]{0,127}") -> PackageName {
+        name.try_into().unwrap()
+    }
+}
+
+prop_compose! {
+    fn semver_version()(major: u64, minor: u64, patch: u64) -> Version {
+        Version {
+            minor,
+            major,
+            patch,
+            pre: Prerelease::EMPTY,
+            build: BuildMetadata::EMPTY,
+        }
+    }
+}
+
+prop_compose! {
+    fn package_version()(
+        package in package_name(),
+        version in semver_version()
+    ) -> PackageVersion {
+        PackageVersion {
+            package,
+            version
+        }
+    }
+}
+
 #[proptest(async = "tokio", cases = 10)]
-async fn can_package_put(version: PackageVersion, bytes: Vec<u8>) {
+async fn can_package_put(#[strategy(package_version())] version: PackageVersion, bytes: Vec<u8>) {
     let (instances, cleanup) = temp_instances().await;
 
     for storage in instances {
@@ -101,18 +130,28 @@ async fn can_package_put(version: PackageVersion, bytes: Vec<u8>) {
     cleanup.await;
 }
 
+#[derive(Arbitrary, Debug)]
+struct PackageContents {
+    #[strategy(package_version())]
+    version: PackageVersion,
+    bytes: Vec<u8>,
+}
+
 #[proptest(async = "tokio", cases = 10)]
-async fn can_package_put_many(packages: Vec<(PackageVersion, Vec<u8>)>) {
+async fn can_package_put_many(packages: Vec<PackageContents>) {
     let (instances, cleanup) = temp_instances().await;
 
     for storage in instances {
         println!("Testing {storage:?}");
 
-        for (version, bytes) in &packages {
-            storage.package_put(version, bytes).await.unwrap();
+        for package in &packages {
+            storage
+                .package_put(&package.version, &package.bytes)
+                .await
+                .unwrap();
 
-            let result = storage.package_get(version).await.unwrap();
-            assert_eq!(result, bytes);
+            let result = storage.package_get(&package.version).await.unwrap();
+            assert_eq!(result, package.bytes);
         }
     }
 

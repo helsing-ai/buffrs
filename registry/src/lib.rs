@@ -37,6 +37,8 @@
 //! by simpler clients to access packages. It is not possible to publish packages using these
 //! endpoints however.
 
+#![warn(missing_docs)]
+
 pub mod api;
 pub mod context;
 pub mod proto;

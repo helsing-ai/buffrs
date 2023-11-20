@@ -75,7 +75,10 @@ pub async fn temp_s3() -> (S3, Cleanup) {
 }
 
 #[proptest(async = "tokio")]
-async fn can_write_package(version: PackageVersion, contents: Vec<u8>) {
+async fn can_write_package(
+    #[strategy(package_version())] version: PackageVersion,
+    contents: Vec<u8>,
+) {
     with(temp_s3, |storage| async move {
         // write package using trait
         storage.package_put(&version, &contents).await.unwrap();
@@ -96,7 +99,11 @@ async fn can_write_package(version: PackageVersion, contents: Vec<u8>) {
 }
 
 #[proptest(async = "tokio")]
-async fn can_write_package_existing(version: PackageVersion, previous: Vec<u8>, contents: Vec<u8>) {
+async fn can_write_package_existing(
+    #[strategy(package_version())] version: PackageVersion,
+    previous: Vec<u8>,
+    contents: Vec<u8>,
+) {
     with(temp_s3, |storage| async move {
         // put an object into storage manually
         storage
@@ -128,7 +135,7 @@ async fn can_write_package_existing(version: PackageVersion, previous: Vec<u8>, 
 }
 
 #[proptest(async = "tokio")]
-async fn cannot_read_package_missing(version: PackageVersion) {
+async fn cannot_read_package_missing(#[strategy(package_version())] version: PackageVersion) {
     with(temp_s3, |storage| async move {
         // read a non-existing package
         let error = storage.package_get(&version).await.err().unwrap();
@@ -145,7 +152,10 @@ async fn cannot_read_package_missing(version: PackageVersion) {
 }
 
 #[proptest(async = "tokio")]
-async fn can_read_package(version: PackageVersion, contents: Vec<u8>) {
+async fn can_read_package(
+    #[strategy(package_version())] version: PackageVersion,
+    contents: Vec<u8>,
+) {
     with(temp_s3, |storage| async move {
         // put an object into storage manually
         storage

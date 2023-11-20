@@ -12,37 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use proptest::prelude::*;
+//! # Shared type definitions
 
 use buffrs::package::PackageName;
-use semver::{BuildMetadata, Prerelease, Version};
-use test_strategy::Arbitrary;
+use semver::Version;
 
-prop_compose! {
-    fn package_name()(name in "[a-z][a-z0-9-]{0,127}") -> PackageName {
-        name.try_into().unwrap()
-    }
-}
-
-prop_compose! {
-    fn package_version()(major: u64, minor: u64, patch: u64) -> Version {
-        Version {
-            minor,
-            major,
-            patch,
-            pre: Prerelease::EMPTY,
-            build: BuildMetadata::EMPTY,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Arbitrary)]
+/// Represents a Buffrs package version
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PackageVersion {
     /// Package name
-    #[strategy(package_name())]
     pub package: PackageName,
 
-    #[strategy(package_version())]
     /// Package version
     pub version: Version,
 }

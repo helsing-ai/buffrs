@@ -30,8 +30,6 @@ mod filesystem;
 #[cfg(feature = "storage-s3")]
 mod s3;
 
-#[cfg(feature = "storage-cache")]
-pub use cache::{Cache, CacheConfig};
 pub use filesystem::Filesystem;
 #[cfg(feature = "storage-s3")]
 pub use s3::S3;

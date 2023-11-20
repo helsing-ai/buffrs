@@ -87,15 +87,15 @@ impl S3StorageOptions {
 }
 
 impl StorageOptions {
-    fn maybe_cache<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
+    fn wrap<S: Storage + 'static>(&self, storage: S) -> Arc<dyn Storage> {
         Arc::new(storage)
     }
 
     pub async fn build(&self) -> Result<Arc<dyn Storage>> {
         let storage = match self.storage {
-            StorageKind::Filesystem => self.maybe_cache(self.filesystem.build().await?),
+            StorageKind::Filesystem => self.wrap(self.filesystem.build().await?),
             #[cfg(feature = "storage-s3")]
-            StorageKind::S3 => self.maybe_cache(self.s3.build().await?),
+            StorageKind::S3 => self.wrap(self.s3.build().await?),
         };
 
         Ok(storage)
