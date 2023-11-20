@@ -53,7 +53,7 @@ pub enum Generator {
 
 impl Generator {
     /// Tonic include file name
-    pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
+    pub const TONIC_INCLUDE_FILE: &'static str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
     pub async fn run(&self) -> miette::Result<()> {

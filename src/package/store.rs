@@ -35,9 +35,9 @@ pub struct PackageStore {
 
 impl PackageStore {
     /// Path to the proto directory
-    pub const PROTO_PATH: &str = "proto";
+    pub const PROTO_PATH: &'static str = "proto";
     /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &str = "proto/vendor";
+    pub const PROTO_VENDOR_PATH: &'static str = "proto/vendor";
 
     fn new(root: PathBuf) -> Self {
         Self { root }
