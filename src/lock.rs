@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use miette::{ensure, Context, IntoDiagnostic};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use serde_json;
 use thiserror::Error;
 use tokio::fs;
+use url::Url;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
@@ -56,6 +58,58 @@ pub struct LockedPackage {
     pub dependants: usize,
 }
 
+/// A requirement from a lockfile on a specific file being available in order to build the
+/// overall graph. It's expected that when a file is downloaded, it's made available to buffrs
+/// by setting the filename to the digest in whatever download directory.
+#[derive(Serialize, Clone, PartialEq, Eq)]
+pub struct FileRequirement {
+    url: Url,
+    digest: Digest,
+}
+
+impl FileRequirement {
+    /// If we are building a buffrs input directory, the file specified by this file requirement
+    /// must be stored here. This will return a relative path, which can be made relative to some root.
+    pub fn cache_path(&self) -> PathBuf {
+        format!(
+            "{}-{}.tgz",
+            self.digest.algorithm(),
+            hex::encode(self.digest.as_bytes())
+        )
+        .into()
+    }
+
+    /// URL where the file can be located.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    // Construct new file requirement.
+    pub fn new(
+        url: &RegistryUri,
+        repository: &String,
+        name: &PackageName,
+        version: &Version,
+        digest: &Digest,
+    ) -> Self {
+        let mut url = url.clone();
+        let new_path = format!(
+            "{}/{}/{}/{}-{}.tgz",
+            url.path(),
+            repository,
+            name,
+            name,
+            version
+        );
+
+        url.set_path(&new_path);
+        Self {
+            url: url.into(),
+            digest: digest.clone(),
+        }
+    }
+}
+
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     ///
@@ -80,6 +134,17 @@ impl LockedPackage {
                 .collect(),
             dependants,
         })
+    }
+
+    /// Returns the file requirement for a given lockfile entry.
+    pub fn file_requirement(&self) -> FileRequirement {
+        FileRequirement::new(
+            &self.registry,
+            &self.repository,
+            &self.name,
+            &self.version,
+            &self.digest,
+        )
     }
 
     /// Validates if another LockedPackage matches this one
@@ -202,6 +267,19 @@ impl Lockfile {
         .await
         .into_diagnostic()
         .wrap_err(WriteError(LOCKFILE))
+    }
+
+    /// Prints
+    pub fn print_file_requirements(&self) {
+        let mut requirements = Vec::new();
+        for entry in self.packages.values() {
+            requirements.push(entry.file_requirement());
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&requirements)
+                .expect("not actually possible for this to fail, per serde json doc")
+        );
     }
 
     /// Locates a given package in the Lockfile

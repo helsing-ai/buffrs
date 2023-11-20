@@ -14,6 +14,10 @@
         naersk' = pkgs.callPackage naersk {};
         nativeBuildInputs = with pkgs; [ pkg-config ];
       in rec {
+        # A function for using buffrs inside Nix projects.
+        # this will vendor dependencies into a Nix store path and return an attribute set which can be merged with 
+        # Rust derivations.
+        lib.vendorDependencies = pkgs.callPackage ./downloadBuffrsDependencies.nix { buffrs = packages.default; };
         packages.default = naersk'.buildPackage {
           inherit nativeBuildInputs;
           src = ./.;

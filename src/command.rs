@@ -234,14 +234,14 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install() -> miette::Result<()> {
+pub async fn install(cache_dir: Option<PathBuf>) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
 
     let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), cache_dir)
             .await
             .wrap_err(miette!("dependency resolution failed"))?;
 
@@ -403,6 +403,12 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
+}
+
+/// Prints the file requirements.
+pub async fn dependencies() -> miette::Result<()> {
+    Lockfile::read().await?.print_file_requirements();
+    Ok(())
 }
 
 #[cfg(test)]

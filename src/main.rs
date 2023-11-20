@@ -96,7 +96,13 @@ enum Command {
     },
 
     /// Installs dependencies
-    Install,
+    Install {
+        /// Optional directory for loading dependencies. Intended to
+        /// evolve into a persistent cache for avoiding repeated dependency
+        /// resolution. At present, designed for use by the Nix integration.
+        #[clap(long)]
+        cache_dir: Option<PathBuf>,
+    },
     /// Uninstalls dependencies
     Uninstall,
 
@@ -128,6 +134,9 @@ enum Command {
         #[clap(long)]
         registry: RegistryUri,
     },
+    /// Prints the urls and hashes of all files required to resolve the
+    /// current buffrs project. Relies on an up-to-date lockfile.
+    Dependencies,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -217,7 +226,7 @@ async fn main() -> miette::Result<()> {
             "failed to lint protocol buffers in `{}`",
             PackageStore::PROTO_PATH
         )),
-        Command::Install => command::install()
+        Command::Install { cache_dir } => command::install(cache_dir)
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()
@@ -229,5 +238,8 @@ async fn main() -> miette::Result<()> {
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
             .wrap_err(miette!("failed to generate {language} language bindings")),
+        Command::Dependencies => command::dependencies()
+            .await
+            .wrap_err(miette!("failed to print dependencies")),
     }
 }

@@ -38,18 +38,25 @@ pub mod resolver;
 #[cfg(feature = "validation")]
 pub mod validation;
 
+const BUFFRS_CACHE_DIR: &str = "BUFFRS_CACHE_DIR";
+
 /// Cargo build integration for buffrs
 ///
 /// Important: Only use this inside of cargo build scripts!
 #[cfg(feature = "build")]
 #[tokio::main(flavor = "current_thread")]
 pub async fn build() -> miette::Result<()> {
+    use std::env;
+
     println!(
         "cargo:rerun-if-changed={}",
         package::PackageStore::PROTO_PATH
     );
 
-    command::install().await?;
+    println!("cargo:rerun-if-env-changed={}", BUFFRS_CACHE_DIR,);
+    let cache_dir = env::var_os(BUFFRS_CACHE_DIR).map(|x| x.into());
+
+    command::install(cache_dir).await?;
 
     generator::Generator::Tonic.generate().await?;
 
