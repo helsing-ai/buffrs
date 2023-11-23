@@ -93,6 +93,9 @@ enum Command {
         /// Abort right before uploading the release to the registry
         #[clap(long)]
         dry_run: bool,
+        /// optional auth token to use when publishing.
+        #[clap(long)]
+        auth_token: Option<String>,
     },
 
     /// Installs dependencies
@@ -215,11 +218,13 @@ async fn main() -> miette::Result<()> {
             repository,
             allow_dirty,
             dry_run,
+            auth_token,
         } => command::publish(
             registry.to_owned(),
             repository.to_owned(),
             allow_dirty,
             dry_run,
+            auth_token,
         )
         .await
         .wrap_err(miette!(

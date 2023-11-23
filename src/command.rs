@@ -197,6 +197,7 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
+    token: Option<String>,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
@@ -219,7 +220,10 @@ pub async fn publish(
     }
 
     let manifest = Manifest::read().await?;
-    let credentials = Credentials::load().await?;
+    let mut credentials = Credentials::load().await?;
+    if let Some(token) = token {
+        credentials.registry_tokens.insert(registry.clone(), token);
+    }
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
