@@ -3,6 +3,8 @@ name: Binaries
 on:
   release:
     types: [created]
+  repository_dispatch:
+    types: [manual-trigger]
 
 jobs:
   build:
