@@ -4,7 +4,7 @@
   "description": "buffrs",
   "main": "src/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+     "preinstall": "node download.js"
   },
   "author": "Mara Schulke <mara.schulke@helsing.ai>",
   "license": "MIT",

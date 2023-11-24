@@ -12,8 +12,10 @@ import { spawnSync } from "child_process";
  */
 function getExePath() {
   const arch = process.arch;
-  let os = process.platform as string;
+  const os = process.platform as string;
+
   let extension = "";
+
   if (["win32", "cygwin"].includes(process.platform)) {
     os = "windows";
     extension = ".exe";
@@ -24,7 +26,7 @@ function getExePath() {
     return require.resolve(`buffrs/bin/buffrs-${os}-${arch}${extension}`);
   } catch (e) {
     throw new Error(
-      `Couldn't find application binary inside node_modules for ${os}-${arch}`
+      `Couldn't find buffrs binary inside node_modules for ${os}-${arch}`
     );
   }
 }
