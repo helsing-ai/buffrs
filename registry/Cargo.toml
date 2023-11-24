@@ -6,7 +6,7 @@ description = "Registry for buffrs, a modern protocol buffer package manager"
 license = "Apache-2.0"
 
 [dependencies]
-buffrs = { path = "../", version = "0.6.4" }
+buffrs = { path = "../", version = "0.7" }
 prost = "0.12.1"
 tonic = "0.10.2"
 clap = { version = "4.3", features = ["cargo", "derive", "env"] }

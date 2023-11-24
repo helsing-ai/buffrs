@@ -6,9 +6,12 @@ on:
   push:
     branches: ["mara/npx"]
 
+env:
+  PKG_CONFIG_ALLOW_CROSS: 1
+
 jobs:
   build:
-    name: Build and Release Binaries
+    name: Build Binaries
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -41,6 +44,13 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Setup Runner
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          export PKG_CONFIG_PATH=/usr/arm-linux-gnueabihf/lib/pkgconfig
+
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
 
@@ -51,6 +61,7 @@ jobs:
           path: target/${{ matrix.target }}/release/*
 
   publish:
+    name: Publish Binaries
     needs: build
     runs-on: ubuntu-latest
     steps:
