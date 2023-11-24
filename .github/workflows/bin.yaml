@@ -44,12 +44,25 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Setup Runner
+      - name: Setup Linux
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
-          export PKG_CONFIG_PATH=/usr/arm-linux-gnueabihf/lib/pkgconfig
+          echo "PKG_CONFIG_PATH=/usr/arm-linux-gnueabihf/lib/pkgconfig" >> $GITHUB_ENV
+
+      - name: Setup macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl
+          echo "PKG_CONFIG_PATH=/usr/local/opt/openssl/lib/pkgconfig" >> $GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include" >> $GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=/usr/local/opt/openssl/lib" >> $GITHUB_ENV
+
+      - name: Setup Windows
+        if: runner.os == 'Windows'
+        run:
+          echo "skipped"
 
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
