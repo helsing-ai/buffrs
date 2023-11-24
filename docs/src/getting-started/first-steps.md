@@ -5,7 +5,7 @@ interface. Let us take a look at its ability to declare protocol buffer
 dependencies and to publish new packages to
 the registry.
 
-To initialize a new project with Buffrs, use `buffrs init`:
+To initialize a new project with Buffrs, use [`buffrs init`](../commands/buffrs-init.md):
 
 ```bash
 $ mkdir web-server && cd web-server
@@ -46,11 +46,19 @@ your protocol buffers as a package.
 Let us define a dependency of the webserver on a hypothetical library
 called `user` in the `datatypes` repository.
 
-This is done by editing the manifest or by invoking `buffrs add`:
+This is done by invoking [`buffrs add`](../commands/buffrs-add.md):
+
+```bash
+$ buffrs add --registry https://your.registry.com datatypes/user@=0.1.0
+```
+
+The result is a dependency in the `Proto.toml`:
 
 ```toml
-[dependencies]
-user = { version = "0.1.0", repository = "datatypes" }
+[dependencies.user]
+version = "=0.1.0"
+repository = "datatypes"
+registry = "https://your.registry.com/"
 ```
 
 ### Going further

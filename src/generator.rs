@@ -53,7 +53,7 @@ pub enum Generator {
 
 impl Generator {
     /// Tonic include file name
-    pub const TONIC_INCLUDE_FILE: &str = "buffrs.rs";
+    pub const TONIC_INCLUDE_FILE: &'static str = "buffrs.rs";
 
     /// Run the generator for a dependency and output files at the provided path
     pub async fn run(&self) -> miette::Result<()> {
@@ -124,12 +124,14 @@ impl Generator {
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
         let store = PackageStore::current().await?;
+        // Collect non-vendored protos
+        let protos = store.collect(&store.proto_path(), false).await;
 
         info!(":: initializing code generator");
 
         ensure!(
-            manifest.package.kind.is_compilable() || !manifest.dependencies.is_empty(),
-            "either a compilable package (library or api) or at least one dependency is needed to generate code bindings."
+            manifest.package.kind.is_compilable() || !manifest.dependencies.is_empty() || !protos.is_empty(),
+            "either a compilable package (library or api) or at least one dependency/proto file is needed to generate code bindings."
         );
 
         self.run()

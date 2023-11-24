@@ -98,6 +98,10 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
 #[error("{0} is not a supported version requirement")]
 struct UnsupportedVersionRequirement(VersionReq);
 
+#[derive(Error, Debug)]
+#[error("{0} is not supported yet. Pin the exact version you want to use with '='. For example: '=1.0.4' instead of '^1.0.0'")]
+struct VersionNotPinned(VersionReq);
+
 fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
     let version = dependency
         .manifest
@@ -109,7 +113,7 @@ fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> 
 
     ensure!(
         version.op == semver::Op::Exact,
-        UnsupportedVersionRequirement(dependency.manifest.version.clone(),)
+        VersionNotPinned(dependency.manifest.version.clone(),)
     );
 
     let minor_version = version
@@ -131,4 +135,66 @@ fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> 
             format!("-{}", version.pre)
         }
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use semver::VersionReq;
+
+    use crate::{
+        manifest::Dependency,
+        package::PackageName,
+        registry::{dependency_version_string, VersionNotPinned},
+    };
+
+    use super::RegistryUri;
+
+    fn get_dependency(version: &str) -> Dependency {
+        let registry = RegistryUri::from_str("https://my-registry.com").unwrap();
+        let repository = String::from("my-repo");
+        let package = PackageName::from_str("package").unwrap();
+        let version = VersionReq::from_str(version).unwrap();
+        Dependency::new(registry, repository, package, version)
+    }
+
+    #[test]
+    fn valid_version() {
+        let dependency = get_dependency("=0.0.1");
+        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1"));
+
+        let dependency = get_dependency("=0.0.1-23");
+        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1-23"));
+
+        let dependency = get_dependency("=0.0.1-ab");
+        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1-ab"));
+    }
+
+    #[test]
+    fn unsupported_version_operator() {
+        let dependency = get_dependency("^0.0.1");
+        assert!(
+            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
+        );
+
+        let dependency = get_dependency("~0.0.1");
+        assert!(
+            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
+        );
+
+        let dependency = get_dependency("<=0.0.1");
+        assert!(
+            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
+        );
+    }
+
+    #[test]
+    fn incomplete_version() {
+        let dependency = get_dependency("=1.0");
+        assert!(dependency_version_string(&dependency).is_err());
+
+        let dependency = get_dependency("=1");
+        assert!(dependency_version_string(&dependency).is_err());
+    }
 }

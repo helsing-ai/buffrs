@@ -20,3 +20,15 @@ CREATE TABLE package_owners (
     created_at TIMESTAMPTZ NOT NULL,
     deleted_at TIMESTAMPTZ
 );
+
+CREATE TABLE package_invites (
+    id SERIAL PRIMARY KEY,
+    token TEXT NOT NULL UNIQUE,
+
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    package_id INTEGER NOT NULL REFERENCES packages(id) ON DELETE RESTRICT,
+    created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+
+    created_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
+);

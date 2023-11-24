@@ -7,3 +7,12 @@ services:
       POSTGRES_USER: buffrs
     ports:
       - 127.0.0.1:5432:5432
+  storage:
+    image: minio/minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: buffrs
+      MINIO_ROOT_PASSWORD: password
+      MINIO_DOMAIN: localhost
+    ports:
+      - 127.0.0.1:9000:9000

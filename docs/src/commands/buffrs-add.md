@@ -27,6 +27,10 @@ Specification](../reference/pkgid-spec.md). The version must adhere to the
 [Semantic Version convention](https://semver.org/) (e.g. `1.2.3`) -- see [SemVer
 compatibility](../reference/semver.md) for more information.
 
+Currently there is no support for resolving version operators but the specific
+version has to be provided. This means `^1.0.0`, `<2.3.0`, `~2.0.0`, etc. can't
+be installed, but `=1.2.3` has to be provided.
+
 #### Lockfile interaction
 
 Currently adding a new dependency won't automatically update the lockfile
