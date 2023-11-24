@@ -3,8 +3,8 @@ name: Binaries
 on:
   release:
     types: [created]
-  repository_dispatch:
-    types: [manual-trigger]
+  push:
+    branches: ["mara/npx"]
 
 jobs:
   build:
