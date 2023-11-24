@@ -3,7 +3,17 @@ name: Buffrs CLI
 on:
   push:
     branches: ["main"]
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'deny.toml'
+      - 'src/**'
   pull_request:
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'deny.toml'
+      - 'src/**'
 
 env:
   MINIMUM_LINE_COVERAGE_PERCENT: 35
@@ -64,10 +74,3 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo install typos-cli || true
       - run: typos
-  nix:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: cachix/install-nix-action@v22
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      - run: nix flake check
