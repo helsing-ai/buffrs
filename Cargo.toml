@@ -34,7 +34,7 @@ bytes = "1.0"
 clap = { version = "4.3", features = ["cargo", "derive"] }
 diff-struct = { version = "0.5.3", optional = true }
 flate2 = "1"
-git2 = { version = "0.18.1", features = ["vendored-openssl"], optional = true }
+git2 = { version = "0.18.1", features = ["vendored-openssl", "vendored-libgit2"], optional = true }
 hex = "0.4.3"
 home = "0.5.5"
 human-panic = "1"
