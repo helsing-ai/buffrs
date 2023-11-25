@@ -11,7 +11,7 @@ CREATE TABLE "users" (
 CREATE TABLE "user_tokens" (
     "user"           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     "prefix"         TEXT NOT NULL UNIQUE,
-    "hash"           TEXT NOT NULL UNIQUE,
+    "hash"           TEXT PRIMARY KEY,
     "allow_publish"  BOOLEAN NOT NULL DEFAULT (false),
     "allow_update"   BOOLEAN NOT NULL DEFAULT (false),
     "allow_yank"     BOOLEAN NOT NULL DEFAULT (false),
