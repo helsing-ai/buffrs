@@ -66,13 +66,9 @@ impl Generator {
         let store = PackageStore::current().await?;
         let manifest = Manifest::read().await?;
 
-        let vendored_path = store
-            .proto_vendor_path()
-            .join(manifest.package.name.to_string());
-
         store.populate(&manifest).await?;
 
-        let protos = store.collect(&vendored_path, true).await;
+        let protos = store.populated_files(&manifest).await;
         let includes = &[store.proto_vendor_path()];
 
         match self {
@@ -136,7 +132,7 @@ impl Generator {
         store.populate(&manifest).await?;
 
         // Collect non-vendored protos
-        let protos = store.collect(&store.proto_path(), false).await;
+        let protos = store.populated_files(&manifest).await;
 
         info!(":: initializing code generator");
 
