@@ -239,10 +239,21 @@ impl PackageStore {
             .proto_vendor_path()
             .join(manifest.package.name.to_string());
 
-        if tokio::fs::try_exists(&target_dir).await.into_diagnostic()? {
+        if tokio::fs::try_exists(&target_dir)
+            .await
+            .into_diagnostic()
+            .wrap_err(format!(
+                "Failed to check whether directory {} still exists",
+                target_dir.to_str().unwrap()
+            ))?
+        {
             tokio::fs::remove_dir_all(&target_dir)
                 .await
-                .into_diagnostic()?;
+                .into_diagnostic()
+                .wrap_err(format!(
+                    "Failed to remove directory {} and its contents.",
+                    target_dir.to_str().unwrap()
+                ))?;
         }
 
         for entry in self.collect(&source_path, false).await {
@@ -250,7 +261,11 @@ impl PackageStore {
             let target_path = target_dir.join(file_name);
             tokio::fs::create_dir_all(target_path.parent().unwrap())
                 .await
-                .into_diagnostic()?;
+                .into_diagnostic()
+                .wrap_err(format!(
+                    "Failed to create directory {} and its parents.",
+                    target_path.parent().unwrap().to_str().unwrap()
+                ))?;
 
             tokio::fs::copy(entry, target_path)
                 .await
