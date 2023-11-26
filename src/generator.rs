@@ -66,10 +66,14 @@ impl Generator {
         let store = PackageStore::current().await?;
         let manifest = Manifest::read().await?;
 
+        let vendored_path = store
+            .proto_vendor_path()
+            .join(manifest.package.name.to_string());
+
         store.populate(&manifest).await?;
 
-        let protos = store.collect(&store.proto_path(), true).await;
-        let includes = &[store.proto_path()];
+        let protos = store.collect(&vendored_path, true).await;
+        let includes = &[store.proto_vendor_path()];
 
         match self {
             Generator::Tonic => {

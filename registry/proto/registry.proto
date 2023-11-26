@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-import "package.proto";
+import "buffrs/package.proto";
 
 package buffrs.registry;
 
