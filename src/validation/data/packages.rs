@@ -37,7 +37,7 @@ pub enum PackagesError {
         #[diagnostic_source]
         error: PackageError,
     },
-    #[error("internal data structure error occured")]
+    #[error("internal data structure error occurred")]
     Internal,
 }
 
