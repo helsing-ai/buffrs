@@ -36,9 +36,15 @@ pub enum PackageError {
     #[error("duplicate entity {entity} in package {package}")]
     #[diagnostic(
         help = "check to make sure you don't define two entities of the same name",
-        code = "duplicate_entity"
+        code = "duplicate-entity"
     )]
     DuplicateEntity { package: String, entity: String },
+
+    #[error(
+        "tried to add a file descriptor of package {got} that doest belong to package {expected}"
+    )]
+    #[diagnostic(code = "wrong-package")]
+    WrongPackage { expected: String, got: String },
 
     #[error("error parsing message {name}")]
     Message {
@@ -71,8 +77,17 @@ impl Package {
         Ok(package)
     }
 
-    pub fn add(&mut self, descriptor: &FileDescriptorProto) {
-        self.parse(descriptor).unwrap();
+    pub fn add(&mut self, descriptor: &FileDescriptorProto) -> Result<(), PackageError> {
+        if descriptor.package() != self.name {
+            return Err(PackageError::WrongPackage {
+                expected: self.name.to_owned(),
+                got: descriptor.package().to_owned(),
+            });
+        }
+
+        self.parse(descriptor)?;
+
+        Ok(())
     }
 
     fn parse(&mut self, descriptor: &FileDescriptorProto) -> Result<&Self, PackageError> {

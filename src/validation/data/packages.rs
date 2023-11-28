@@ -30,28 +30,38 @@ pub struct Packages {
 #[allow(missing_docs)]
 pub enum PackagesError {
     #[error("error parsing package {package} in {file}")]
-    Package {
+    PackageParse {
         package: String,
         file: String,
         #[source]
         #[diagnostic_source]
         error: PackageError,
     },
+    #[error("internal data structure error occured")]
+    Internal,
 }
 
 impl Packages {
     /// Add a package from a [`FileDescriptorProto`].
     pub fn add(&mut self, descriptor: &FileDescriptorProto) -> Result<(), PackagesError> {
         let name = descriptor.package().to_string();
-        let package = Package::new(descriptor).map_err(|error| PackagesError::Package {
-            package: descriptor.package().to_string(),
-            file: descriptor.name().to_string(),
-            error,
-        })?;
-        self.packages
-            .entry(name)
-            .and_modify(|package| package.add(descriptor))
-            .or_insert(package);
+
+        let Some(package) = self.packages.get_mut(&name) else {
+            let package =
+                Package::new(descriptor).map_err(|error| PackagesError::PackageParse {
+                    package: descriptor.package().to_string(),
+                    file: descriptor.name().to_string(),
+                    error,
+                })?;
+
+            self.packages.insert(name, package);
+
+            return Ok(());
+        };
+
+        package
+            .add(descriptor)
+            .map_err(|_| PackagesError::Internal)?;
 
         Ok(())
     }
