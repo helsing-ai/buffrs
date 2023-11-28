@@ -2,7 +2,9 @@
   "packages": {
     "tutorial": {
       "name": "tutorial",
-      "file": "addressbook.proto",
+      "files": [
+        "addressbook.proto"
+      ],
       "entities": {
         "AddressBook": {
           "kind": "message",

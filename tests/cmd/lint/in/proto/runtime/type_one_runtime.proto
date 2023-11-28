@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package the_api.runtime;
+
+service TypeOneRuntime {
+  rpc GetTypeOneResourceConfigs(GetTypeOneResourceConfigsRequest)
+    returns (GetTypeOneResourceConfigsResponse);
+}
+
+message GetTypeOneResourceConfigsRequest {
+  string id = 1;
+}
+
+message GetTypeOneResourceConfigsResponse {
+  message TypeOneResourceConfig {
+    string service_label = 1;
+    string label = 2;
+    string resource_id = 3;
+    string commit_id = 4;
+  }
+
+  repeated TypeOneResourceConfig type_one_resource_configs = 1;
+}

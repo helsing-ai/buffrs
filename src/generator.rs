@@ -64,8 +64,12 @@ impl Generator {
         std::env::set_var("PROTOC", protoc.clone());
 
         let store = PackageStore::current().await?;
-        let protos = store.collect(&store.proto_path(), true).await;
-        let includes = &[store.proto_path()];
+        let manifest = Manifest::read().await?;
+
+        store.populate(&manifest).await?;
+
+        let protos = store.populated_files(&manifest).await;
+        let includes = &[store.proto_vendor_path()];
 
         match self {
             Generator::Tonic => {
@@ -124,8 +128,11 @@ impl Generator {
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
         let store = PackageStore::current().await?;
+
+        store.populate(&manifest).await?;
+
         // Collect non-vendored protos
-        let protos = store.collect(&store.proto_path(), false).await;
+        let protos = store.populated_files(&manifest).await;
 
         info!(":: initializing code generator");
 

@@ -56,7 +56,7 @@ impl PackageStore {
     }
 
     /// Open given directory.
-    pub async fn open(path: &Path) -> miette::Result<Self> {
+    async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
 
         if !store.exists().await? {
@@ -74,6 +74,12 @@ impl PackageStore {
     /// Path to the vendor directory.
     pub fn proto_vendor_path(&self) -> PathBuf {
         self.root.join(Self::PROTO_VENDOR_PATH)
+    }
+
+    /// Path to where the package contents are populated.
+    pub fn populated_path(&self, manifest: &Manifest) -> PathBuf {
+        self.proto_vendor_path()
+            .join(manifest.package.name.to_string())
     }
 
     /// Creates the expected directory structure for `buffrs`
@@ -145,10 +151,10 @@ impl PackageStore {
         &self,
         manifest: &Manifest,
     ) -> miette::Result<crate::validation::Violations> {
-        let pkg_path = self.proto_path();
-        let source_files = self.collect(&pkg_path, false).await;
+        let root_path = self.proto_vendor_path();
+        let source_files = self.populated_files(manifest).await;
 
-        let mut parser = crate::validation::Validator::new(&pkg_path, &manifest.package.name);
+        let mut parser = crate::validation::Validator::new(&root_path, &manifest.package.name);
 
         for file in &source_files {
             parser.input(file);
@@ -182,7 +188,7 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
-        for entry in self.collect(&pkg_path, false).await {
+        for entry in self.populated_files(&manifest).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
             entries.insert(path.into(), contents.into());
@@ -205,18 +211,11 @@ impl PackageStore {
     }
 
     /// Collect .proto files in a given path
-    pub async fn collect(&self, path: &Path, vendored: bool) -> Vec<PathBuf> {
+    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
-            .filter(|path| {
-                if vendored {
-                    return true;
-                }
-
-                !path.starts_with(self.proto_vendor_path())
-            })
             .filter(|path| {
                 let ext = path.extension().map(|s| s.to_str());
 
@@ -228,6 +227,58 @@ impl PackageStore {
         paths.sort();
 
         paths
+    }
+
+    /// Sync this stores proto files to the vendor directory
+    pub async fn populate(&self, manifest: &Manifest) -> miette::Result<()> {
+        let source_path = self.proto_path();
+        let target_dir = self
+            .proto_vendor_path()
+            .join(manifest.package.name.to_string());
+
+        if tokio::fs::try_exists(&target_dir)
+            .await
+            .into_diagnostic()
+            .wrap_err(format!(
+                "Failed to check whether directory {} still exists",
+                target_dir.to_str().unwrap()
+            ))?
+        {
+            tokio::fs::remove_dir_all(&target_dir)
+                .await
+                .into_diagnostic()
+                .wrap_err(format!(
+                    "Failed to remove directory {} and its contents.",
+                    target_dir.to_str().unwrap()
+                ))?;
+        }
+
+        for entry in self.collect(&source_path).await {
+            if entry.starts_with(self.proto_vendor_path()) {
+                continue;
+            }
+
+            let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
+            let target_path = target_dir.join(file_name);
+            tokio::fs::create_dir_all(target_path.parent().unwrap())
+                .await
+                .into_diagnostic()
+                .wrap_err(format!(
+                    "Failed to create directory {} and its parents.",
+                    target_path.parent().unwrap().to_str().unwrap()
+                ))?;
+
+            tokio::fs::copy(entry, target_path)
+                .await
+                .into_diagnostic()?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the paths of all files under management after population
+    pub async fn populated_files(&self, manifest: &Manifest) -> Vec<PathBuf> {
+        self.collect(&self.populated_path(manifest)).await
     }
 }
 

@@ -29,17 +29,6 @@ pub struct Packages {
 #[derive(Error, Debug, Diagnostic)]
 #[allow(missing_docs)]
 pub enum PackagesError {
-    #[error("duplicate package {package}, defined in {previous} and {current}")]
-    #[diagnostic(
-        help = "check to make sure your files define different package names",
-        code = "duplicate_package"
-    )]
-    DuplicatePackage {
-        package: String,
-        current: PathBuf,
-        previous: PathBuf,
-    },
-
     #[error("error parsing package {package} in {file}")]
     Package {
         package: String,
@@ -59,17 +48,12 @@ impl Packages {
             file: descriptor.name().to_string(),
             error,
         })?;
-        match self.packages.entry(name) {
-            Entry::Vacant(entry) => {
-                entry.insert(package);
-                Ok(())
-            }
-            Entry::Occupied(entry) => Err(PackagesError::DuplicatePackage {
-                package: descriptor.package().to_string(),
-                previous: entry.get().file.clone(),
-                current: package.file.clone(),
-            }),
-        }
+        self.packages
+            .entry(name)
+            .and_modify(|package| package.add(descriptor))
+            .or_insert(package);
+
+        Ok(())
     }
 
     /// Run checks against this.

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+import "the-api/types/sub/type_two.proto";
+
+package the_api.types.sub;
+
+message TypeOne {
+  string name = 1;
+  the_api.types.sub.TypeTwo type_two = 2;
+}
+
+message TypeOneId { string id = 1; }

@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package asset;
+
+message Asset {
+	string name = 1;
+	float value = 2;
+}

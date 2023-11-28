@@ -30,6 +30,7 @@ impl PackageName {
 
 fn is_prefix(prefix: &str, package: &str) -> bool {
     prefix
+        .replace('-', "_")
         .split('.')
         .zip(package.split('.'))
         .all(|(a, b)| a == b)
@@ -79,7 +80,7 @@ mod tests {
     fn correct_package_name() {
         let package = Package {
             name: "my_package".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");
@@ -90,7 +91,7 @@ mod tests {
     fn correct_package_name_submodule() {
         let package = Package {
             name: "my_package.submodule".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");
@@ -98,10 +99,21 @@ mod tests {
     }
 
     #[test]
+    fn correct_case_transformation() {
+        let package = Package {
+            name: "my_package.submodule".into(),
+            files: vec!["ignored.proto".into()],
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my-package");
+        assert!(rule.check_package(&package).is_empty());
+    }
+
+    #[test]
     fn incorrect_package_name() {
         let package = Package {
             name: "my_package_other".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
         let mut rule = PackageName::new("my_package");

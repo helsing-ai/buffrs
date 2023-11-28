@@ -19,11 +19,10 @@ use crate::validation::{
     violation::{self, *},
 };
 
-mod file_name;
 mod ident_casing;
 mod package_name;
 
-pub use self::{file_name::*, ident_casing::*, package_name::*};
+pub use self::{ident_casing::*, package_name::*};
 
 /// Collection of rules.
 pub type RuleSet = Vec<Box<dyn Rule>>;
@@ -102,9 +101,5 @@ impl Rule for RuleSet {
 
 /// Get default rules for a given `buffrs` package name.
 pub fn package_rules(name: &str) -> RuleSet {
-    vec![
-        Box::new(PackageName::new(name)),
-        Box::new(FileName),
-        Box::new(IdentCasing),
-    ]
+    vec![Box::new(PackageName::new(name)), Box::new(IdentCasing)]
 }
