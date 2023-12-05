@@ -66,10 +66,11 @@ jobs:
       - run: cargo install cargo-llvm-cov || true
       - run: cd registry && cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
 
+# TODO: This already runs across registiry folder in cli.yml, maybe it's time to extract common.yml?
   typos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - run: cargo install typos-cli || true
-      - run: cd registry && typos
+      - run: typos --exclude /registry/tests/proptest-regressions/
