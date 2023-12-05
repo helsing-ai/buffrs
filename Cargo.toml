@@ -23,7 +23,7 @@ test = true
 
 [features]
 default = ["build", "git", "validation"]
-build = ["dep:tonic-build", "dep:protoc-bin-vendored"]
+build = ["dep:tonic-build", "dep:protoc"]
 validation = ["dep:anyhow", "dep:protobuf", "dep:protobuf-parse", "dep:diff-struct"]
 git = ["dep:git2"]
 
@@ -41,7 +41,7 @@ human-panic = "1"
 miette = { version = "5.10.0", features = ["fancy"] }
 protobuf = { version = "3.3.0", optional = true }
 protobuf-parse = { version = "3.3.0", optional = true }
-protoc-bin-vendored = { version = "3.0.0", optional = true }
+protoc = { version = "2.28.0", optional = true }
 reqwest = { version = "0.11", features = ["rustls-tls-native-roots"], default-features = false }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
