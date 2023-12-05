@@ -61,7 +61,9 @@ impl Generator {
             .into_diagnostic()
             .wrap_err(miette!("unable to locate vendored protoc"))?;
 
-        std::env::set_var("PROTOC", protoc.clone());
+        if std::env::var_os("PROTOC").is_none() {
+            std::env::set_var("PROTOC", protoc.clone());
+        }
 
         let store = PackageStore::current().await?;
         let manifest = Manifest::read().await?;

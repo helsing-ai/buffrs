@@ -199,6 +199,7 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
+    token: Option<String>,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
@@ -221,7 +222,10 @@ pub async fn publish(
     }
 
     let manifest = Manifest::read().await?;
-    let credentials = Credentials::load().await?;
+    let mut credentials = Credentials::load().await?;
+    if let Some(token) = token {
+        credentials.registry_tokens.insert(registry.clone(), token);
+    }
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
@@ -238,7 +242,7 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install() -> miette::Result<()> {
+pub async fn install(cache_dir: Option<PathBuf>) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
@@ -247,7 +251,7 @@ pub async fn install() -> miette::Result<()> {
     store.populate(&manifest).await?;
 
     let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), cache_dir)
             .await
             .wrap_err(miette!("dependency resolution failed"))?;
 
@@ -415,6 +419,20 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
+}
+
+/// Prints the file requirements.
+pub async fn dependencies() -> miette::Result<()> {
+    Lockfile::read().await?.print_file_requirements();
+    Ok(())
+}
+
+/// Replaces the version in the manifest. Can be used to prepare for a release.
+pub async fn change_version(new_version: String) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
+    manifest.package.version = Version::from_str(&new_version).into_diagnostic()?;
+    manifest.write().await?;
+    Ok(())
 }
 
 #[cfg(test)]

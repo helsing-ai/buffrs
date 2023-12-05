@@ -1,13 +1,15 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_recursion::async_recursion;
+use bytes::Bytes;
 use miette::{ensure, Context, Diagnostic};
 use semver::VersionReq;
 use thiserror::Error;
+use tokio::fs;
 
 use crate::{
     credentials::Credentials,
-    lock::Lockfile,
+    lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest},
     package::{Package, PackageName},
     registry::{Artifactory, RegistryUri},
@@ -53,6 +55,7 @@ impl DependencyGraph {
         manifest: &Manifest,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache_dir: Option<PathBuf>,
     ) -> miette::Result<Self> {
         let name = manifest.package.name.clone();
 
@@ -65,6 +68,7 @@ impl DependencyGraph {
                 true,
                 lockfile,
                 credentials,
+                &cache_dir,
                 &mut entries,
             )
             .await?;
@@ -80,6 +84,7 @@ impl DependencyGraph {
         is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache_dir: &Option<PathBuf>,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -96,8 +101,14 @@ impl DependencyGraph {
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
-            let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials).await?;
+            let dependency_pkg = Self::resolve(
+                dependency.clone(),
+                is_root,
+                lockfile,
+                credentials,
+                &cache_dir,
+            )
+            .await?;
 
             let dependency_name = dependency_pkg.name().clone();
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -124,6 +135,7 @@ impl DependencyGraph {
                     false,
                     lockfile,
                     credentials,
+                    &cache_dir,
                     entries,
                 )
                 .await?;
@@ -133,11 +145,29 @@ impl DependencyGraph {
         Ok(())
     }
 
+    async fn load_from_cache(
+        cache_dir: &Option<PathBuf>,
+        locked: &LockedPackage,
+    ) -> miette::Result<Option<Package>> {
+        let Some(cache_dir) = cache_dir else {
+            return Ok(None);
+        };
+        let cached_path = cache_dir.join(locked.file_requirement().cache_path());
+        if !cached_path.exists() {
+            return Ok(None);
+        }
+        let Ok(cached_data) = fs::read(cached_path).await else {
+            return Ok(None);
+        };
+        Ok(Some(Package::try_from(Bytes::from(cached_data))?))
+    }
+
     async fn resolve(
         dependency: Dependency,
         is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache_dir: &Option<PathBuf>,
     ) -> miette::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
@@ -156,19 +186,28 @@ impl DependencyGraph {
                     local_locked.registry,
             );
 
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
+            let package = {
+                if let Some(cached_package) =
+                    Self::load_from_cache(&cache_dir, &local_locked).await?
+                {
+                    cached_package
+                } else {
+                    let registry =
+                        Artifactory::new(dependency.manifest.registry.clone(), credentials)
+                            .wrap_err(DownloadError {
+                                name: dependency.package.clone(),
+                                version: dependency.manifest.version.clone(),
+                            })?;
 
-            let package = registry
-                .download(dependency.with_version(&local_locked.version))
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })?;
+                    registry
+                        .download(dependency.with_version(&local_locked.version))
+                        .await
+                        .wrap_err(DownloadError {
+                            name: dependency.package,
+                            version: dependency.manifest.version,
+                        })?
+                }
+            };
 
             local_locked.validate(&package)?;
 
