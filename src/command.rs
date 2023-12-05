@@ -281,7 +281,7 @@ pub async fn install() -> miette::Result<()> {
             resolved.registry.clone(),
             resolved.repository.clone(),
             resolved.dependants.len(),
-        )?);
+        ));
 
         for (index, dependency) in resolved.depends_on.iter().enumerate() {
             let tree_char = if index + 1 == resolved.depends_on.len() {

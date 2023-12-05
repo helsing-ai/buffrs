@@ -198,14 +198,12 @@ impl Package {
     }
 
     /// Lock this package
-    ///
-    /// Note that despite returning a Result this function never fails
     pub fn lock(
         &self,
         registry: RegistryUri,
         repository: String,
         dependants: usize,
-    ) -> miette::Result<LockedPackage> {
+    ) -> LockedPackage {
         LockedPackage::lock(self, registry, repository, dependants)
     }
 }
