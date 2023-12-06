@@ -4,7 +4,7 @@ name: release
 on:
   push:
     tags:
-    - "[0-9]+.[0-9]+.[0-9]+"
+    - "v[0-9]+.[0-9]+.[0-9]+"
 
 # We need this to be able to create releases.
 permissions:
@@ -31,7 +31,7 @@ jobs:
       - name: Check that tag version and Cargo.toml version are the same
         shell: bash
         run: |
-          if ! grep -q "version = \"$VERSION\"" Cargo.toml; then
+          if ! grep -q "version = \"${VERSION:1}\"" Cargo.toml; then
             echo "version does not match Cargo.toml" >&2
             exit 1
           fi
