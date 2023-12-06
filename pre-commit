@@ -16,4 +16,7 @@ GIT_ROOT=$(git rev-parse --show-toplevel)
 export CARGO_TARGET_DIR="${GIT_ROOT}/target"
 cd $TEMPDIR
 cargo fmt --check
+if command -v typos >/dev/null; then
+    typos
+fi
 cargo clippy --all -- --deny warnings
