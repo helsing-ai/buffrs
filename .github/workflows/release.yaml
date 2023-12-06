@@ -74,19 +74,19 @@ jobs:
           qemu: qemu-aarch64
         - build: x86-macos
           os: macos-latest
-          rust: nightly
+          rust: stable
           target: x86_64-apple-darwin
         - build: aarch64-apple
           os: macos-latest
-          rust: nightly
+          rust: stable
           target: aarch64-apple-darwin
         - build: x86-win
           os: windows-latest
-          rust: nightly
+          rust: stable
           target: x86_64-pc-windows-msvc
         - build: i686-win32
           os: windows-latest
-          rust: nightly
+          rust: stable
           target: i686-pc-windows-msvc
 
     steps:
