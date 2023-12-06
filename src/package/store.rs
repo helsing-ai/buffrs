@@ -77,7 +77,7 @@ impl PackageStore {
     }
 
     /// Path to where the package contents are populated.
-    pub fn populated_path(&self, manifest: &Manifest) -> PathBuf {
+    fn populated_path(&self, manifest: &Manifest) -> PathBuf {
         self.proto_vendor_path()
             .join(manifest.package.name.to_string())
     }

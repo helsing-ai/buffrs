@@ -244,7 +244,7 @@ pub async fn install() -> miette::Result<()> {
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
 
-    store.clear().await?;
+    store.clear().await.ok();
     store.populate(&manifest).await?;
 
     let dependency_graph =
