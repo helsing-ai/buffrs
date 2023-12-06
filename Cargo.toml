@@ -1,6 +1,6 @@
 [package]
 name = "buffrs"
-version = "0.7.2"
+version = "0.7.3"
 edition = "2021"
 description = "Modern protobuf package management"
 authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
@@ -34,7 +34,7 @@ bytes = "1.0"
 clap = { version = "4.3", features = ["cargo", "derive"] }
 diff-struct = { version = "0.5.3", optional = true }
 flate2 = "1"
-git2 = { version = "0.18.1", optional = true }
+git2 = { version = "0.18.1", features = ["vendored-openssl", "vendored-libgit2"], optional = true }
 hex = "0.4.3"
 home = "0.5.5"
 human-panic = "1"
@@ -68,3 +68,15 @@ pretty_assertions = "1.4"
 serde_json = { version = "1.0.107" }
 serde_test = "1.0.176"
 similar-asserts = "1.5.0"
+
+[profile.deb]
+inherits = "release"
+debug = false
+
+[package.metadata.deb]
+section = "utils"
+assets = [
+  ["target/release/buffrs", "usr/bin/", "755"],
+  ["LICENSE", "usr/share/doc/buffrs/", "644"],
+  ["README.md", "usr/share/doc/buffrs/README", "644"],
+]
