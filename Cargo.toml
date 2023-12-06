@@ -77,6 +77,6 @@ debug = false
 section = "utils"
 assets = [
   ["target/release/buffrs", "usr/bin/", "755"],
-  ["LICENSE", "usr/share/doc/ripgrep/", "644"],
-  ["README.md", "usr/share/doc/ripgrep/README", "644"],
+  ["LICENSE", "usr/share/doc/buffrs/", "644"],
+  ["README.md", "usr/share/doc/buffrs/README", "644"],
 ]

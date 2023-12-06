@@ -5,14 +5,12 @@ on:
   push:
     tags:
     - "[0-9]+.[0-9]+.[0-9]+"
-    branches: ["tomkarw/npx"]
 
 # We need this to be able to create releases.
 permissions:
   contents: write
 
 env:
-  VERSION: 0.7.3
   PROJECT_NAME: buffrs
 
 jobs:
@@ -46,7 +44,7 @@ jobs:
 
   build-release:
     name: build-release
-    # needs: ['create-release']
+    needs: ['create-release']
     runs-on: ${{ matrix.os }}
     env:
       PROJECT_NAME: buffrs
@@ -152,7 +150,7 @@ jobs:
       shell: bash
       run: |
         version="${{ needs.create-release.outputs.version }}"
-        echo "ARCHIVE=ripgrep-$version-${{ matrix.target }}" >> $GITHUB_ENV
+        echo "ARCHIVE=${{ env.PROJECT_NAME }}-$version-${{ matrix.target }}" >> $GITHUB_ENV
 
     - name: Creating directory for archive
       shell: bash
