@@ -1,0 +1,13 @@
+{
+  "name": "buffrs",
+  "version": "0.0.1",
+  "description": "buffrs",
+  "main": "src/main.js",
+  "scripts": {
+     "preinstall": "node download.js"
+  },
+  "author": "Mara Schulke <mara.schulke@helsing.ai>",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}
