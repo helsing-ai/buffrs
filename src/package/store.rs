@@ -102,7 +102,9 @@ impl PackageStore {
     pub async fn clear(&self) -> miette::Result<()> {
         let path = self.proto_vendor_path();
         match fs::remove_dir_all(&path).await {
-            Ok(()) => Ok(()),
+            Ok(()) => fs::create_dir(&path)
+                .await
+                .map_err(|_| miette!("failed to reinitialize {path:?} directory after cleaning")),
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(miette!("directory {path:?} not found"))
             }
