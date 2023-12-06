@@ -12,9 +12,9 @@ permissions:
   contents: write
 
 jobs:
-  # # The create-release job runs purely to initialize the GitHub release itself,
-  # # and names the release after the `x.y.z` tag that was pushed. It's separate
-  # # from building the release so that we only create the release once.
+  # The create-release job runs purely to initialize the GitHub release itself,
+  # and names the release after the `x.y.z` tag that was pushed. It's separate
+  # from building the release so that we only create the release once.
   # create-release:
   #   name: create-release
   #   runs-on: ubuntu-latest
@@ -63,48 +63,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-        - build: linux
-          os: ubuntu-latest
-          rust: nightly
-          target: x86_64-unknown-linux-musl
-          strip: x86_64-linux-musl-strip
-        - build: stable-x86
+        - build: x86-linux
           os: ubuntu-latest
           rust: stable
-          target: i686-unknown-linux-gnu
-          strip: x86_64-linux-gnu-strip
-          qemu: i386
-        - build: stable-aarch64
+          target: x86_64-unknown-linux-gnu
+        - build: aarch64-linux 
           os: ubuntu-latest
           rust: stable
-          target: aarch64-unknown-linux-gnu
-          strip: aarch64-linux-gnu-strip
+          target: arm-unknown-linux-gnueabihf
           qemu: qemu-aarch64
-        - build: stable-powerpc64
-          os: ubuntu-latest
-          rust: stable
-          target: powerpc64-unknown-linux-gnu
-          strip: powerpc64-linux-gnu-strip
-          qemu: qemu-ppc64
-        - build: stable-s390x
-          os: ubuntu-latest
-          rust: stable
-          target: s390x-unknown-linux-gnu
-          strip: s390x-linux-gnu-strip
-          qemu: qemu-s390x
-        - build: macos
+        - build: x86-macos
           os: macos-latest
           rust: nightly
           target: x86_64-apple-darwin
-        - build: win-msvc
+        - build: aarch64-apple
+          os: macos-latest
+          rust: nightly
+          target: aarch64-apple-darwin
+        - build: x86-win
           os: windows-latest
           rust: nightly
           target: x86_64-pc-windows-msvc
-        - build: win-gnu
-          os: windows-latest
-          rust: nightly-x86_64-gnu
-          target: x86_64-pc-windows-gnu
-        - build: win32-msvc
+        - build: i686-win32
           os: windows-latest
           rust: nightly
           target: i686-pc-windows-msvc
@@ -164,21 +144,6 @@ jobs:
         fi
         echo "BIN=$bin" >> $GITHUB_ENV
 
-    - name: Strip release binary (macos)
-      if: matrix.os == 'macos-latest'
-      shell: bash
-      run: strip "$BIN"
-
-    - name: Strip release binary (cross)
-      if: env.CARGO == 'cross'
-      shell: bash
-      run: |
-        docker run --rm -v \
-          "$PWD/target:/target:Z" \
-          "rustembedded/cross:${{ matrix.target }}" \
-          "${{ matrix.strip }}" \
-          "/target/${{ matrix.target }}/release/${{ env.PROJECT_NAME }}"
-
     - name: Determine archive name
       shell: bash
       run: |
@@ -193,51 +158,6 @@ jobs:
         cp "$BIN" "$ARCHIVE"/
         cp {README.md,LICENSE} "$ARCHIVE"/
         # cp {CHANGELOG.md,FAQ.md,GUIDE.md} "$ARCHIVE"/doc/
-
-    # - name: Generate man page and completions (no emulation)
-    #   if: matrix.qemu == ''
-    #   shell: bash
-    #   run: |
-    #     "$BIN" --version
-    #     "$BIN" --generate complete-bash > "$ARCHIVE/complete/${{ env.PROJECT_NAME }}.bash"
-    #     "$BIN" --generate complete-fish > "$ARCHIVE/complete/${{ env.PROJECT_NAME }}.fish"
-    #     "$BIN" --generate complete-powershell > "$ARCHIVE/complete/_${{ env.PROJECT_NAME }}.ps1"
-    #     "$BIN" --generate complete-zsh > "$ARCHIVE/complete/_${{ env.PROJECT_NAME }}"
-    #     "$BIN" --generate man > "$ARCHIVE/doc/${{ env.PROJECT_NAME }}.1"
-
-    # - name: Generate man page and completions (emulation)
-    #   if: matrix.qemu != ''
-    #   shell: bash
-    #   run: |
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" --version
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" \
-    #         --generate complete-bash > "$ARCHIVE/complete/${{ env.PROJECT_NAME }}.bash"
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" \
-    #         --generate complete-fish > "$ARCHIVE/complete/${{ env.PROJECT_NAME }}.fish"
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" \
-    #         --generate complete-powershell > "$ARCHIVE/complete/_${{ env.PROJECT_NAME }}.ps1"
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" \
-    #         --generate complete-zsh > "$ARCHIVE/complete/_${{ env.PROJECT_NAME }}"
-    #     docker run --rm -v \
-    #       "$PWD/target:/target:Z" \
-    #       "rustembedded/cross:${{ matrix.target }}" \
-    #       "${{ matrix.qemu }}" "/$BIN" \
-    #         --generate man > "$ARCHIVE/doc/${{ env.PROJECT_NAME }}.1"
 
     - name: Build archive (Windows)
       shell: bash
@@ -264,91 +184,3 @@ jobs:
     #   run: |
     #     version="${{ needs.create-release.outputs.version }}"
     #     gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
-
-  # build-release-deb:
-  #   name: build-release-deb
-  #   # needs: ['create-release']
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     PROJECT_NAME: buffrs
-  #     TARGET: x86_64-unknown-linux-musl
-  #     # Emit backtraces on panics.
-  #     RUST_BACKTRACE: 1
-
-  #   steps:
-  #   - name: Checkout repository
-  #     uses: actions/checkout@v4
-
-  #   - name: Install packages (Ubuntu)
-  #     shell: bash
-  #     run: |
-  #       ci/ubuntu-install-packages
-
-  #   - name: Install Rust
-  #     uses: dtolnay/rust-toolchain@master
-  #     with:
-  #       toolchain: nightly
-  #       target: ${{ env.TARGET }}
-
-  #   - name: Install cargo-deb
-  #     shell: bash
-  #     run: |
-  #       cargo install cargo-deb
-
-  #   # 'cargo deb' does not seem to provide a way to specify an asset that is
-  #   # created at build time, such as ripgrep's man page. To work around this,
-  #   # we force a debug build, copy out the man page (and shell completions)
-  #   # produced from that build, put it into a predictable location and then
-  #   # build the deb, which knows where to look.
-  #   - name: Build debug binary to create release assets
-  #     shell: bash
-  #     run: |
-  #       cargo build --target ${{ env.TARGET }}
-  #       bin="target/${{ env.TARGET }}/debug/${{ env.PROJECT_NAME }}"
-  #       echo "BIN=$bin" >> $GITHUB_ENV
-
-  #   - name: Create deployment directory
-  #     shell: bash
-  #     run: |
-  #       dir=deployment/deb
-  #       mkdir -p "$dir"
-  #       echo "DEPLOY_DIR=$dir" >> $GITHUB_ENV
-
-  #   # - name: Generate man page
-  #   #   shell: bash
-  #   #   run: |
-  #   #     "$BIN" --generate man > "$DEPLOY_DIR/${{ env.PROJECT_NAME }}.1"
-
-  #   # - name: Generate shell completions
-  #   #   shell: bash
-  #   #   run: |
-  #   #     "$BIN" --generate complete-bash > "$DEPLOY_DIR/${{ env.PROJECT_NAME }}.bash"
-  #   #     "$BIN" --generate complete-fish > "$DEPLOY_DIR/${{ env.PROJECT_NAME }}.fish"
-  #   #     "$BIN" --generate complete-zsh > "$DEPLOY_DIR/_${{ env.PROJECT_NAME }}"
-
-  #   - name: Build release binary
-  #     shell: bash
-  #     run: |
-  #       cargo deb --profile deb --target ${{ env.TARGET }}
-  #       # version="${{ needs.create-release.outputs.version }}"
-  #       version="0.0.0"
-  #       echo "DEB_DIR=target/${{ env.TARGET }}/debian" >> $GITHUB_ENV
-  #       echo "DEB_NAME=${{ env.PROJECT_NAME }}_$version-1_amd64.deb" >> $GITHUB_ENV
-
-  #   - name: Create sha256 sum of deb file
-  #     shell: bash
-  #     run: |
-  #       cd "$DEB_DIR"
-  #       sum="$DEB_NAME.sha256"
-  #       shasum -a 256 "$DEB_NAME" > "$sum"
-  #       echo "SUM=$sum" >> $GITHUB_ENV
-
-  #   - name: Upload release archive
-  #     env:
-  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #     shell: bash
-  #     run: |
-  #       cd "$DEB_DIR"
-  #       # version="${{ needs.create-release.outputs.version }}"
-  #       version="0.0.0"
-  #       gh release upload "$version" "$DEB_NAME" "$SUM"
