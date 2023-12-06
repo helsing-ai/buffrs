@@ -54,7 +54,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
     ) -> miette::Result<Self> {
-        let name = manifest.package.name.clone();
+        let name = &manifest.package.name;
 
         let mut entries = HashMap::new();
 
