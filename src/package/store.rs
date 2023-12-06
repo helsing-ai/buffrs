@@ -77,7 +77,7 @@ impl PackageStore {
     }
 
     /// Path to where the package contents are populated.
-    pub fn populated_path(&self, manifest: &Manifest) -> PathBuf {
+    fn populated_path(&self, manifest: &Manifest) -> PathBuf {
         self.proto_vendor_path()
             .join(manifest.package.name.to_string())
     }
@@ -101,13 +101,16 @@ impl PackageStore {
     /// Clears all packages from the file system
     pub async fn clear(&self) -> miette::Result<()> {
         let path = self.proto_vendor_path();
+
         match fs::remove_dir_all(&path).await {
-            Ok(()) => Ok(()),
-            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
-                Err(miette!("directory {path:?} not found"))
-            }
-            Err(_) => Err(miette!("failed to clear {path:?} directory",)),
+            Ok(()) => {}
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {}
+            Err(_) => return Err(miette!("failed to clear {path:?} directory",)),
         }
+
+        fs::create_dir(&path)
+            .await
+            .map_err(|_| miette!("failed to reinitialize {path:?} directory after cleaning"))
     }
 
     /// Unpacks a package into a local directory
