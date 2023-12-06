@@ -107,7 +107,7 @@ Please make sure to update tests as appropriate.
 
 You can set-up a pre-commit hooks that automatically runs `cargo fmt` and `cargo clippy` by running:
 
-```
+```bash
 ln -s ../../pre-commit .git/hook
 ```
 
