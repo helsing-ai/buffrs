@@ -11,34 +11,38 @@ on:
 permissions:
   contents: write
 
+env:
+  VERSION: 0.7.3
+  PROJECT_NAME: buffrs
+
 jobs:
   # The create-release job runs purely to initialize the GitHub release itself,
   # and names the release after the `x.y.z` tag that was pushed. It's separate
   # from building the release so that we only create the release once.
-  # create-release:
-  #   name: create-release
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Get the release version from the tag
-  #       if: env.VERSION == ''
-  #       run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
-  #     - name: Show the version
-  #       run: |
-  #         echo "version is: $VERSION"
-  #     - name: Check that tag version and Cargo.toml version are the same
-  #       shell: bash
-  #       run: |
-  #         if ! grep -q "version = \"$VERSION\"" Cargo.toml; then
-  #           echo "version does not match Cargo.toml" >&2
-  #           exit 1
-  #         fi
-  #     - name: Create GitHub release
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #       run: gh release create $VERSION --draft --verify-tag --title $VERSION
-  #   outputs:
-  #     version: ${{ env.VERSION }}
+  create-release:
+    name: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the release version from the tag
+        if: env.VERSION == ''
+        run: echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+      - name: Show the version
+        run: |
+          echo "version is: $VERSION"
+      - name: Check that tag version and Cargo.toml version are the same
+        shell: bash
+        run: |
+          if ! grep -q "version = \"$VERSION\"" Cargo.toml; then
+            echo "version does not match Cargo.toml" >&2
+            exit 1
+          fi
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create $VERSION --draft --verify-tag --title $VERSION
+    outputs:
+      version: ${{ env.VERSION }}
 
   build-release:
     name: build-release
@@ -147,8 +151,7 @@ jobs:
     - name: Determine archive name
       shell: bash
       run: |
-        # version="${{ needs.create-release.outputs.version }}"
-        version="0.0.0"
+        version="${{ needs.create-release.outputs.version }}"
         echo "ARCHIVE=ripgrep-$version-${{ matrix.target }}" >> $GITHUB_ENV
 
     - name: Creating directory for archive
@@ -177,10 +180,10 @@ jobs:
         echo "ASSET=$ARCHIVE.tar.gz" >> $GITHUB_ENV
         echo "ASSET_SUM=$ARCHIVE.tar.gz.sha256" >> $GITHUB_ENV
 
-    # - name: Upload release archive
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #   shell: bash
-    #   run: |
-    #     version="${{ needs.create-release.outputs.version }}"
-    #     gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
+    - name: Upload release archive
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      shell: bash
+      run: |
+        version="${{ needs.create-release.outputs.version }}"
+        gh release upload "$version" ${{ env.ASSET }} ${{ env.ASSET_SUM }}
