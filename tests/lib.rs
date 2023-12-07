@@ -1,9 +1,12 @@
+use buffrs::package::Package;
+
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 use assert_fs::TempDir;
+use bytes::Bytes;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
 use sha2::Digest;
@@ -22,6 +25,12 @@ macro_rules! cli {
             )
             .env("BUFFRS_TESTSUITE", "1")
     };
+}
+
+fn read_package(path: &PathBuf) -> Package {
+    Bytes::from(fs::read(path).expect("file cannot be read"))
+        .try_into()
+        .expect("package could not be parsed")
 }
 
 /// A virtual file system which enables temporary fs operations
@@ -165,6 +174,22 @@ impl VirtualFileSystem {
                             "expected hash {expected_hash} actual hash {actual_hash}"
                         );
                     }
+                    FileType::Package => {
+                        let actual = read_package(&actual);
+                        let expected = read_package(&expected);
+                        let actual_vfs = VirtualFileSystem::empty();
+                        let expected_vfs = VirtualFileSystem::empty();
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .build()
+                            .unwrap();
+                        runtime
+                            .block_on(actual.unpack(&actual_vfs.root()))
+                            .expect("package could not be unpacked");
+                        runtime
+                            .block_on(expected.unpack(&expected_vfs.root()))
+                            .expect("package could not be unpacked");
+                        actual_vfs.verify_against(expected_vfs.root());
+                    }
                 }
             } else {
                 panic!("missing file extension");
@@ -187,14 +212,16 @@ macro_rules! parent_directory {
 }
 
 enum FileType {
+    #[allow(dead_code)]
     Binary,
+    Package,
     Text,
 }
 
 impl FileType {
     pub fn from_extension(ext: impl AsRef<str>) -> Self {
         match ext.as_ref() {
-            "tgz" => Self::Binary,
+            "tgz" => Self::Package,
             "proto" | "toml" | "lock" => Self::Text,
             other => panic!("unrecognized extension type: {other}"),
         }
