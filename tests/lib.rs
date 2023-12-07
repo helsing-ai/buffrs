@@ -9,7 +9,6 @@ use assert_fs::TempDir;
 use bytes::Bytes;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
-use sha2::Digest;
 
 mod cmd;
 
@@ -157,23 +156,6 @@ impl VirtualFileSystem {
                             fs::read_to_string(&actual).expect("file cannot be read")
                         );
                     }
-                    FileType::Binary => {
-                        let hash_file = |path| {
-                            let contents = fs::read(path).expect("file cannot be read");
-                            let digest = sha2::Sha256::new()
-                                .chain_update(contents.as_slice())
-                                .finalize();
-                            hex::encode(digest)
-                        };
-
-                        let expected_hash = hash_file(expected);
-                        let actual_hash = hash_file(actual);
-
-                        assert_eq!(
-                            expected_hash, actual_hash,
-                            "expected hash {expected_hash} actual hash {actual_hash}"
-                        );
-                    }
                     FileType::Package => {
                         let actual = read_package(&actual);
                         let expected = read_package(&expected);
@@ -212,8 +194,6 @@ macro_rules! parent_directory {
 }
 
 enum FileType {
-    #[allow(dead_code)]
-    Binary,
     Package,
     Text,
 }
