@@ -17,6 +17,7 @@
     * [Dependencies](guide/dependencies.md)
     * [Creating a Package](guide/creating-a-package.md)
     * [Using Packages](guide/using-packages.md)
+    * [Import System](guide/import-system.md)
     * [Project Layout](guide/project-layout.md)
     * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)
     * [Continuous Integration](guide/continuous-integration.md)
