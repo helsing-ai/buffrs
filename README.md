@@ -97,10 +97,3 @@ on them in other projects.*
 - [ ] Implement `buffrs-registry`, a self-hostable, S3-based registry.
 - [ ] Supply tooling around Protocol Buffers, such as bindgen, linting, validation and
   formatting.
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first
-to discuss what you would like to change.
-
-Please make sure to update tests as appropriate.

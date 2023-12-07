@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Usage: copy this file to .git/hooks/
+
+# Exit at first error
+set -Eeu
+
+# For partially committed files, copy the staged changes to a separate location
+TEMPDIR=$(mktemp -d)
+trap "rm -rf $TEMPDIR" EXIT SIGHUP SIGINT SIGQUIT SIGTERM
+git checkout-index --prefix=$TEMPDIR/ -af
+
+GIT_ROOT=$(git rev-parse --show-toplevel)
+
+# Keep using the same target/ directory, not a new one in the temporary
+# directory. This avoids re-parsing everything from scratch every time.
+export CARGO_TARGET_DIR="${GIT_ROOT}/target"
+cd $TEMPDIR
+cargo fmt --check
+if command -v typos >/dev/null; then
+    typos
+fi
+cargo clippy --all -- --deny warnings
