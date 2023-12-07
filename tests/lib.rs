@@ -26,12 +26,6 @@ macro_rules! cli {
     };
 }
 
-fn read_package(path: &PathBuf) -> Package {
-    Bytes::from(fs::read(path).expect("file cannot be read"))
-        .try_into()
-        .expect("package could not be parsed")
-}
-
 /// A virtual file system which enables temporary fs operations
 pub struct VirtualFileSystem {
     tmp_dir: TempDir,
@@ -157,6 +151,11 @@ impl VirtualFileSystem {
                         );
                     }
                     FileType::Package => {
+                        fn read_package(path: &PathBuf) -> Package {
+                            Bytes::from(fs::read(path).expect("file cannot be read"))
+                                .try_into()
+                                .expect("package could not be parsed")
+                        }
                         let actual = read_package(&actual);
                         let expected = read_package(&expected);
                         let actual_vfs = VirtualFileSystem::empty();
