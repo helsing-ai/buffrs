@@ -38,7 +38,7 @@ impl Options {
 #[cfg(feature = "storage-s3")]
 const DEFAULT_STORAGE: &str = "s3";
 #[cfg(not(feature = "storage-s3"))]
-const DEFAULT_STORAGE: &'static str = "filesystem";
+const DEFAULT_STORAGE: &str = "filesystem";
 
 /// Options for storage.
 #[derive(Parser, Clone, Debug)]

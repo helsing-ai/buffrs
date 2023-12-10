@@ -9,6 +9,7 @@ Buffrs to develop and consume protocol buffer packages.
 * [Dependencies](./dependencies.md)
 * [Creating a Package](./creating-a-package.md)
 * [Using Packages](./using-packages.md)
+* [Import System](./import-system.md)
 * [Project Layout](./project-layout.md)
 * [Manifest vs Lockfile](./manifest-vs-lockfile.md)
 * [Continuous Integration](./continuous-integration.md)
