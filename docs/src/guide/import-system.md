@@ -1,7 +1,7 @@
 ## Import System
 
 To reuse already defined messages, protobuf files can be imported from both
-dependencies and the managed package itself. Unique identifcation of the files
+dependencies and the managed package itself. Unique identification of the files
 is made available through the name of the package as declared in ``Proto.toml``
 which is used as root of the imports.
 
