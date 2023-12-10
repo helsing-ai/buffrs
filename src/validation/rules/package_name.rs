@@ -28,23 +28,17 @@ impl PackageName {
     }
 }
 
-fn is_prefix(prefix: &str, package: &str) -> bool {
-    prefix
-        .replace('-', "_")
-        .split('.')
-        .zip(package.split('.'))
-        .all(|(a, b)| a == b)
-}
-
 impl Rule for PackageName {
     fn rule_info(&self) -> &'static str {
         "Make sure that the protobuf package name matches the buffer package name."
     }
 
     fn check_package(&mut self, package: &Package) -> Violations {
-        if !is_prefix(&self.name, &package.name) {
+        let transposed = self.name.to_string().replace('-', "_");
+
+        if !is_prefix(&transposed, &package.name) {
             let message = violation::Message {
-                message: format!("package name is {} but should have {} prefix", package.name, self.name),
+                message: format!("package name is {} but should have {} prefix", package.name, transposed),
                 help: "Make sure the file name matches the package. For example, a package with the name `package.subpackage` should be stored in `proto/package/subpackage.proto`.".into(),
             };
 
@@ -53,6 +47,14 @@ impl Rule for PackageName {
 
         Violations::default()
     }
+}
+
+fn is_prefix(prefix: &str, package: &str) -> bool {
+    prefix
+        .replace('-', "_")
+        .split('.')
+        .zip(package.split('.'))
+        .all(|(a, b)| a == b)
 }
 
 #[cfg(test)]
@@ -83,7 +85,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package".parse().unwrap());
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -94,7 +96,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package".parse().unwrap());
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -116,7 +118,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package".parse().unwrap());
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert_eq!(
             rule.check_package(&package),
             vec![Violation {
