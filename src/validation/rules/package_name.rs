@@ -18,13 +18,13 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct PackageName {
     /// Package name to enforce.
-    name: String,
+    name: crate::package::PackageName,
 }
 
 impl PackageName {
     /// Create new checker for this rule.
-    pub fn new(name: &str) -> Self {
-        Self { name: name.into() }
+    pub fn new(name: crate::package::PackageName) -> Self {
+        Self { name }
     }
 }
 
@@ -83,7 +83,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my_package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -94,7 +94,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my_package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -105,7 +105,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my-package");
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -116,7 +116,7 @@ mod tests {
             files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my_package".parse().unwrap());
         assert_eq!(
             rule.check_package(&package),
             vec![Violation {

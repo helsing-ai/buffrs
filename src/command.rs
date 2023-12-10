@@ -39,7 +39,7 @@ const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
 /// Initializes the project
-pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Result<()> {
+pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miette::Result<()> {
     if Manifest::exists().await? {
         bail!("a manifest file was found, project is already initialized");
     }
@@ -57,15 +57,21 @@ pub async fn init(kind: PackageType, name: Option<PackageName>) -> miette::Resul
             .parse()
     }
 
-    let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
+    let package = kind
+        .map(|kind| -> miette::Result<PackageManifest> {
+            let name = name.map(Result::Ok).unwrap_or_else(curr_dir_name)?;
+
+            Ok(PackageManifest {
+                kind,
+                name,
+                version: INITIAL_VERSION,
+                description: None,
+            })
+        })
+        .transpose()?;
 
     let manifest = Manifest {
-        package: PackageManifest {
-            kind,
-            name,
-            version: INITIAL_VERSION,
-            description: None,
-        },
+        package,
         dependencies: vec![],
     };
 
@@ -168,19 +174,18 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
-    store.populate(&manifest).await?;
+    if let Some(ref pkg) = manifest.package {
+        store.populate(&pkg).await?;
+    }
 
-    let package = store.release(manifest).await?;
+    let package = store.release(&manifest).await?;
 
     if dry_run {
         return Ok(());
     }
 
     let path = {
-        let file = format!(
-            "{}-{}.tgz",
-            package.manifest.package.name, package.manifest.package.version
-        );
+        let file = format!("{}-{}.tgz", package.name(), package.version());
 
         directory.as_ref().join(file)
     };
@@ -225,9 +230,11 @@ pub async fn publish(
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    store.populate(&manifest).await?;
+    if let Some(ref pkg) = manifest.package {
+        store.populate(&pkg).await?;
+    }
 
-    let package = store.release(manifest).await?;
+    let package = store.release(&manifest).await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -245,7 +252,10 @@ pub async fn install() -> miette::Result<()> {
     let credentials = Credentials::load().await?;
 
     store.clear().await?;
-    store.populate(&manifest).await?;
+
+    if let Some(ref pkg) = manifest.package {
+        store.populate(&pkg).await?;
+    }
 
     let dependency_graph =
         DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
@@ -326,7 +336,9 @@ pub async fn list() -> miette::Result<()> {
     let store = PackageStore::current().await?;
     let manifest = Manifest::read().await?;
 
-    store.populate(&manifest).await?;
+    if let Some(ref pkg) = manifest.package {
+        store.populate(&pkg).await?;
+    }
 
     let protos = store.collect(&store.proto_vendor_path()).await;
 
@@ -359,9 +371,13 @@ pub async fn lint() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
-    store.populate(&manifest).await?;
+    let pkg = manifest.package.ok_or(miette!(
+        "a [package] section must be declared run the linter"
+    ))?;
 
-    let violations = store.validate(&manifest).await?;
+    store.populate(&pkg).await?;
+
+    let violations = store.validate(&pkg).await?;
 
     violations
         .into_iter()

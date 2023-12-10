@@ -50,6 +50,11 @@ impl PackageName {
         Ok(Self(value))
     }
 
+    /// New package name from an unchecked string.
+    pub(crate) fn unchecked<S: Into<String>>(value: S) -> Self {
+        Self(value.into())
+    }
+
     /// Determine if this character is allowed at the start of a package name.
     fn is_allowed_start(c: char) -> bool {
         c.is_alphabetic()

@@ -18,12 +18,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{Manifest, MANIFEST_FILE},
+    manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
 };
 
@@ -77,9 +77,8 @@ impl PackageStore {
     }
 
     /// Path to where the package contents are populated.
-    fn populated_path(&self, manifest: &Manifest) -> PathBuf {
-        self.proto_vendor_path()
-            .join(manifest.package.name.to_string())
+    fn populated_path(&self, manifest: &PackageManifest) -> PathBuf {
+        self.proto_vendor_path().join(manifest.name.to_string())
     }
 
     /// Creates the expected directory structure for `buffrs`
@@ -115,12 +114,14 @@ impl PackageStore {
 
     /// Unpacks a package into a local directory
     pub async fn unpack(&self, package: &Package) -> miette::Result<()> {
-        let pkg_dir = self.locate(&package.manifest.package.name);
+        let pkg_dir = self.locate(&package.name());
+
         package.unpack(&pkg_dir).await?;
+
         tracing::debug!(
             ":: unpacked {}@{} into {}",
-            package.manifest.package.name,
-            package.manifest.package.version,
+            package.name(),
+            package.version(),
             pkg_dir.display()
         );
 
@@ -152,12 +153,12 @@ impl PackageStore {
     #[cfg(feature = "validation")]
     pub async fn validate(
         &self,
-        manifest: &Manifest,
+        manifest: &PackageManifest,
     ) -> miette::Result<crate::validation::Violations> {
         let root_path = self.proto_vendor_path();
         let source_files = self.populated_files(manifest).await;
 
-        let mut parser = crate::validation::Validator::new(&root_path, &manifest.package.name);
+        let mut parser = crate::validation::Validator::new(&root_path, &manifest);
 
         for file in &source_files {
             parser.input(file);
@@ -167,43 +168,32 @@ impl PackageStore {
     }
 
     /// Packages a release from the local file system state
-    pub async fn release(&self, manifest: Manifest) -> miette::Result<Package> {
-        ensure!(
-            manifest.package.kind.is_publishable(),
-            "packages with type `impl` cannot be published"
-        );
-
-        ensure!(
-            !matches!(manifest.package.kind, PackageType::Lib) || manifest.dependencies.is_empty(),
-            "library packages cannot have any dependencies"
-        );
-
+    pub async fn release(&self, manifest: &Manifest) -> miette::Result<Package> {
         for dependency in manifest.dependencies.iter() {
             let resolved = self.resolve(&dependency.package).await?;
 
+            let Some(ref resolved_pkg) = resolved.package else {
+                bail!("upstream package is invalid, [package] section is missing in manifest");
+            };
+
             ensure!(
-                resolved.package.kind == PackageType::Lib,
-                "depending on API packages is not allowed for {} packages",
-                manifest.package.kind
+                resolved_pkg.kind != PackageType::Api,
+                "depending on API packages is not allowed",
             );
         }
 
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
-        for entry in self.populated_files(&manifest).await {
+        for entry in self.collect(&pkg_path).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
             entries.insert(path.into(), contents.into());
         }
 
-        let package = Package::create(manifest, entries)?;
+        let package = Package::create(manifest.clone(), entries)?;
 
-        tracing::info!(
-            ":: packaged {}@{}",
-            package.manifest.package.name,
-            package.manifest.package.version
-        );
+        tracing::info!(":: packaged {}@{}", package.name(), package.version());
 
         Ok(package)
     }
@@ -233,17 +223,15 @@ impl PackageStore {
     }
 
     /// Sync this stores proto files to the vendor directory
-    pub async fn populate(&self, manifest: &Manifest) -> miette::Result<()> {
+    pub async fn populate(&self, manifest: &PackageManifest) -> miette::Result<()> {
         let source_path = self.proto_path();
-        let target_dir = self
-            .proto_vendor_path()
-            .join(manifest.package.name.to_string());
+        let target_dir = self.proto_vendor_path().join(manifest.name.to_string());
 
         if tokio::fs::try_exists(&target_dir)
             .await
             .into_diagnostic()
             .wrap_err(format!(
-                "Failed to check whether directory {} still exists",
+                "failed to check whether directory {} still exists",
                 target_dir.to_str().unwrap()
             ))?
         {
@@ -251,7 +239,7 @@ impl PackageStore {
                 .await
                 .into_diagnostic()
                 .wrap_err(format!(
-                    "Failed to remove directory {} and its contents.",
+                    "failed to remove directory {} and its contents.",
                     target_dir.to_str().unwrap()
                 ))?;
         }
@@ -280,7 +268,7 @@ impl PackageStore {
     }
 
     /// Get the paths of all files under management after population
-    pub async fn populated_files(&self, manifest: &Manifest) -> Vec<PathBuf> {
+    pub async fn populated_files(&self, manifest: &PackageManifest) -> Vec<PathBuf> {
         self.collect(&self.populated_path(manifest)).await
     }
 }

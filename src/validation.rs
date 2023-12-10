@@ -27,22 +27,22 @@ use miette::IntoDiagnostic;
 use std::path::Path;
 
 use self::parse::*;
-use crate::package::PackageName;
+use crate::manifest::PackageManifest;
 
 /// Validates buffrs packages.
 ///
 /// This allows running validations on top of buffrs packages.
 pub struct Validator {
     parser: parse::Parser,
-    package: String,
+    manifest: PackageManifest,
 }
 
 impl Validator {
     /// Create new parser with a given root path.
-    pub fn new(root: &Path, package: &PackageName) -> Self {
+    pub fn new(root: &Path, manifest: &PackageManifest) -> Self {
         Self {
             parser: Parser::new(root),
-            package: package.to_string(),
+            manifest: manifest.clone(),
         }
     }
 
@@ -58,7 +58,7 @@ impl Validator {
     /// severity.
     pub fn validate(self) -> miette::Result<Violations> {
         let parsed = self.parser.parse().into_diagnostic()?;
-        let mut rule_set = rules::package_rules(&self.package);
+        let mut rule_set = rules::all(&self.manifest);
         Ok(parsed.check(&mut rule_set))
     }
 }
