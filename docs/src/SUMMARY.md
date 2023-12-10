@@ -19,12 +19,18 @@
     * [Using Packages](guide/using-packages.md)
     * [Project Layout](guide/project-layout.md)
     * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)
-    * [Continuous Integration](guide/continuous-integration.md)
-    * [Buffrs Home]()
+    * [Buffrs Home](guide/buffrs-home.md)
 
 * [Buffrs Integrations](integrations/index.md)
     * [Cargo](integrations/cargo.md)
     * [Poetry]()
+    * [Npm]()
+
+* [Buffrs Migration]()
+    * [Decomposition]()
+    * [Project Setup]()
+    * [Common Issues]()
+    * [Continuous Integration](migration/continuous-integration.md)
 
 * [Buffrs Reference](reference/index.md)
     * [Specifying Dependencies]()
