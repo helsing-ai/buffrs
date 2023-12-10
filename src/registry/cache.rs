@@ -99,7 +99,7 @@ mod tests {
     use crate::{
         manifest::{Dependency, Manifest, PackageManifest},
         package::{Package, PackageType},
-        registry::local::LocalRegistry,
+        registry::cache::LocalRegistry,
     };
     use bytes::Bytes;
     use std::{env, path::PathBuf};
