@@ -62,9 +62,9 @@ impl Generator {
         let mut proto_files = vec![];
 
         if let Some(ref pkg) = manifest.package {
-            store.populate(&pkg).await?;
+            store.populate(pkg).await?;
 
-            proto_files.extend(store.populated_files(&pkg).await);
+            proto_files.extend(store.populated_files(pkg).await);
         } else {
             proto_files.extend(store.collect(&store.proto_vendor_path()).await);
         }
@@ -121,9 +121,9 @@ impl Generator {
         let mut protos = vec![];
 
         if let Some(ref pkg) = manifest.package {
-            store.populate(&pkg).await?;
+            store.populate(pkg).await?;
 
-            protos.extend(store.populated_files(&pkg).await);
+            protos.extend(store.populated_files(pkg).await);
         } else {
             protos.extend(store.collect(&store.proto_vendor_path()).await);
         }

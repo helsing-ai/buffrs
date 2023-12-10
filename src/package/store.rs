@@ -114,7 +114,7 @@ impl PackageStore {
 
     /// Unpacks a package into a local directory
     pub async fn unpack(&self, package: &Package) -> miette::Result<()> {
-        let pkg_dir = self.locate(&package.name());
+        let pkg_dir = self.locate(package.name());
 
         package.unpack(&pkg_dir).await?;
 
@@ -158,7 +158,7 @@ impl PackageStore {
         let root_path = self.proto_vendor_path();
         let source_files = self.populated_files(manifest).await;
 
-        let mut parser = crate::validation::Validator::new(&root_path, &manifest);
+        let mut parser = crate::validation::Validator::new(&root_path, manifest);
 
         for file in &source_files {
             parser.input(file);

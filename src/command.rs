@@ -175,7 +175,7 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
     let store = PackageStore::current().await?;
 
     if let Some(ref pkg) = manifest.package {
-        store.populate(&pkg).await?;
+        store.populate(pkg).await?;
     }
 
     let package = store.release(&manifest).await?;
@@ -231,7 +231,7 @@ pub async fn publish(
     let artifactory = Artifactory::new(registry, &credentials)?;
 
     if let Some(ref pkg) = manifest.package {
-        store.populate(&pkg).await?;
+        store.populate(pkg).await?;
     }
 
     let package = store.release(&manifest).await?;
@@ -254,7 +254,7 @@ pub async fn install() -> miette::Result<()> {
     store.clear().await?;
 
     if let Some(ref pkg) = manifest.package {
-        store.populate(&pkg).await?;
+        store.populate(pkg).await?;
     }
 
     let dependency_graph =
@@ -337,7 +337,7 @@ pub async fn list() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
 
     if let Some(ref pkg) = manifest.package {
-        store.populate(&pkg).await?;
+        store.populate(pkg).await?;
     }
 
     let protos = store.collect(&store.proto_vendor_path()).await;

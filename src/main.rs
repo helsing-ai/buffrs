@@ -152,8 +152,7 @@ async fn main() -> miette::Result<()> {
     };
 
     let package: PackageName = manifest
-        .map(|m| m.package.map(|p| p.name))
-        .flatten()
+        .and_then(|m| m.package.map(|p| p.name))
         .unwrap_or(PackageName::new("current").into_diagnostic()?);
 
     match cli.command {
