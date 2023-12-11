@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use buffrs::command;
@@ -127,6 +128,13 @@ enum Command {
         #[clap(long)]
         registry: RegistryUri,
     },
+
+    /// Run a minimal registry for local testing
+    TestRegistry {
+        /// Address to listen to for incoming connections.
+        #[clap(long, short, default_value = "127.0.0.1:4367")]
+        listen: SocketAddr,
+    },
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -228,5 +236,8 @@ async fn main() -> miette::Result<()> {
         Command::Generate { language, out_dir } => command::generate(language, out_dir)
             .await
             .wrap_err(miette!("failed to generate {language} language bindings")),
+        Command::TestRegistry { listen } => command::test_registry(listen)
+            .await
+            .wrap_err(miette!("failed to run a test registry on {listen}")),
     }
 }
