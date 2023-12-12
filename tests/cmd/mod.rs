@@ -6,4 +6,5 @@ mod login;
 mod logout;
 mod ls;
 mod package;
+mod publish;
 mod remove;
