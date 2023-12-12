@@ -59,9 +59,16 @@ impl Generator {
         let store = PackageStore::current().await?;
         let manifest = Manifest::read().await?;
 
-        store.populate(&manifest).await?;
+        let mut proto_files = vec![];
 
-        let proto_files = store.populated_files(&manifest).await;
+        if let Some(ref pkg) = manifest.package {
+            store.populate(pkg).await?;
+
+            proto_files.extend(store.populated_files(pkg).await);
+        } else {
+            proto_files.extend(store.collect(&store.proto_vendor_path()).await);
+        }
+
         let includes = &[store.proto_vendor_path()];
 
         match self {
@@ -111,15 +118,20 @@ impl Generator {
         let manifest = Manifest::read().await?;
         let store = PackageStore::current().await?;
 
-        store.populate(&manifest).await?;
+        let mut protos = vec![];
 
-        // Collect non-vendored protos
-        let protos = store.populated_files(&manifest).await;
+        if let Some(ref pkg) = manifest.package {
+            store.populate(pkg).await?;
+
+            protos.extend(store.populated_files(pkg).await);
+        } else {
+            protos.extend(store.collect(&store.proto_vendor_path()).await);
+        }
 
         info!(":: initializing code generator");
 
         ensure!(
-            manifest.package.kind.is_compilable() || !manifest.dependencies.is_empty() || !protos.is_empty(),
+            manifest.package.is_some() || !manifest.dependencies.is_empty() || !protos.is_empty(),
             "either a compilable package (library or api) or at least one dependency/proto file is needed to generate code bindings."
         );
 
@@ -127,13 +139,15 @@ impl Generator {
             .await
             .wrap_err(miette!("failed to generate bindings"))?;
 
-        if manifest.package.kind.is_compilable() {
-            info!(
-                ":: compiled {} [{}]",
-                manifest.package.name,
-                store.proto_path().display()
-            );
-        }
+        info!(
+            ":: compiled {}[{}]",
+            manifest
+                .package
+                .as_ref()
+                .map(|p| format!("{} ", p.name))
+                .unwrap_or_else(|| "".to_string()),
+            store.proto_path().display()
+        );
 
         for dependency in manifest.dependencies {
             info!(

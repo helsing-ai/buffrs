@@ -39,7 +39,7 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 /// empty fields.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct RawManifest {
-    package: PackageManifest,
+    package: Option<PackageManifest>,
     #[serde(default)]
     dependencies: DependencyMap,
 }
@@ -75,7 +75,7 @@ pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
     /// Metadata about the root package
-    pub package: PackageManifest,
+    pub package: Option<PackageManifest>,
     /// List of packages the root package depends on
     pub dependencies: Vec<Dependency>,
 }

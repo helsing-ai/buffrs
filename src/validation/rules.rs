@@ -14,9 +14,12 @@
 
 use std::fmt::Debug;
 
-use crate::validation::{
-    data::*,
-    violation::{self, *},
+use crate::{
+    manifest::PackageManifest,
+    validation::{
+        data::*,
+        violation::{self, *},
+    },
 };
 
 mod ident_casing;
@@ -100,6 +103,9 @@ impl Rule for RuleSet {
 }
 
 /// Get default rules for a given `buffrs` package name.
-pub fn package_rules(name: &str) -> RuleSet {
-    vec![Box::new(PackageName::new(name)), Box::new(IdentCasing)]
+pub fn all(manifest: &PackageManifest) -> RuleSet {
+    vec![
+        Box::new(PackageName::new(manifest.name.clone())),
+        Box::new(IdentCasing),
+    ]
 }

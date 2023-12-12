@@ -36,6 +36,7 @@ Here's an example `Proto.toml` file:
 [package]
 package = "physics"
 version = "1.0.0"
+type = "lib"
 description = "A library containing physic related types"
 
 # Declare dependencies (none in this case)
