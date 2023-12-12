@@ -66,7 +66,7 @@ impl Generator {
 
             proto_files.extend(store.populated_files(pkg).await);
         } else {
-            proto_files.extend(store.collect(&store.proto_vendor_path()).await);
+            proto_files.extend(store.collect(&store.proto_vendor_path(), true).await);
         }
 
         let includes = &[store.proto_vendor_path()];
@@ -125,7 +125,7 @@ impl Generator {
 
             protos.extend(store.populated_files(pkg).await);
         } else {
-            protos.extend(store.collect(&store.proto_vendor_path()).await);
+            protos.extend(store.collect(&store.proto_vendor_path(), true).await);
         }
 
         info!(":: initializing code generator");

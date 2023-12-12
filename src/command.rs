@@ -340,7 +340,7 @@ pub async fn list() -> miette::Result<()> {
         store.populate(pkg).await?;
     }
 
-    let protos = store.collect(&store.proto_vendor_path()).await;
+    let protos = store.collect(&store.proto_vendor_path(), true).await;
 
     let cwd = {
         let cwd = std::env::current_dir()

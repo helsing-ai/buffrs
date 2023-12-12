@@ -185,7 +185,7 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
-        for entry in self.collect(&pkg_path).await {
+        for entry in self.collect(&pkg_path, false).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
             entries.insert(path.into(), contents.into());
@@ -204,11 +204,18 @@ impl PackageStore {
     }
 
     /// Collect .proto files in a given path
-    pub async fn collect(&self, path: &Path) -> Vec<PathBuf> {
+    pub async fn collect(&self, path: &Path, vendored: bool) -> Vec<PathBuf> {
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
             .filter_map(Result::ok)
             .map(|entry| entry.into_path())
+            .filter(|path| {
+                if vendored {
+                    true
+                } else {
+                    !path.starts_with(self.proto_vendor_path())
+                }
+            })
             .filter(|path| {
                 let ext = path.extension().map(|s| s.to_str());
 
@@ -244,13 +251,10 @@ impl PackageStore {
                 ))?;
         }
 
-        for entry in self.collect(&source_path).await {
-            if entry.starts_with(self.proto_vendor_path()) {
-                continue;
-            }
-
+        for entry in self.collect(&source_path, false).await {
             let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
             let target_path = target_dir.join(file_name);
+
             tokio::fs::create_dir_all(target_path.parent().unwrap())
                 .await
                 .into_diagnostic()
@@ -269,7 +273,7 @@ impl PackageStore {
 
     /// Get the paths of all files under management after population
     pub async fn populated_files(&self, manifest: &PackageManifest) -> Vec<PathBuf> {
-        self.collect(&self.populated_path(manifest)).await
+        self.collect(&self.populated_path(manifest), true).await
     }
 }
 
