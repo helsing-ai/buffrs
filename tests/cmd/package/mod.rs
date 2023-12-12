@@ -11,8 +11,7 @@ fn fixture() {
         .assert()
         .success()
         .stdout(include_str!("stdout.log"))
-        .stderr(include_str!("stderr.log"))
-        .code(0);
+        .stderr(include_str!("stderr.log"));
 
     vfs.verify_against(crate::parent_directory!().join("out"));
 }
