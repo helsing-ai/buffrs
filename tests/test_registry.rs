@@ -1,46 +1,37 @@
-use std::process::{Child, Command};
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::Duration;
 
-struct ChildGuard(Child);
+// in case 4367 is already in use, start with the next port
+static PORT: AtomicU16 = AtomicU16::new(4368);
 
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        self.0.kill().expect("could not kill test-registry");
-    }
-}
+// do not use (flavor = "current_thread") here because the user-provided function is blocking
+#[tokio::main]
+pub async fn with_test_registry<F: FnOnce(&str)>(f: F) {
+    let port = PORT.fetch_add(1, Ordering::Relaxed);
+    let listen = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
+    let url = format!("http://{listen}/registry");
 
-pub fn with_test_registry<F: FnOnce(&str)>(f: F) {
     // spawn test registry in separate process
-    let mut handle = ChildGuard(
-        Command::new("cargo")
-            .arg("run")
-            .arg("--")
-            .arg("test-registry")
-            .spawn()
-            .expect("could not spawn test-registry"),
-    );
+    let handle = tokio::task::spawn(buffrs::command::test_registry(listen));
 
     // wait until the test registry is ready
     let dur = Duration::from_millis(10);
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(dur)
+        .build()
+        .unwrap();
     loop {
         // perform a simple request at an arbitrary URL to check readiness
-        let mut req = reqwest::blocking::Request::new(
-            reqwest::Method::GET,
-            "http://localhost:4367/registry".try_into().unwrap(),
-        );
-        *req.timeout_mut() = Some(dur);
-        if client.execute(req).is_ok() {
+        if client.get(&url).send().await.is_ok() {
             break;
         }
         // check whether the test registry has failed instead of looping indefinitely
-        if handle.0.try_wait().unwrap().is_some() {
-            handle.0.wait().unwrap();
-        }
+        assert!(!handle.is_finished(), "test registry ended unexpectedly");
         // no busy wait
-        std::thread::sleep(dur);
+        tokio::time::sleep(dur).await;
     }
 
     // run user code
-    f("http://localhost:4367/registry");
+    f(&url);
 }
