@@ -51,7 +51,7 @@ message Time {
 
 APIs are the next logical building block for real world systems – they define
 services and RPCs that your server can implement. You can use the
-aforementioned libraries to fuel your development / api definition experience.
+aforementioned libraries to fuel your development / API definition experience.
 
 A good example of an API could be an imaginary `logging` service that makes use
 of the just declared `time.Time`:
