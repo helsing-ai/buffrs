@@ -4,6 +4,7 @@ use crate::{with_test_registry, VirtualFileSystem};
 fn fixture() {
     with_test_registry(|url| {
         let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
+
         crate::cli!()
             .arg("publish")
             .arg("--registry")
