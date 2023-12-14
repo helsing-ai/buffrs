@@ -1,7 +1,6 @@
 use crate::VirtualFileSystem;
 
 #[test]
-#[ignore = "tgz header issue / fs mismatch"]
 fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
