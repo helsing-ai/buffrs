@@ -29,7 +29,7 @@ use std::path::PathBuf;
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
-use std::{env, net::SocketAddr, path::Path, str::FromStr};
+use std::{env, path::Path, str::FromStr};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -432,60 +432,6 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
-}
-
-use axum::{
-    extract,
-    http::{header, StatusCode},
-    response::IntoResponse,
-    routing::get,
-    Router,
-};
-use bytes::Bytes;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
-
-type State = Arc<RwLock<HashMap<String, Bytes>>>;
-
-/// Run a minimal registry for local testing
-pub async fn test_registry(listen: SocketAddr) -> miette::Result<()> {
-    let state = Arc::new(RwLock::new(HashMap::<String, Bytes>::new()));
-    let app = Router::new()
-        .route("/*path", get(get_package).put(put_package))
-        .with_state(state);
-    let listener = tokio::net::TcpListener::bind(listen)
-        .await
-        .into_diagnostic()
-        .wrap_err(miette!("failed to listen on {listen:?}"))?;
-    tracing::info!("Listening on {listen:?}");
-    axum::serve(listener, app)
-        .await
-        .into_diagnostic()
-        .wrap_err(miette!("failed to read the token from the user"))
-}
-
-// basic handler that responds with a static string
-async fn get_package(
-    extract::State(state): extract::State<State>,
-    extract::Path(path): extract::Path<String>,
-) -> Result<impl IntoResponse, StatusCode> {
-    tracing::info!("Downloaded package from {path}");
-    let content = state
-        .read()
-        .unwrap()
-        .get(&path)
-        .cloned()
-        .ok_or(StatusCode::NOT_FOUND)?;
-    Ok(([(header::CONTENT_TYPE, "application/x-gzip")], content))
-}
-
-async fn put_package(
-    extract::State(state): extract::State<State>,
-    extract::Path(path): extract::Path<String>,
-    body: Bytes,
-) {
-    tracing::info!("Uploaded package to {path} ({} bytes)", body.len());
-    state.write().unwrap().insert(path, body);
 }
 
 #[cfg(test)]
