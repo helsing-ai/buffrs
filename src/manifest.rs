@@ -230,7 +230,7 @@ mod deserializer {
                             dependencies,
                         }),
                         Ok(Edition::Unknown) | Err(_) => Err(de::Error::custom(
-                            "unsupported manifest edition, please consult the documentation and update the manifest accordingly"
+                            format!("unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}", env!("CARGO_PKG_VERSION"))
                         )),
                     }
                 }
