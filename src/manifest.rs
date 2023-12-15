@@ -84,8 +84,8 @@ impl RawManifest {
 
     fn dependencies(&self) -> &DependencyMap {
         match self {
-            Self::Canary { dependencies, .. } => &dependencies,
-            Self::Unknown { dependencies, .. } => &dependencies,
+            Self::Canary { dependencies, .. } => dependencies,
+            Self::Unknown { dependencies, .. } => dependencies,
         }
     }
 
@@ -185,7 +185,7 @@ mod deserializer {
         where
             D: Deserializer<'de>,
         {
-            static FIELDS: &'static [&'static str] = &["package", "dependencies"];
+            static FIELDS: &[&str] = &["package", "dependencies"];
 
             struct ManifestVisitor;
 
