@@ -18,7 +18,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use lazy_static::lazy_static;
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
+use regex::{Captures, Regex};
 use tokio::fs;
 use walkdir::WalkDir;
 
@@ -26,6 +28,13 @@ use crate::{
     manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
 };
+
+lazy_static! {
+    static ref PROTOBUF_IMPORT_STATEMENT_REGEX: Regex =
+        Regex::new("(?m)(^import \")(.+)(\";$)").unwrap();
+    static ref PROTOBUF_PACKAGE_STATEMENT_REGEX: Regex =
+        regex::Regex::new("(?m)^package ([0-9A-Za-z_]+);$").unwrap();
+}
 
 /// IO abstraction layer over local `buffrs` package store
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,9 +194,55 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
+        let package_name = &manifest.package.as_ref().unwrap().name;
+        let compat_name = package_name.replace('-', "_");
+        let compat_dir = format!("{compat_name}/");
+
+        let parts: Vec<&str> = compat_name.split('_').collect();
+
         for entry in self.collect(&pkg_path, false).await {
-            let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
-            let contents = tokio::fs::read(&entry).await.unwrap();
+            let mut path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
+            let mut contents = tokio::fs::read(&entry).await.unwrap();
+
+            // automatic translation from legacy packages
+            if parts.len() >= 3 {
+                let group_name = parts[1];
+                if let Ok(stripped_path) = path.strip_prefix(&compat_dir) {
+                    tracing::info!("   compat: {:?} -> {:?}", path, stripped_path);
+                    // NOTE: we could also work with bytes, but it is very annoying
+                    // TODO: maybe refactor once ascii_chars becomes stable
+                    let decoded_contents = std::str::from_utf8(&contents)
+                        .into_diagnostic()
+                        .wrap_err(miette!("failed to decode contents of {:?} as UTF-8", path))?;
+
+                    // rename imports to use Buffrs-style package names (hyphens instead of undercores)
+                    let renamed_imports = PROTOBUF_IMPORT_STATEMENT_REGEX.replace_all(
+                        decoded_contents,
+                        |caps: &Captures| {
+                            format!("{}{}{}", &caps[1], caps[2].replace('_', "-"), &caps[3])
+                        },
+                    );
+
+                    // change package statement
+                    // find value of package statement
+                    let c = PROTOBUF_PACKAGE_STATEMENT_REGEX
+                        .captures(&renamed_imports)
+                        .ok_or_else(|| miette!("failed to find package statement in {:?}", path))?;
+                    let statement_value = c.get(1).unwrap().as_str();
+                    // replace package statement
+                    let renamed_accesses = renamed_imports.replace(
+                        &format!("{statement_value}."),
+                        &format!("{group_name}.{statement_value}."),
+                    );
+                    let renamed_package = renamed_accesses.replace(
+                        &format!("package {statement_value};"),
+                        &format!("package {group_name}.{statement_value};"),
+                    );
+
+                    contents = renamed_package.as_bytes().to_vec();
+                    path = stripped_path;
+                }
+            }
             entries.insert(path.into(), contents.into());
         }
 
