@@ -33,6 +33,7 @@
     * [Continuous Integration](migration/continuous-integration.md)
 
 * [Buffrs Reference](reference/index.md)
+    * [Editions](reference/editions.md)
     * [Specifying Dependencies]()
         * [Overriding Dependencies]()
     * [The Manifest Format]()
