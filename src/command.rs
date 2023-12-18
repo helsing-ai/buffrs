@@ -252,8 +252,6 @@ pub async fn install() -> miette::Result<()> {
     let credentials = Credentials::load().await?;
 
     store.clear().await?;
-    PackageStore::create(store.proto_path()).await?;
-    PackageStore::create(store.proto_vendor_path()).await?;
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;

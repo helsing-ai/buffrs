@@ -59,6 +59,9 @@ impl PackageStore {
     async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
 
+        PackageStore::create(store.proto_path()).await?;
+        PackageStore::create(store.proto_vendor_path()).await?;
+
         if !store.exists().await? {
             miette::bail!("package store does not exist");
         }
