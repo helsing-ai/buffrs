@@ -162,7 +162,7 @@ mod deserializer {
                 type Value = Edition;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("`Alpha` or `Beta`")
+                    formatter.write_str("a valid edition string")
                 }
 
                 fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
