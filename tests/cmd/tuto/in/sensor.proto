@@ -5,9 +5,9 @@ package sensor_api;
 import "units/temperature.proto";
 import "google/protobuf/timestamp.proto";
 
-// A bridge to subscribe to realtime sensor data from connected devices 
+// A bridge to subscribe to real-time sensor data from connected devices 
 service Sensor {
-  // Read the temeperature of a device
+  // Read the temperature of a device
   rpc ReadTemperature(DeviceId)
     returns (Measurement);
 }
@@ -17,7 +17,7 @@ message DeviceId {
   string id = 1;
 }
 
-// Temeperature measured by a device
+// Temperature measured by a device
 message Measurement {
   DeviceId device = 1;
   units.Temperature temperature = 2;
