@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -13,23 +12,16 @@ use axum::{
 };
 use bytes::Bytes;
 use miette::{miette, Context as _, IntoDiagnostic};
-
-// in case 4367 is already in use, start with the next port
-static PORT: AtomicU16 = AtomicU16::new(4368);
+use tokio::net::TcpListener;
 
 type State = Arc<RwLock<HashMap<String, Bytes>>>;
 
 /// Run a minimal registry for local testing
-async fn test_registry(listen: SocketAddr) -> miette::Result<()> {
+async fn test_registry(listener: TcpListener) -> miette::Result<()> {
     let state = Arc::new(RwLock::new(HashMap::<String, Bytes>::new()));
     let app = Router::new()
         .route("/*path", get(get_package).put(put_package))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind(listen)
-        .await
-        .into_diagnostic()
-        .wrap_err(miette!("failed to listen on {listen:?}"))?;
-    tracing::info!("Listening on {listen:?}");
     axum::serve(listener, app)
         .await
         .into_diagnostic()
@@ -63,12 +55,14 @@ async fn put_package(
 // do not use (flavor = "current_thread") here because the user-provided function is blocking
 #[tokio::main]
 pub async fn with_test_registry<F: FnOnce(&str)>(f: F) {
-    let port = PORT.fetch_add(1, Ordering::Relaxed);
-    let listen = SocketAddr::new("127.0.0.1".parse().unwrap(), port);
-    let url = format!("http://{listen}/registry");
+    // spawn test registry in separate Tokio task
+    let listen = SocketAddr::new("127.0.0.1".parse().unwrap(), 0);
+    let listener = TcpListener::bind(listen).await.unwrap();
+    let local_addr = listener.local_addr().unwrap();
+    let handle = tokio::task::spawn(test_registry(listener));
 
-    // spawn test registry in separate process
-    let handle = tokio::task::spawn(test_registry(listen));
+    tracing::info!("Listening on {local_addr:?}");
+    let url = format!("http://{local_addr}/registry");
 
     // wait until the test registry is ready
     let dur = Duration::from_millis(10);
