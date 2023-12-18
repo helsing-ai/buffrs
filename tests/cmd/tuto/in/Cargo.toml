@@ -1,0 +1,9 @@
+[package]
+name = "sensor-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tonic = "0.9"
+prost = "0.11"
+prost-types = "0.11"

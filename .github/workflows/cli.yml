@@ -42,6 +42,8 @@ jobs:
           lfs: "true"
       - run: rustup update
       - uses: Swatinem/rust-cache@v2
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
       - run: cargo test --workspace
         env:
           RUST_BACKTRACE: 1
@@ -65,6 +67,8 @@ jobs:
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-llvm-cov || true
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
       - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
 
   typos:
