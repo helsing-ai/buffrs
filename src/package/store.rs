@@ -48,23 +48,12 @@ impl PackageStore {
         Self::open(&current_dir().into_diagnostic()?).await
     }
 
-    /// Check if this store exists
-    async fn exists(&self) -> miette::Result<bool> {
-        let meta = fs::metadata(&self.proto_path()).await.into_diagnostic()?;
-
-        Ok(meta.is_dir())
-    }
-
     /// Open given directory.
     async fn open(path: &Path) -> miette::Result<Self> {
         let store = Self::new(path.into());
 
         PackageStore::create(store.proto_path()).await?;
         PackageStore::create(store.proto_vendor_path()).await?;
-
-        if !store.exists().await? {
-            miette::bail!("package store does not exist");
-        }
 
         Ok(store)
     }
