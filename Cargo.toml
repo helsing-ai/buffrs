@@ -10,6 +10,7 @@ keywords = ["protobuf", "protocol", "buffers", "package", "distribution"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 license = "Apache-2.0"
+exclude = ["/.github", "/tests"]
 
 [[bin]]
 name = "buffrs"
