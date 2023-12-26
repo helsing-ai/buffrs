@@ -70,10 +70,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         })
         .transpose()?;
 
-    let manifest = Manifest {
-        package,
-        dependencies: vec![],
-    };
+    let manifest = Manifest::new(package, vec![]);
 
     manifest.write().await?;
 

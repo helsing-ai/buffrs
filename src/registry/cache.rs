@@ -111,15 +111,15 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = Manifest {
-            package: Some(PackageManifest {
+        let manifest = Manifest::new(
+            Some(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
             }),
-            dependencies: vec![],
-        };
+            vec![],
+        );
 
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
@@ -127,7 +127,10 @@ mod tests {
         // Publish to local registry and assert the tgz exists in the file system
         registry
             .publish(
-                Package::new(manifest.clone(), package_bytes.clone()),
+                Package {
+                    manifest: manifest.clone(),
+                    tgz: package_bytes.clone(),
+                },
                 "test-repo".into(),
             )
             .await
