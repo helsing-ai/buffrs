@@ -52,8 +52,9 @@ pub enum Edition {
     Unknown,
 }
 
-impl Default for Edition {
-    fn default() -> Self {
+impl Edition {
+    /// The current / latest edition of buffrs
+    pub fn latest() -> Self {
         Self::Canary
     }
 }
@@ -289,7 +290,7 @@ impl Manifest {
     /// Create a new manifest of the current edition
     pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>) -> Self {
         Self {
-            edition: Edition::default(),
+            edition: Edition::latest(),
             package,
             dependencies,
         }

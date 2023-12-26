@@ -10,7 +10,7 @@ automatically inlined once a package is created using buffrs. This ensures that
 you dont need to care about them as a user but get the benefits.
 
 > Note: If you release a package with an edition that is incompatible with
-> another one (e.g. `0.7` is incompatible with `0.8`) you will need to
+> another one (e.g. if `0.7` is incompatible with `0.8`) you will need to
 > re-release the package for the new edition (by bumping the version, or
 > overriding the existing package) to regain compatibility.
 
