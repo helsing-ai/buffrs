@@ -3,7 +3,16 @@ name = "buffrs"
 version = "0.7.5"
 edition = "2021"
 description = "Modern protobuf package management"
-authors = ["Mara Schulke <mara.schulke@helsing.ai>"]
+authors = [
+  "Mara Schulke <mara.schulke@helsing.ai>",
+  "André Sá De Mello <andre.mello@helsing.ai>",
+  "Patrick Elsen <patrick.elsen@helsing.ai>",
+  "Tom Karwowski <tom.karwowski@helsing.ai>",
+  "Quentin Santos <quentin.santos@helsing.ai>",
+  "Thomas Pellissier-Tanon <thomas.pellissier-tanon@helsing.ai>",
+  "Robert Fink <robert.fink@helsing.ai>",
+  "James Baker <james.baker@helsing.ai>",
+]
 repository = "https://github.com/helsing-ai/buffrs"
 documentation = "https://docs.rs/buffrs"
 keywords = ["protobuf", "protocol", "buffers", "package", "distribution"]
