@@ -11,7 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#![allow(missing_docs)]
+
 use atmosphere::prelude::*;
+use atmosphere::sqlx;
 use chrono::{DateTime, Utc};
 
 use serde::{Deserialize, Serialize};
@@ -25,33 +28,42 @@ pub struct User {
     #[sql(unique)]
     pub handle: String,
     #[sql(timestamp = created)]
-    //#[hook(insert = DateTime::now())]
     pub created_at: DateTime<Utc>,
     #[sql(timestamp = updated)]
-    //#[hook(update = DateTime::now())]
     pub updated_at: DateTime<Utc>,
     #[sql(timestamp = deleted)]
-    //#[hook(delete = DateTime::now())]
     pub deleted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "scope", rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case")]
+pub enum Scope {
+    Publish,
+    Yank,
+    Update,
+}
+
+impl sqlx::postgres::PgHasArrayType for Scope {
+    fn array_type_info() -> sqlx::postgres::PgTypeInfo {
+        <String as sqlx::postgres::PgHasArrayType>::array_type_info()
+    }
 }
 
 /// A token that is identifying a user / used for authentication
 #[derive(Schema, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[table(schema = "public", name = "user_tokens")]
-pub struct UserToken {
+#[table(schema = "public", name = "tokens")]
+pub struct Token {
+    /// Argon2id (p=2, t=3, r=64mib) hash of the token
     #[sql(pk)]
     pub hash: String,
+    /// The user owning this token
     #[sql(fk -> User, rename = "user_id")]
     pub user: i32,
-    #[sql(unique)]
-    pub prefix: String,
-    pub allow_publish: bool,
-    pub allow_update: bool,
-    pub allow_yank: bool,
+    /// The scopes of this token
+    pub scopes: Vec<Scope>,
     #[sql(timestamp = created)]
     pub created_at: DateTime<Utc>,
-    #[sql(timestamp = updated)]
-    pub updated_at: DateTime<Utc>,
     #[sql(timestamp = deleted)]
     pub deleted_at: Option<DateTime<Utc>>,
 }
@@ -76,7 +88,7 @@ pub struct Package {
     #[sql(unique)]
     pub name: String,
     #[sql(rename = "type")]
-    pub ty: PackageType,
+    pub kind: PackageType,
     #[sql(timestamp = created)]
     pub created_at: DateTime<Utc>,
     #[sql(timestamp = updated)]
@@ -89,18 +101,18 @@ pub struct Package {
 pub struct PackageOwner {
     #[sql(pk)]
     pub id: i32,
+
     //#[sql(fk -> User, rename = "user_id")]
     #[sql(rename = "user_id")]
     pub user: i32,
-    //#[sql(fk -> Package, rename = "package_id")]
+    #[sql(fk -> Package, rename = "package_id")]
     #[sql(rename = "package_id")]
     pub package: i32,
-    //#[sql(fk -> User, rename = "invited_by")]
+    #[sql(fk -> User, rename = "invited_by")]
     pub invited_by: i32,
+
     #[sql(timestamp = created)]
     pub created_at: DateTime<Utc>,
-    #[sql(timestamp = updated)]
-    pub updated_at: DateTime<Utc>,
     #[sql(timestamp = deleted)]
     pub deleted_at: Option<DateTime<Utc>>,
 }
@@ -111,20 +123,21 @@ pub struct PackageOwner {
 pub struct PackageInvite {
     #[sql(pk)]
     pub id: i32,
-    #[sql(unique)]
-    pub token: String,
+
     //#[sql(fk -> User, rename = "user_id")]
     #[sql(rename = "user_id")]
     pub user: i32,
-    //#[sql(fk -> Package, rename = "package_id")]
+    #[sql(fk -> Package, rename = "package_id")]
     #[sql(rename = "package_id")]
     pub package: i32,
-    //#[sql(fk -> User, rename = "invited_by")]
+    #[sql(fk -> User, rename = "invited_by")]
     pub invited_by: i32,
+
+    pub accepted: Option<bool>,
+    pub answered_at: Option<DateTime<Utc>>,
+
     #[sql(timestamp = created)]
     pub created_at: DateTime<Utc>,
-    #[sql(timestamp = updated)]
-    pub updated_at: DateTime<Utc>,
     #[sql(timestamp = deleted)]
     pub deleted_at: Option<DateTime<Utc>>,
 }

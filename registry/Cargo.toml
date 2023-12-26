@@ -8,7 +8,8 @@ default-run = "buffrs-registry"
 
 [dependencies]
 async-trait = "0.1.74"
-atmosphere = "0.1.0"
+atmosphere = { version = "0.1.3", features = ["postgres"] }
+sqlx = { version = "0.7.3", features = ["chrono", "postgres"] }
 aws-config = { version = "1.0.1", optional = true }
 aws-sdk-s3 = { version = "1.4.0", optional = true }
 axum_tonic = "0.1.0"

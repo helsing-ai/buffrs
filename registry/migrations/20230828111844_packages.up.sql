@@ -23,7 +23,9 @@ CREATE TABLE package_owners (
 
 CREATE TABLE package_invites (
     id SERIAL PRIMARY KEY,
-    token TEXT NOT NULL UNIQUE,
+
+    accepted   BOOLEAN,
+    answered_at TIMESTAMPTZ,
 
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     package_id INTEGER NOT NULL REFERENCES packages(id) ON DELETE RESTRICT,
