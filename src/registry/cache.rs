@@ -63,6 +63,7 @@ impl LocalRegistry {
         ))
     }
 
+    /// "Publishes" or stores a package in the local store
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
@@ -98,27 +99,27 @@ mod tests {
     use crate::{
         manifest::{Dependency, Manifest, PackageManifest},
         package::{Package, PackageType},
-        registry::local::LocalRegistry,
+        registry::cache::LocalRegistry,
     };
     use bytes::Bytes;
     use std::{env, path::PathBuf};
     use tokio::fs;
 
     #[tokio::test]
-    #[ignore = "gzip header is invalid"]
+    #[ignore = "gzid header issues"]
     async fn can_publish_and_fetch() {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = Manifest {
-            package: PackageManifest {
+        let manifest = Manifest::new(
+            Some(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
-            },
-            dependencies: vec![],
-        };
+            }),
+            vec![],
+        );
 
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
@@ -126,7 +127,10 @@ mod tests {
         // Publish to local registry and assert the tgz exists in the file system
         registry
             .publish(
-                Package::new(manifest.clone(), package_bytes.clone()),
+                Package {
+                    manifest: manifest.clone(),
+                    tgz: package_bytes.clone(),
+                },
                 "test-repo".into(),
             )
             .await

@@ -54,7 +54,11 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
     ) -> miette::Result<Self> {
-        let name = manifest.package.name.clone();
+        let name = manifest
+            .package
+            .as_ref()
+            .map(|p| p.name.clone())
+            .unwrap_or_else(|| PackageName::unchecked("."));
 
         let mut entries = HashMap::new();
 
@@ -86,12 +90,12 @@ impl DependencyGraph {
         if let Some(entry) = entries.get_mut(&dependency.package) {
             ensure!(
                 version_req.matches(entry.package.version()),
-                "a dependency of your project requires {}@{} which collides with {}@{} required by {}", 
+                "a dependency of your project requires {}@{} which collides with {}@{} required by {:?}", 
                     dependency.package,
                     dependency.manifest.version,
                     entry.dependants[0].name.clone(),
                     dependency.manifest.version,
-                    entry.package.manifest.package.version.clone(),
+                    entry.package.manifest.package.as_ref().map(|p| &p.version)
             );
 
             entry.dependants.push(Dependant { name, version_req });
@@ -199,6 +203,7 @@ impl DependencyGraph {
 impl IntoIterator for DependencyGraph {
     type Item = ResolvedDependency;
     type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+
     fn into_iter(self) -> Self::IntoIter {
         self.entries.into_values()
     }

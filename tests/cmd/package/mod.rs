@@ -1,7 +1,6 @@
 use crate::VirtualFileSystem;
 
 #[test]
-#[ignore = "sha mismatch, tar files should be compared by contents!"]
 fn fixture() {
     let vfs = VirtualFileSystem::copy(crate::parent_directory!().join("in"));
 
@@ -11,8 +10,7 @@ fn fixture() {
         .assert()
         .success()
         .stdout(include_str!("stdout.log"))
-        .stderr(include_str!("stderr.log"))
-        .code(0);
+        .stderr(include_str!("stderr.log"));
 
     vfs.verify_against(crate::parent_directory!().join("out"));
 }

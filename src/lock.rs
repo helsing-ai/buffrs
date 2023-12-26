@@ -65,8 +65,8 @@ impl LockedPackage {
         registry: RegistryUri,
         repository: String,
         dependants: usize,
-    ) -> miette::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             name: package.name().to_owned(),
             registry,
             repository,
@@ -79,7 +79,7 @@ impl LockedPackage {
                 .map(|d| d.package.clone())
                 .collect(),
             dependants,
-        })
+        }
     }
 
     /// Validates if another LockedPackage matches this one

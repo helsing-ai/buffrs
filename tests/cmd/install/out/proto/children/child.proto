@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package asset.child;
+
+import "some-test-api/asset.proto";
+
+message Child {
+	asset.Asset asset = 1;
+	float scalar = 2;
+}

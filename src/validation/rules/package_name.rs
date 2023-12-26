@@ -18,21 +18,14 @@ use super::*;
 #[derive(Debug, Clone)]
 pub struct PackageName {
     /// Package name to enforce.
-    name: String,
+    name: crate::package::PackageName,
 }
 
 impl PackageName {
     /// Create new checker for this rule.
-    pub fn new(name: &str) -> Self {
-        Self { name: name.into() }
+    pub fn new(name: crate::package::PackageName) -> Self {
+        Self { name }
     }
-}
-
-fn is_prefix(prefix: &str, package: &str) -> bool {
-    prefix
-        .split('.')
-        .zip(package.split('.'))
-        .all(|(a, b)| a == b)
 }
 
 impl Rule for PackageName {
@@ -41,9 +34,11 @@ impl Rule for PackageName {
     }
 
     fn check_package(&mut self, package: &Package) -> Violations {
-        if !is_prefix(&self.name, &package.name) {
+        let transposed = self.name.to_string().replace('-', "_");
+
+        if !is_prefix(&transposed, &package.name) {
             let message = violation::Message {
-                message: format!("package name is {} but should have {} prefix", package.name, self.name),
+                message: format!("package name is {} but should have {} prefix", package.name, transposed),
                 help: "Make sure the file name matches the package. For example, a package with the name `package.subpackage` should be stored in `proto/package/subpackage.proto`.".into(),
             };
 
@@ -52,6 +47,14 @@ impl Rule for PackageName {
 
         Violations::default()
     }
+}
+
+fn is_prefix(prefix: &str, package: &str) -> bool {
+    prefix
+        .replace('-', "_")
+        .split('.')
+        .zip(package.split('.'))
+        .all(|(a, b)| a == b)
 }
 
 #[cfg(test)]
@@ -79,10 +82,10 @@ mod tests {
     fn correct_package_name() {
         let package = Package {
             name: "my_package".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -90,10 +93,21 @@ mod tests {
     fn correct_package_name_submodule() {
         let package = Package {
             name: "my_package.submodule".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my-package".parse().unwrap());
+        assert!(rule.check_package(&package).is_empty());
+    }
+
+    #[test]
+    fn correct_case_transformation() {
+        let package = Package {
+            name: "my_package.submodule".into(),
+            files: vec!["ignored.proto".into()],
+            entities: Default::default(),
+        };
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert!(rule.check_package(&package).is_empty());
     }
 
@@ -101,10 +115,10 @@ mod tests {
     fn incorrect_package_name() {
         let package = Package {
             name: "my_package_other".into(),
-            file: "ignored.proto".into(),
+            files: vec!["ignored.proto".into()],
             entities: Default::default(),
         };
-        let mut rule = PackageName::new("my_package");
+        let mut rule = PackageName::new("my-package".parse().unwrap());
         assert_eq!(
             rule.check_package(&package),
             vec![Violation {

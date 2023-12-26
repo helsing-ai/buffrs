@@ -1,38 +1,87 @@
 ## Package Types
 
-Buffrs currently defines three kinds of package: `lib` (library), `api` (API)
-and `impl` (implementation). Only the first two can publish packages, but it's
-important to understand all three as they interact with each other in unique
-ways.
+Buffrs makes distinctions between two different packages:
 
-### Libraries
+```toml
+[package]
+type = "lib" | "api"
+```
 
-Projects that declare type `lib` in their package manifest publish library
-packages. Library packages are the most basic kind of package, as they only
-define primitive types and can have no dependencies. Their purpose is to define
-a base layer of common types that can be reused by multiple API or
-implementation packages. This increases compatibility across services by
-providing a common framework for data representation. It also reduces upgrade
-issues across evolving projects, as library dependencies tend to change little
-over time.
+This is used in order to fuel composition and type reuse across APIs and thus
+enable shared types + wire compatibility.
 
-### APIs
+### `lib` – Libraries
 
-Projects that declare type `api` in their package manifest publish API
-packages. API packages, like library packages, are intrinsically declarative.
-Their distinction is that they are used to define message and services, as
-opposed to just types. API packages can depend on library packages, so they
-work with the [`install`](../commands/buffrs-install.md) command, but they
-don't produce code, so they don't work with the
-[`generate`](../commands/buffrs-generate.md) command. Implementation packages
-typically depend on API packages and not directly on libraries, though this is
-also allowed.
+Libraries contain atomic and composite type definitions that describe a domain.
+(e.g. `physics`, `auth`, `time` etc.). This pattern is really useful for
+scaling systems and maintaining dozens of APIs as they can share types and thus
+get the aforementioned benefits of source code and wire compatibility for free.
 
-### Implementations
+An example of a proto library named `time` that depends on `google`:
 
-Implementation projects, unlike the other kinds, don't publish packages, so
-they cannot be referenced as dependencies in packages. However, they do define
-a package type that can depend on both library and API packages. They are final
-consumers of reusable protocol buffers and contain the physical implementation
-of services, or clients and servers -- so they are the intended target of the
-[`generate`](../commands/buffrs-generate.md) command.
+```toml
+[package]
+name = "time"
+type = "lib"
+version = "1.0.0"
+
+[dependencies]
+google = { version = "=1.0.0", ... }
+```
+
+```proto
+syntax = "proto3";
+
+package time;
+
+import "google/timestamp.proto";
+
+/// A timestamp wrapper for various formats
+message Time {
+  oneof format {
+    string rfc3339 = 1;
+    uint64 unix = 2;
+    google.protobuf.Timestamp google = 3;
+    ..
+  }
+}
+```
+
+### `api` – APIs
+
+APIs are the next logical building block for real world systems – they define
+services and RPCs that your server can implement. You can use the
+aforementioned libraries to fuel your development / API definition experience.
+
+A good example of an API could be an imaginary `logging` service that makes use
+of the just declared `time.Time`:
+
+```toml
+[package]
+name = "logging"
+type = "api"
+version = "1.0.0"
+
+[dependencies]
+time = { version = "=1.0.0", ... }
+```
+
+```proto
+syntax = "proto3";
+
+package logging;
+
+import "time/time.proto";
+
+service Logging {
+  rpc critical(LogInput) returns (LogOutput);
+  rpc telemetry(LogInput) returns (LogOutput);
+  rpc healthiness(HealthInput) returns (HealthOutput);
+}
+
+message LogInput { string context = 1; time.Time timestamp = 2; }
+message LogOutput { }
+
+message HealthInput { bool db = 1; }
+message HealthOutput { }
+```

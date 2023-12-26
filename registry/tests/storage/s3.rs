@@ -6,6 +6,7 @@
 //! run at most one method under test, and verify the outputs and the bucket side effects.
 
 use super::*;
+use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{
     primitives::{ByteStream, SdkBody},
@@ -25,7 +26,7 @@ fn random_bucket() -> String {
 /// Generate a client with test credentials.
 async fn minio_client() -> Client {
     let credentials = Credentials::from_keys("buffrs", "password", None);
-    let config = aws_config::from_env()
+    let config = aws_config::defaults(BehaviorVersion::latest())
         .endpoint_url("http://localhost:9000")
         .region("us-east-1")
         .credentials_provider(credentials)
@@ -45,10 +46,11 @@ async fn delete_bucket(client: Client, bucket: String) {
         .unwrap();
 
     let mut delete_objects: Vec<ObjectIdentifier> = vec![];
-    for obj in objects.contents().iter().flat_map(|i| i.iter()) {
+    for obj in objects.contents().iter() {
         let obj_id = ObjectIdentifier::builder()
             .set_key(Some(obj.key().unwrap().to_string()))
-            .build();
+            .build()
+            .unwrap();
         delete_objects.push(obj_id);
     }
 
@@ -56,7 +58,12 @@ async fn delete_bucket(client: Client, bucket: String) {
         client
             .delete_objects()
             .bucket(&bucket)
-            .delete(Delete::builder().set_objects(Some(delete_objects)).build())
+            .delete(
+                Delete::builder()
+                    .set_objects(Some(delete_objects))
+                    .build()
+                    .unwrap(),
+            )
             .send()
             .await
             .unwrap();

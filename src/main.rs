@@ -79,7 +79,6 @@ enum Command {
     },
 
     /// Packages and uploads this api to the registry
-    #[clap(alias = "pub")]
     Publish {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
@@ -153,24 +152,24 @@ async fn main() -> miette::Result<()> {
     };
 
     let package: PackageName = manifest
-        .map(|m| m.package.name)
-        .unwrap_or(PackageName::new("unknown").into_diagnostic()?);
+        .and_then(|m| m.package.map(|p| p.name))
+        .unwrap_or(PackageName::new("current").into_diagnostic()?);
 
     match cli.command {
         Command::Init { lib, api, package } => {
             let kind = if lib {
-                PackageType::Lib
+                Some(PackageType::Lib)
             } else if api {
-                PackageType::Api
+                Some(PackageType::Api)
             } else {
-                PackageType::Impl
+                None
             };
 
             command::init(kind, package.to_owned())
                 .await
                 .wrap_err(miette!(
-                    "failed to initialize {}{kind} package",
-                    package.map(|p| format!("`{p}` as ")).unwrap_or_default()
+                    "failed to initialize {}",
+                    package.map(|p| format!("`{p}`")).unwrap_or_default()
                 ))
         }
         Command::Login { registry } => command::login(registry.to_owned())

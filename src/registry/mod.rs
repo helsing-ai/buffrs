@@ -20,7 +20,7 @@ use std::{
 
 mod artifactory;
 #[cfg(test)]
-mod local;
+mod cache;
 
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};

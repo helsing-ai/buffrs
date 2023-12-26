@@ -29,47 +29,41 @@ pub struct Packages {
 #[derive(Error, Debug, Diagnostic)]
 #[allow(missing_docs)]
 pub enum PackagesError {
-    #[error("duplicate package {package}, defined in {previous} and {current}")]
-    #[diagnostic(
-        help = "check to make sure your files define different package names",
-        code = "duplicate_package"
-    )]
-    DuplicatePackage {
-        package: String,
-        current: PathBuf,
-        previous: PathBuf,
-    },
-
     #[error("error parsing package {package} in {file}")]
-    Package {
+    PackageParse {
         package: String,
         file: String,
         #[source]
         #[diagnostic_source]
         error: PackageError,
     },
+    #[error("internal data structure error occurred")]
+    Internal,
 }
 
 impl Packages {
     /// Add a package from a [`FileDescriptorProto`].
     pub fn add(&mut self, descriptor: &FileDescriptorProto) -> Result<(), PackagesError> {
         let name = descriptor.package().to_string();
-        let package = Package::new(descriptor).map_err(|error| PackagesError::Package {
-            package: descriptor.package().to_string(),
-            file: descriptor.name().to_string(),
-            error,
-        })?;
-        match self.packages.entry(name) {
-            Entry::Vacant(entry) => {
-                entry.insert(package);
-                Ok(())
-            }
-            Entry::Occupied(entry) => Err(PackagesError::DuplicatePackage {
-                package: descriptor.package().to_string(),
-                previous: entry.get().file.clone(),
-                current: package.file.clone(),
-            }),
-        }
+
+        let Some(package) = self.packages.get_mut(&name) else {
+            let package =
+                Package::new(descriptor).map_err(|error| PackagesError::PackageParse {
+                    package: descriptor.package().to_string(),
+                    file: descriptor.name().to_string(),
+                    error,
+                })?;
+
+            self.packages.insert(name, package);
+
+            return Ok(());
+        };
+
+        package
+            .add(descriptor)
+            .map_err(|_| PackagesError::Internal)?;
+
+        Ok(())
     }
 
     /// Run checks against this.

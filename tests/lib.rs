@@ -1,14 +1,19 @@
+use buffrs::package::Package;
+
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 use assert_fs::TempDir;
+use bytes::Bytes;
 use fs_extra::dir::{get_dir_content, CopyOptions};
 use pretty_assertions::{assert_eq, assert_str_eq};
-use sha2::Digest;
 
 mod cmd;
+mod test_registry;
+
+pub use test_registry::with_test_registry;
 
 /// Create a command which runs the cli
 #[macro_export]
@@ -148,22 +153,26 @@ impl VirtualFileSystem {
                             fs::read_to_string(&actual).expect("file cannot be read")
                         );
                     }
-                    FileType::Binary => {
-                        let hash_file = |path| {
-                            let contents = fs::read(path).expect("file cannot be read");
-                            let digest = sha2::Sha256::new()
-                                .chain_update(contents.as_slice())
-                                .finalize();
-                            hex::encode(digest)
-                        };
-
-                        let expected_hash = hash_file(expected);
-                        let actual_hash = hash_file(actual);
-
-                        assert_eq!(
-                            expected_hash, actual_hash,
-                            "expected hash {expected_hash} actual hash {actual_hash}"
-                        );
+                    FileType::Package => {
+                        fn read_package(path: &PathBuf) -> Package {
+                            Bytes::from(fs::read(path).expect("file cannot be read"))
+                                .try_into()
+                                .expect("package could not be parsed")
+                        }
+                        let actual = read_package(&actual);
+                        let expected = read_package(&expected);
+                        let actual_vfs = VirtualFileSystem::empty();
+                        let expected_vfs = VirtualFileSystem::empty();
+                        let runtime = tokio::runtime::Builder::new_current_thread()
+                            .build()
+                            .unwrap();
+                        runtime
+                            .block_on(actual.unpack(&actual_vfs.root()))
+                            .expect("package could not be unpacked");
+                        runtime
+                            .block_on(expected.unpack(&expected_vfs.root()))
+                            .expect("package could not be unpacked");
+                        actual_vfs.verify_against(expected_vfs.root());
                     }
                 }
             } else {
@@ -187,15 +196,15 @@ macro_rules! parent_directory {
 }
 
 enum FileType {
-    Binary,
+    Package,
     Text,
 }
 
 impl FileType {
     pub fn from_extension(ext: impl AsRef<str>) -> Self {
         match ext.as_ref() {
-            "tgz" => Self::Binary,
-            "proto" | "toml" => Self::Text,
+            "tgz" => Self::Package,
+            "proto" | "toml" | "lock" => Self::Text,
             other => panic!("unrecognized extension type: {other}"),
         }
     }

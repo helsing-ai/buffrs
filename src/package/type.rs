@@ -17,32 +17,13 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 /// Package types
-#[derive(
-    Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default,
-)]
+#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageType {
     /// A library package containing primitive type definitions
     Lib,
     /// An api package containing message and service definition
     Api,
-    /// An implementation package that implements an api or library
-    ///
-    /// Note: Implementation packages can't be published via Buffrs
-    #[default]
-    Impl,
-}
-
-impl PackageType {
-    /// Whether this package type is publishable
-    pub fn is_publishable(&self) -> bool {
-        *self != Self::Impl
-    }
-
-    /// Whether this package type is compilable
-    pub fn is_compilable(&self) -> bool {
-        *self != Self::Impl
-    }
 }
 
 impl FromStr for PackageType {
@@ -62,31 +43,17 @@ impl fmt::Display for PackageType {
     }
 }
 
-#[test]
-fn can_check_publishable() {
-    assert!(PackageType::Lib.is_publishable());
-    assert!(PackageType::Api.is_publishable());
-    assert!(!PackageType::Impl.is_publishable());
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn can_check_compilable() {
-    assert!(PackageType::Lib.is_compilable());
-    assert!(PackageType::Api.is_compilable());
-    assert!(!PackageType::Impl.is_compilable());
-}
-
-#[test]
-fn can_default_package_type() {
-    assert_eq!(PackageType::default(), PackageType::Impl);
-}
-
-#[test]
-fn can_parse_package_type() {
-    let types = [PackageType::Lib, PackageType::Api, PackageType::Impl];
-    for typ in &types {
-        let string = typ.to_string();
-        let parsed: PackageType = string.parse().unwrap();
-        assert_eq!(parsed, *typ);
+    #[test]
+    fn can_parse_package_type() {
+        let types = [PackageType::Lib, PackageType::Api];
+        for typ in &types {
+            let string = typ.to_string();
+            let parsed: PackageType = string.parse().unwrap();
+            assert_eq!(parsed, *typ);
+        }
     }
 }

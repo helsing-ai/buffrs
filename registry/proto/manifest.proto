@@ -2,8 +2,8 @@
 
 syntax = "proto3";
 
-import "package.proto";
-import "dependency.proto";
+import "buffrs/package.proto";
+import "buffrs/dependency.proto";
 
 package buffrs.manifest;
 

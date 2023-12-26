@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "the-api/types/sub/type_two.proto";
+
+package the_api.runtime;
+
+service TypeTwoRuntime {
+  rpc PullTypeTwoConfiguration(PullTypeTwoConfigurationRequest)
+    returns (PullTypeTwoConfigurationResponse);
+}
+
+message PullTypeTwoConfigurationRequest {
+  string resource_id = 1;
+  string hardware_id = 2;
+}
+
+message PullTypeTwoConfigurationResponse {
+  string hostname = 1;
+  the_api.types.sub.TypeTwo type_two = 2;
+}

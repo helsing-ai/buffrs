@@ -3,7 +3,8 @@ name: Book
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
+    paths:
+      - 'docs/**'
 
 permissions:
   contents: read

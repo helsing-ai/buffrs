@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package sensor_api;
+
+import "units/temperature.proto";
+import "google/protobuf/timestamp.proto";
+
+// A bridge to subscribe to real-time sensor data from connected devices 
+service Sensor {
+  // Read the temperature of a device
+  rpc ReadTemperature(DeviceId)
+    returns (Measurement);
+}
+
+// Device Identifier
+message DeviceId {
+  string id = 1;
+}
+
+// Temperature measured by a device
+message Measurement {
+  DeviceId device = 1;
+  units.Temperature temperature = 2;
+  google.protobuf.Timestamp measured_at = 3;
+}

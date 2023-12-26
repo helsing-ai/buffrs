@@ -1,0 +1,6 @@
+[package]
+type = "api"
+name = "some-test-api"
+version = "0.1.0"
+
+[dependencies]

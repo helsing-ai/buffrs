@@ -26,7 +26,7 @@ use tokio::fs;
 use crate::{
     errors::{DeserializationError, SerializationError},
     lock::LockedPackage,
-    manifest::{self, Manifest, MANIFEST_FILE},
+    manifest::{self, Edition, Manifest, MANIFEST_FILE},
     package::PackageName,
     registry::RegistryUri,
     ManagedFile,
@@ -42,16 +42,21 @@ pub struct Package {
 }
 
 impl Package {
-    /// Creates a new package
-    pub fn new(manifest: Manifest, tgz: Bytes) -> Self {
-        Self { manifest, tgz }
-    }
-
     /// Create new [`Package`] from [`Manifest`] and list of files.
     ///
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
-    pub fn create(manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+    pub fn create(mut manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+        if manifest.edition == Edition::Unknown {
+            manifest = Manifest::new(manifest.package, manifest.dependencies);
+        }
+
+        if manifest.package.is_none() {
+            return Err(miette!(
+                "failed to create package, manifest doesnt contain a package declaration"
+            ));
+        }
+
         let mut archive = tar::Builder::new(Vec::new());
 
         let manifest_bytes = {
@@ -60,10 +65,12 @@ impl Package {
                 .try_into()
                 .into_diagnostic()
                 .wrap_err(SerializationError(ManagedFile::Manifest))?;
+
             as_str.into_bytes()
         };
 
         let mut header = tar::Header::new_gnu();
+
         header.set_size(
             manifest_bytes
                 .len()
@@ -73,7 +80,9 @@ impl Package {
                     "serialized manifest was too large to fit in a tarball"
                 ))?,
         );
+
         header.set_mode(0o444);
+
         archive
             .append_data(&mut header, MANIFEST_FILE, Cursor::new(manifest_bytes))
             .into_diagnostic()
@@ -107,7 +116,7 @@ impl Package {
             .wrap_err(miette!("failed to finalize package"))?
             .into();
 
-        Ok(Package::new(manifest, tgz))
+        Ok(Self { manifest, tgz })
     }
 
     /// Unpack a package to a specific path.
@@ -176,6 +185,7 @@ impl Package {
             .collect::<io::Result<Vec<_>>>()
             .into_diagnostic()
             .wrap_err(DeserializationError(ManagedFile::Manifest))?;
+
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
@@ -188,24 +198,36 @@ impl Package {
     /// The name of this package
     #[inline]
     pub fn name(&self) -> &PackageName {
-        &self.manifest.package.name
+        assert!(self.manifest.package.is_some());
+
+        &self
+            .manifest
+            .package
+            .as_ref()
+            .expect("compressed package contains invalid manifest (package section missing)")
+            .name
     }
 
     /// The version of this package
     #[inline]
     pub fn version(&self) -> &Version {
-        &self.manifest.package.version
+        assert!(self.manifest.package.is_some());
+
+        &self
+            .manifest
+            .package
+            .as_ref()
+            .expect("compressed package contains invalid manifest (package section missing)")
+            .version
     }
 
     /// Lock this package
-    ///
-    /// Note that despite returning a Result this function never fails
     pub fn lock(
         &self,
         registry: RegistryUri,
         repository: String,
         dependants: usize,
-    ) -> miette::Result<LockedPackage> {
+    ) -> LockedPackage {
         LockedPackage::lock(self, registry, repository, dependants)
     }
 }

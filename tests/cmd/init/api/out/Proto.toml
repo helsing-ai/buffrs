@@ -1,3 +1,5 @@
+edition = "0.7"
+
 [package]
 type = "api"
 name = "some-api"

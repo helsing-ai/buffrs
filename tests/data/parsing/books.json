@@ -2,7 +2,9 @@
   "packages": {
     "com.book": {
       "name": "com.book",
-      "file": "books.proto",
+      "files": [
+        "books.proto"
+      ],
       "entities": {
         "Book": {
           "kind": "message",

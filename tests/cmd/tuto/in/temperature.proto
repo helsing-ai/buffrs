@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package units;
+
+// Temperature in Celsius
+message Celsius {
+  float value = 1;
+}
+
+// Temperature in Fahrenheit
+message Fahrenheit {
+  float value = 1;
+}
+
+// Temperature in Kelvin
+message Kelvin {
+  float value = 1;
+}
+
+// A temperature
+message Temperature {
+  // Allowed units for temperature measurements
+  oneof unit {
+    Celsius celsius = 1;
+    Fahrenheit fahrenheit = 2;
+    Kelvin kelvin = 3;
+  }
+}
