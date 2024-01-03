@@ -28,7 +28,7 @@ fetchBuffr = (fileRequirement: let
 buffrs = map fetchBuffr fileRequirements;
 buffrsCache = symlinkJoin {
     name = "buffrs-cache";
-    paths = buffs;
+    paths = buffrs;
 };
 in {
     BUFFRS_CACHE_DIR = "${buffrsCache}";
