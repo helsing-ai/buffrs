@@ -22,7 +22,7 @@ fetchBuffr = (fileRequirement: let
     };
     in runCommand "extract" {} ''
       mkdir -p $out
-      mv ${buffrTgz} $out/sha256-${sha256}.tgz
+      cp ${buffrTgz} $out/sha256-${sha256}.tgz
     '');
 allBuffrs = map fetchBuffr fileRequirements;
 buffrsCache = symlinkJoin {
