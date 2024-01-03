@@ -9,7 +9,7 @@ fileRequirementsJson = runCommand "buffrs-urls" {
     buildInputs = [ buffrs ];
 } ''
   cd ${src}
-  buffrs urls > $out
+  buffrs dependencies > $out
 '';
 fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 fetchBuffr = (fileRequirement: let
