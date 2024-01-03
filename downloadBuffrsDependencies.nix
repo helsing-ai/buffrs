@@ -25,7 +25,7 @@ fetchBuffr = (fileRequirement: let
         mv $downloadedFile $out/sha256-${sha256}.tgz
         '';
     });
-buffrs = map fetchBuffr urls;
+buffrs = map fetchBuffr fileRequirements;
 buffrsCache = symlinkJoin {
     name = "buffrs-cache";
     paths = buffs;
