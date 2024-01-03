@@ -1,11 +1,11 @@
 {fetchurl, runCommand, lib, buffrs, symlinkJoin}:
 {lockfile}:
 let
-src = pkgs.runCommand "vendor-lockfile" {} ''
+src = runCommand "vendor-lockfile" {} ''
   mkdir -p $out
   cp ${lockfile} $out/Proto.lock
 '';
-fileRequirementsJson = pkgs.runCommand "buffrs-urls" {
+fileRequirementsJson = runCommand "buffrs-urls" {
     buildInputs = [ buffrs ];
 } ''
   cd ${src}
