@@ -38,7 +38,7 @@ pub const LOCKFILE: &str = "Proto.lock";
 /// Captures immutable metadata about a given package
 ///
 /// It is used to ensure that future installations will use the exact same dependencies.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct LockedPackage {
     /// The name of the package
     pub name: PackageName,
@@ -284,7 +284,10 @@ impl Lockfile {
 
     /// Locates a given package in the Lockfile
     pub fn get(&self, name: &PackageName) -> Option<&LockedPackage> {
-        self.packages.get(name)
+        println!("locked: ? {name:?}");
+        let res = self.packages.get(name);
+        println!("{res:?}");
+        res
     }
 }
 
