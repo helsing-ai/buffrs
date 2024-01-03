@@ -5,13 +5,13 @@ src = pkgs.runCommand "vendor-lockfile" {} ''
   mkdir -p $out
   cp ${lockfile} $out/Proto.lock
 '';
-fileRequirements = pkgs.runCommand "buffrs-urls" {
+fileRequirementsJson = pkgs.runCommand "buffrs-urls" {
     buildInputs = [ buffrs ];
 } ''
   cd ${src}
   buffrs urls > $out
 '';
-fileRequirements = builtins.fromJSON (builtins.readFile fileRequirements);
+fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 fetchBuffr = (fileRequirement: let
     prefix = "sha256";
     sha256 = assert lib.strings.hasPrefix prefix fileRequirement.digest; lib.strings.removePrefix prefix fileRequirement.digest;
