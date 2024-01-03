@@ -171,6 +171,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache_dir: &Option<PathBuf>,
     ) -> miette::Result<Package> {
+        println!("cache dir: {cache_dir:?}");
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
                 dependency.manifest.version.matches(&local_locked.version),
