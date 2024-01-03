@@ -16,15 +16,14 @@ fetchBuffr = (fileRequirement: let
     prefix = "sha256:";
     sha256 = assert lib.strings.hasPrefix prefix fileRequirement.digest; lib.strings.removePrefix prefix fileRequirement.digest;
 
-    in fetchurl {
+    buffrTgz = fetchurl {
         inherit sha256;
         url = fileRequirement.url;
-        downloadToTemp = true;
-        postFetch = ''
-        mkdir -p $out
-        mv $downloadedFile $out/sha256-${sha256}.tgz
-        '';
-    });
+    };
+    in runCommand "extract" {} ''
+      mkdir -p $out
+      mv ${buffrTgz} $out/sha256-${sha256}.tgz
+    '');
 allBuffrs = map fetchBuffr fileRequirements;
 buffrsCache = symlinkJoin {
     name = "buffrs-cache";
