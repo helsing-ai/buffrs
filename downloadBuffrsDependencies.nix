@@ -13,7 +13,7 @@ fileRequirementsJson = runCommand "buffrs-urls" {
 '';
 fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 fetchBuffr = (fileRequirement: let
-    prefix = "sha256";
+    prefix = "sha256:";
     sha256 = assert lib.strings.hasPrefix prefix fileRequirement.digest; lib.strings.removePrefix prefix fileRequirement.digest;
 
     in fetchurl {
