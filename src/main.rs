@@ -234,7 +234,9 @@ async fn main() -> miette::Result<()> {
             "failed to lint protocol buffers in `{}`",
             PackageStore::PROTO_PATH
         )),
-        Command::Install { cache_dir } => command::install(cache_dir)
+        Command::Install { cache_dir } => command::install(cache_dir.or_else(|| 
+            std::env::var_os("BUFFRS_CACHE_DIR").map(|x| x.into())
+        ))
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()
