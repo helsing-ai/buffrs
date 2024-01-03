@@ -1,5 +1,5 @@
 {fetchurl, runCommand, lib, buffrs, symlinkJoin}:
-{lockfile}:
+lockfile:
 let
 src = runCommand "vendor-lockfile" {} ''
   mkdir -p $out
@@ -25,10 +25,10 @@ fetchBuffr = (fileRequirement: let
         mv $downloadedFile $out/sha256-${sha256}.tgz
         '';
     });
-buffrs = map fetchBuffr fileRequirements;
+allBuffrs = map fetchBuffr fileRequirements;
 buffrsCache = symlinkJoin {
     name = "buffrs-cache";
-    paths = buffrs;
+    paths = allBuffrs;
 };
 in {
     BUFFRS_CACHE_DIR = "${buffrsCache}";
