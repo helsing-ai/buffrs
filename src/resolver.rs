@@ -149,6 +149,7 @@ impl DependencyGraph {
         cache_dir: &Option<PathBuf>,
         locked: &LockedPackage,
     ) -> miette::Result<Option<Package>> {
+        println!("trying to load from cache");
         let Some(cache_dir) = cache_dir else {
             return Ok(None);
         };
