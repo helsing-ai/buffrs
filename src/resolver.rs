@@ -153,6 +153,7 @@ impl DependencyGraph {
             return Ok(None);
         };
         let cached_path = cache_dir.join(locked.file_requirement().cache_path());
+        println!("cached path: {cached_path:?}");
         if !cached_path.exists() {
             return Ok(None);
         }
