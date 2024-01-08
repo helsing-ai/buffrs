@@ -14,7 +14,7 @@
 
 use std::{fmt, path::PathBuf};
 
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
@@ -27,7 +27,15 @@ use crate::{manifest::Manifest, package::PackageStore};
 #[serde(rename_all = "kebab-case")]
 #[allow(missing_docs)] // trivial enum
 pub enum Language {
+    Cpp,
+    CSharp,
+    Java,
+    Kotlin,
+    ObjectiveC,
+    Php,
     Python,
+    Ruby,
+    Rust,
 }
 
 impl fmt::Display for Language {
@@ -54,65 +62,6 @@ impl Generator {
     /// Tonic include file name
     pub const TONIC_INCLUDE_FILE: &'static str = "buffrs.rs";
 
-    /// Run the generator for a dependency and output files at the provided path
-    pub async fn run(&self) -> miette::Result<()> {
-        let store = PackageStore::current().await?;
-        let manifest = Manifest::read().await?;
-
-        let mut proto_files = vec![];
-
-        if let Some(ref pkg) = manifest.package {
-            store.populate(pkg).await?;
-
-            proto_files.extend(store.populated_files(pkg).await);
-        } else {
-            proto_files.extend(store.collect(&store.proto_vendor_path(), true).await);
-        }
-
-        let includes = &[store.proto_vendor_path()];
-
-        match self {
-            Generator::Tonic => {
-                tonic_build::configure()
-                    .build_client(true)
-                    .build_server(true)
-                    .build_transport(true)
-                    .include_file(Self::TONIC_INCLUDE_FILE)
-                    .compile(&proto_files, includes)
-                    .into_diagnostic()?;
-            }
-            Generator::Protoc { language, out_dir } => {
-                let mut protoc = protoc::ProtocLangOut::new();
-
-                match language {
-                    Language::Python => {
-                        protoc.lang("python").out_dir(out_dir);
-                    }
-                }
-
-                // Setting proto path causes protoc to replace occurrences of this string appearing in the
-                // path of the generated path with that provided by output path
-                // e.g. if input proto path is proto/vendor/units/units.proto and the proto path is 'proto'
-                // and the --python_out is 'proto/build/gen' then the file will be output to
-                // proto/build/gen/vendor/units/units.py
-                // We need both of these if we want "vendor" to be removed, and it has to come first
-                protoc.includes(["proto/vendor", "proto"]);
-
-                protoc.inputs(&proto_files);
-
-                debug!(":: running protoc");
-
-                protoc.run().into_diagnostic()?;
-
-                info!(":: {language} code generated successfully");
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl Generator {
     /// Execute code generation with pre-configured parameters
     pub async fn generate(&self) -> miette::Result<()> {
         let manifest = Manifest::read().await?;
@@ -120,7 +69,7 @@ impl Generator {
 
         let mut protos = vec![];
 
-        if let Some(ref pkg) = manifest.package {
+        if let Some(pkg) = &manifest.package {
             store.populate(pkg).await?;
 
             protos.extend(store.populated_files(pkg).await);
@@ -135,9 +84,58 @@ impl Generator {
             "either a compilable package (library or api) or at least one dependency/proto file is needed to generate code bindings."
         );
 
-        self.run()
-            .await
-            .wrap_err(miette!("failed to generate bindings"))?;
+        match self {
+            Generator::Tonic => {
+                tonic_build::configure()
+                    .build_client(true)
+                    .build_server(true)
+                    .build_transport(true)
+                    .include_file(Self::TONIC_INCLUDE_FILE)
+                    .compile(&protos, &[store.proto_vendor_path()])
+                    .into_diagnostic()?;
+            }
+            Generator::Protoc { language, out_dir } => {
+                let mut protoc = protoc::ProtocLangOut::new();
+
+                protoc.lang(match language {
+                    Language::Python => "python",
+                    Language::Cpp => "cpp",
+                    Language::CSharp => "csharp",
+                    Language::Java => "java",
+                    Language::Kotlin => "kotlin",
+                    Language::ObjectiveC => "objc",
+                    Language::Php => "php",
+                    Language::Ruby => "ruby",
+                    Language::Rust => "rust",
+                });
+
+                protoc.out_dir(out_dir);
+
+                // Setting proto path causes protoc to replace occurrences of this string appearing in the
+                // path of the generated path with that provided by output path
+                // e.g. if input proto path is proto/vendor/units/units.proto and the proto path is 'proto'
+                // and the --python_out is 'proto/build/gen' then the file will be output to
+                // proto/build/gen/vendor/units/units.py
+                // We need both of these if we want "vendor" to be removed, and it has to come first
+                protoc
+                    .include(store.proto_vendor_path())
+                    .include(store.proto_path());
+
+                protoc.inputs(&protos);
+
+                debug!(":: running protoc");
+
+                protoc.run().into_diagnostic()?;
+
+                // Python: We run again to generate type stubs
+                if *language == Language::Python {
+                    debug!(":: running protoc pyi");
+                    protoc.lang("pyi").run().into_diagnostic()?;
+                }
+
+                info!(":: {language} code generated successfully");
+            }
+        }
 
         info!(
             ":: compiled {}[{}]",
