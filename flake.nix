@@ -17,7 +17,7 @@
         packages.default = naersk'.buildPackage {
           inherit nativeBuildInputs;
           src = ./.;
-          buildInputs = with pkgs; [ openssl ];
+          buildInputs = with pkgs; [ openssl ] ++ (pkgs.lib.lists.optionals (stdenv.isDarwin) [ darwin.apple_sdk.frameworks.SystemConfiguration ]);
         };
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; nativeBuildInputs ++ [
