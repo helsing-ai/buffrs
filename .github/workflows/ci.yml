@@ -33,9 +33,6 @@ jobs:
       - run: rustup update && rustup component add clippy
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
-      - uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./registry/docker-compose.yml"
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
 
@@ -49,6 +46,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
+      - name: Setup registry
+        uses: isbang/compose-action@v1.5.1
+        with:
+          compose-file: "./registry/docker-compose.yml"
       - run: cargo test --workspace
         env:
           RUST_BACKTRACE: 1
@@ -74,7 +75,8 @@ jobs:
       - run: cargo install cargo-llvm-cov || true
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
-      - uses: isbang/compose-action@v1.5.1
+      - name: Setup registry
+        uses: isbang/compose-action@v1.5.1
         with:
           compose-file: "./registry/docker-compose.yml"
       - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
