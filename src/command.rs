@@ -74,9 +74,9 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
     manifest.write().await?;
 
-    PackageStore::create(std::env::current_dir().unwrap_or_else(|_| ".".into()))
+    PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .await
-        .wrap_err(miette!("failed to create buffrs project directories"))?;
+        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
 
     Ok(())
 }
