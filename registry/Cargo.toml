@@ -8,21 +8,27 @@ default-run = "buffrs-registry"
 
 [dependencies]
 async-trait = "0.1.74"
+atmosphere = { version = "0.1.3", features = ["postgres"] }
+sqlx = { version = "0.7.3", features = ["chrono", "postgres"] }
 aws-config = { version = "1.0.1", optional = true }
 aws-sdk-s3 = { version = "1.4.0", optional = true }
-buffrs = { path = "../", version = "0.7.1" }
+axum_tonic = "0.1.0"
+buffrs = { path = "../", version = "0.7.5" }
 bytes = "1.5.0"
-prost = "0.12.1"
-tonic = "0.10.2"
+chrono = { version = "0.4.31", features = ["serde"] }
 clap = { version = "4.3", features = ["cargo", "derive", "env"] }
 eyre = "0.6.8"
+prost = "0.12.1"
 semver = "1.0.20"
+serde = { version = "1", features = ["derive"] }
+ssh-key = { version = "0.6.2", features = ["ed25519"] }
 thiserror = "1.0.49"
 tokio = { version = "1.33.0", features = ["full"] }
+tonic = "0.10.2"
 tracing-subscriber = "0.3.17"
 
 [build-dependencies]
-buffrs = { path = "../", version = "0.7.1" }
+buffrs = { path = "../", version = "0.7.5" }
 
 [features]
 default = ["storage-s3"]
