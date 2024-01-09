@@ -105,17 +105,12 @@ impl Credentials {
         .wrap_err(WriteError(CREDENTIALS_FILE))
     }
 
-    /// Loads the credentials from the file system
-    ///
-    /// Note: Initializes the credential file if its not present
+    /// Loads the credentials from the file system, returning default credentials if
+    /// they do not exist.
+    /// Note, this should not create files in the user's home directory, as we should
+    /// not be performing global stateful operations in absence of a user instruction.
     pub async fn load() -> miette::Result<Self> {
-        let Some(credentials) = Self::read().await? else {
-            let credentials = Credentials::default();
-            credentials.write().await.wrap_err("Writing empty config")?;
-            return Ok(credentials);
-        };
-
-        Ok(credentials)
+        Ok(Self::read().await?.unwrap_or_else(Credentials::default))
     }
 }
 
