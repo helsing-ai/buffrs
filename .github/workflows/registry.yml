@@ -36,14 +36,6 @@ jobs:
         with:
           compose-file: "./registry/docker-compose.yml"
       - run: rustup update
-      # run registry locally to permit API tests
-      - name: "Run Registry in background"
-        working-directory: registry
-        run: |
-          cargo build --release
-          ./target/release/buffrs-registry --filesystem-storage /tmp &
-        env:
-          LISTEN: 127.0.0.1:4367
       - uses: Swatinem/rust-cache@v2
       - run: cd registry && cargo test --workspace
         env:
@@ -72,14 +64,6 @@ jobs:
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-llvm-cov || true
-      # run registry locally to permit API tests
-      - name: "Run Registry in background"
-        working-directory: registry
-        run: |
-          cargo build --release
-          ./target/release/buffrs-registry --filesystem-storage /tmp &
-        env:
-          LISTEN: 127.0.0.1:4367
       - run: cd registry && cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
 
 # TODO: This already runs across registiry folder in cli.yml, maybe it's time to extract common.yml?
