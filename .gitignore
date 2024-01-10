@@ -2,5 +2,7 @@ target
 /docs/book/
 /.direnv
 /result
+.idea/*
 
 .DS_Store
+registry/.idea
