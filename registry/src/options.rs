@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use buffrs_registry::metadata::memory::InMemoryMetadataStorage;
 use buffrs_registry::{context::Context, storage::*};
 use clap::{Parser, ValueEnum};
 use eyre::Result;
@@ -31,7 +32,8 @@ pub struct Options {
 impl Options {
     pub async fn build(&self) -> Result<Context> {
         let storage = self.storage.build().await?;
-        Ok(Context::new(storage))
+        let metadata = Arc::new(InMemoryMetadataStorage::new());
+        Ok(Context::new(storage, metadata, self.listen))
     }
 }
 
