@@ -48,7 +48,10 @@ impl MetadataStorage for InMemoryMetadataStorage {
             ));
         };
 
-        let versions = versions_mutex.lock().unwrap();
+        let versions = versions_mutex
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
+
         let Some(package) = versions.get(version_string.as_str()) else {
             return Err(MetadataStorageError::PackageMissing(
                 name_string,
@@ -77,9 +80,9 @@ impl MetadataStorage for InMemoryMetadataStorage {
             return Ok(());
         };
 
-        let Ok(mut versions) = versions_mutex.lock() else {
-            return Err(MetadataStorageError::Internal);
-        };
+        let mut versions = versions_mutex
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
 
         if versions.contains_key(version_string.as_str()) {
             return Err(MetadataStorageError::PackageDuplicate(

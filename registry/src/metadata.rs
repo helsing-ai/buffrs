@@ -26,8 +26,6 @@ use std::sync::Arc;
 
 use crate::types::PackageVersion;
 
-use self::memory::InMemoryMetadataStorage;
-
 /// Generic, shared error type.
 ///
 /// As the underlying error type used by the implementation is not known, this error type is used
@@ -59,12 +57,6 @@ pub enum MetadataStorageError {
 
 /// [`MetadataStorage`] Instance
 pub type AnyMetadataStorage = Arc<dyn MetadataStorage>;
-
-/// inmemory storage
-///
-pub fn new_storage() -> AnyMetadataStorage {
-    Arc::new(InMemoryMetadataStorage::new())
-}
 
 /// Basic definition of a metadata storage
 ///
