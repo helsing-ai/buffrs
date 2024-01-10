@@ -16,7 +16,7 @@ pub fn create_publish_request_sample() -> PublishRequest {
     }
 }
 
-#[ignore("temporary")]
+#[ignore = "temporary"]
 #[tokio::test]
 async fn test_publish_registry() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = RegistryClient::connect("http://localhost:4367").await?;
