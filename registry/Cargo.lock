@@ -643,7 +643,7 @@ dependencies = [
 
 [[package]]
 name = "buffrs"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "anyhow",
  "async-recursion",
@@ -696,6 +696,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-types",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -2875,6 +2877,17 @@ dependencies = [
  "prost-build",
  "quote",
  "syn 2.0.39",
+]
+
+[[package]]
+name = "tonic-types"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b39bd850e4bf99146b3fd244019562cafd30338db068c5795c55b448eb02411"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
 ]
 
 [[package]]

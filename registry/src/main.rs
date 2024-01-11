@@ -22,6 +22,6 @@ async fn main() -> eyre::Result<()> {
     let options = Options::parse();
     tracing_subscriber::fmt::init();
     let context = options.build().await?;
-    context.launch_api().await;
+    context.launch_api().await?;
     Ok(())
 }

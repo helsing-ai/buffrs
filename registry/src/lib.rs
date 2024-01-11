@@ -41,6 +41,7 @@
 
 pub mod api;
 pub mod context;
+pub mod metadata;
 pub mod proto;
 pub mod storage;
 pub mod types;
