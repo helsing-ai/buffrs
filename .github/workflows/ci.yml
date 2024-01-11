@@ -1,12 +1,22 @@
-name: Buffrs Registry
+name: Buffrs CLI
 
 on:
   push:
     branches: ["main"]
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'deny.toml'
+      - 'src/**'
   pull_request:
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'deny.toml'
+      - 'src/**'
 
 env:
-  MINIMUM_LINE_COVERAGE_PERCENT: 5
+  MINIMUM_LINE_COVERAGE_PERCENT: 35
 
 jobs:
   fmt:
@@ -14,16 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: rustup update && rustup component add rustfmt
-      - run: cd registry && cargo fmt --check --all
+      - run: cargo fmt --check --all
 
   clippy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: arduino/setup-protoc@v2
       - run: rustup update && rustup component add clippy
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
       - uses: Swatinem/rust-cache@v2
-      - run: cd registry && cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
+      - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
 
   test:
     runs-on: ubuntu-latest
@@ -31,13 +42,15 @@ jobs:
       - uses: actions/checkout@v3
         with:
           lfs: "true"
-      - uses: arduino/setup-protoc@v2
-      - uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./registry/docker-compose.yml"
       - run: rustup update
       - uses: Swatinem/rust-cache@v2
-      - run: cd registry && cargo test --workspace
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+      - name: Setup registry
+        uses: isbang/compose-action@v1.5.1
+        with:
+          compose-file: "./registry/docker-compose.yml"
+      - run: cargo test --workspace
         env:
           RUST_BACKTRACE: 1
 
@@ -48,7 +61,7 @@ jobs:
       - run: rustup update
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-deny || true
-      - run: cd registry && cargo deny --workspace check
+      - run: cargo deny --workspace check
 
   coverage:
     runs-on: ubuntu-latest
@@ -56,21 +69,22 @@ jobs:
       - uses: actions/checkout@v3
         with:
           lfs: 'true'
-      - uses: arduino/setup-protoc@v2
-      - uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./registry/docker-compose.yml"
       - run: rustup update
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-llvm-cov || true
-      - run: cd registry && cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+      - name: Setup registry
+        uses: isbang/compose-action@v1.5.1
+        with:
+          compose-file: "./registry/docker-compose.yml"
+      - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
 
-# TODO: This already runs across registiry folder in cli.yml, maybe it's time to extract common.yml?
   typos:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: Swatinem/rust-cache@v2
       - run: cargo install typos-cli@=1.16.26 --locked || true
-      - run: cd registry && typos
+      - run: typos --exclude /registry/tests/proptest-regressions/
