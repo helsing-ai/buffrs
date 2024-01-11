@@ -44,7 +44,7 @@ pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error
     let socket = SocketAddr::from_str(url).expect("Shouldn't happen");
     let context = Context::new(storage, metadata, socket);
 
-    let _handle = tokio::spawn(async move {
+    tokio::spawn(async move {
         Server::builder()
             .add_service(RegistryServer::new(context))
             .serve_with_incoming(tokio_stream::once(Ok::<_, std::io::Error>(server)))
