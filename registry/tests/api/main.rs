@@ -2,20 +2,18 @@ use buffrs_registry::context::Context;
 use buffrs_registry::metadata::memory::InMemoryMetadataStorage;
 use buffrs_registry::proto::buffrs::package::{Compressed, Package};
 use buffrs_registry::proto::buffrs::registry::registry_client::RegistryClient;
-use buffrs_registry::proto::buffrs::registry::registry_server::{Registry, RegistryServer};
+use buffrs_registry::proto::buffrs::registry::registry_server::RegistryServer;
 use buffrs_registry::proto::buffrs::registry::PublishRequest;
 use buffrs_registry::storage;
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use tonic::codegen::tokio_stream;
 use tonic::transport::{Channel, Server};
+use tonic::transport::{Endpoint, Uri};
 use tonic::Code;
-use tonic::{
-    transport::{Endpoint, Uri},
-};
 use tower::service_fn;
 
 pub fn create_publish_request_sample() -> PublishRequest {
@@ -31,7 +29,7 @@ pub fn create_publish_request_sample() -> PublishRequest {
     }
 }
 
-pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error::Error>> {
+pub async fn basic_setup() -> RegistryClient<Channel> {
     let (client, server) = tokio::io::duplex(1024);
 
     let path = Path::new("/tmp");
@@ -54,7 +52,8 @@ pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error
     // Move client to an option so we can _move_ the inner value
     // on the first attempt to connect. All other attempts will fail.
     let mut client = Some(client);
-    let channel = Endpoint::try_from(format!("http://{}", url))?
+    let channel = Endpoint::try_from(format!("http://{}", url))
+        .expect("Shouldn't happen")
         .connect_with_connector(service_fn(move |_: Uri| {
             let client = client.take();
 
@@ -69,19 +68,20 @@ pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error
                 }
             }
         }))
-        .await?;
+        .await
+        .expect("Shouldn't happen");
 
-    Ok(RegistryClient::new(channel))
+    RegistryClient::new(channel)
 }
 
 #[tokio::test]
-async fn test_publish_registry() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = basic_setup().await?;
+async fn test_publish_registry() {
+    let mut client = basic_setup().await;
 
     // 1. Insert a package and expect it to be successful
     {
         let req = tonic::Request::new(create_publish_request_sample());
-        let _res = client.publish(req).await?;
+        client.publish(req).await.expect("Shouldn't happen");
         println!(":: Package Publish OK");
     }
 
@@ -89,12 +89,8 @@ async fn test_publish_registry() -> Result<(), Box<dyn std::error::Error>> {
     {
         // duplicate check
         let req = tonic::Request::new(create_publish_request_sample());
-        let Err(res) = client.publish(req).await.map_err(|status| status.code()) else {
-            panic!("Publish duplicate")
-        };
-        assert_eq!(res, Code::AlreadyExists);
+        let res = client.publish(req).await.unwrap_err();
+        assert_eq!(res.code(), Code::AlreadyExists);
         println!(":: Package Forbid Duplicate OK");
     }
-
-    Ok(())
 }
