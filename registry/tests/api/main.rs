@@ -5,17 +5,16 @@ use buffrs_registry::proto::buffrs::registry::registry_client::RegistryClient;
 use buffrs_registry::proto::buffrs::registry::registry_server::{Registry, RegistryServer};
 use buffrs_registry::proto::buffrs::registry::PublishRequest;
 use buffrs_registry::storage;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::io::DuplexStream;
+
 use tonic::codegen::tokio_stream;
-use tonic::transport::{Server, Channel};
+use tonic::transport::{Channel, Server};
 use tonic::Code;
 use tonic::{
     transport::{Endpoint, Uri},
-    Request, Response, Status,
 };
 use tower::service_fn;
 
@@ -32,8 +31,7 @@ pub fn create_publish_request_sample() -> PublishRequest {
     }
 }
 
-pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error::Error>>
-{
+pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error::Error>> {
     let (client, server) = tokio::io::duplex(1024);
 
     let path = Path::new("/tmp");
@@ -73,7 +71,7 @@ pub async fn basic_setup() -> Result<RegistryClient<Channel>, Box<dyn std::error
         }))
         .await?;
 
-    return Ok(RegistryClient::new(channel));
+    Ok(RegistryClient::new(channel))
 }
 
 #[tokio::test]
