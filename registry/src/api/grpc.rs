@@ -42,15 +42,12 @@ impl Registry for Context {
         tracing::info!("Received request");
         let req: PublishRequest = request.into_inner();
 
-        let Some(package) = req.package else {
-            tracing::info!("Package not set");
-            return Err(Status::invalid_argument("package wasn't set"));
-        };
-
-        let Some(metadata) = package.metadata else {
-            tracing::info!("metadata not set");
-            return Err(Status::invalid_argument("metadata wasn't set"));
-        };
+        let package = req
+            .package
+            .ok_or(Status::invalid_argument("package wasn't set"))?;
+        let metadata = package
+            .metadata
+            .ok_or(Status::invalid_argument("metadata wasn't set"))?;
 
         if metadata.name.len() > PACKAGE_NAME_LIMIT {
             let mut err_details = ErrorDetails::new();

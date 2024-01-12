@@ -7,15 +7,9 @@ use tonic::async_trait;
 type MemoryMetadataMap = Arc<Mutex<HashMap<String, Mutex<HashMap<String, PackageManifest>>>>>;
 
 /// InMemory provider for MetadataStorage
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct InMemoryMetadataStorage {
     packages: MemoryMetadataMap,
-}
-
-impl Default for InMemoryMetadataStorage {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl InMemoryMetadataStorage {
@@ -34,30 +28,33 @@ impl MetadataStorage for InMemoryMetadataStorage {
         &self,
         package: PackageVersion,
     ) -> Result<PackageManifest, MetadataStorageError> {
-        let Ok(packages) = self.packages.lock() else {
-            return Err(MetadataStorageError::Internal);
-        };
+        let packages = self
+            .packages
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
 
         let name_string = package.package.to_string();
         let version_string = package.version.to_string();
 
-        let Some(versions_mutex) = packages.get(name_string.as_str()) else {
-            return Err(MetadataStorageError::PackageMissing(
-                name_string,
-                version_string,
-            ));
-        };
+        let versions_mutex =
+            packages
+                .get(name_string.as_str())
+                .ok_or(MetadataStorageError::PackageMissing(
+                    name_string.clone(),
+                    version_string.clone(),
+                ))?;
 
         let versions = versions_mutex
             .lock()
             .map_err(|_| MetadataStorageError::Internal)?;
 
-        let Some(package) = versions.get(version_string.as_str()) else {
-            return Err(MetadataStorageError::PackageMissing(
-                name_string,
-                version_string,
-            ));
-        };
+        let package =
+            versions
+                .get(version_string.as_str())
+                .ok_or(MetadataStorageError::PackageMissing(
+                    name_string,
+                    version_string,
+                ))?;
 
         Ok(package.clone())
     }
@@ -65,9 +62,10 @@ impl MetadataStorage for InMemoryMetadataStorage {
     /// Puts a Manifest in the storage
     ///
     async fn put_version(&self, package: PackageManifest) -> Result<(), MetadataStorageError> {
-        let Ok(mut packages) = self.packages.lock() else {
-            return Err(MetadataStorageError::Internal);
-        };
+        let mut packages = self
+            .packages
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
 
         let name_string = package.name.to_string();
         let version_string = package.version.to_string();
