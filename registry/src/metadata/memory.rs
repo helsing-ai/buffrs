@@ -1,4 +1,5 @@
 use super::*;
+
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Mutex;
@@ -41,7 +42,7 @@ impl MetadataStorage for InMemoryMetadataStorage {
                 .get(name_string.as_str())
                 .ok_or(MetadataStorageError::PackageMissing(
                     name_string.clone(),
-                    version_string.clone(),
+                    Some(version_string.clone()),
                 ))?;
 
         let versions = versions_mutex
@@ -53,10 +54,55 @@ impl MetadataStorage for InMemoryMetadataStorage {
                 .get(version_string.as_str())
                 .ok_or(MetadataStorageError::PackageMissing(
                     name_string,
-                    version_string,
+                    Some(version_string),
                 ))?;
 
         Ok(package.clone())
+    }
+
+    async fn get_versions(
+        &self,
+        package: PackageName,
+        version: Option<VersionReq>,
+    ) -> Result<Vec<buffrs::manifest::PackageManifest>, MetadataStorageError> {
+        let packages = self
+            .packages
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
+
+        let package_name = package.to_string();
+        let versions_mutex = packages
+            .get(package_name.as_str())
+            .ok_or(MetadataStorageError::PackageMissing(package_name, None))?;
+
+        let versions = versions_mutex
+            .lock()
+            .map_err(|_| MetadataStorageError::Internal)?;
+
+        let listed_versions = if let Some(filtered_version) = version {
+            versions
+                .iter()
+                .filter(|(_version, manifest)| filtered_version.matches(&manifest.version))
+                .map(|(_version, manifest)| buffrs::manifest::PackageManifest {
+                    kind: manifest.kind,
+                    name: manifest.name.clone(),
+                    version: manifest.version.clone(),
+                    description: manifest.description.clone(),
+                })
+                .collect()
+        } else {
+            versions
+                .iter()
+                .map(|(_version, manifest)| buffrs::manifest::PackageManifest {
+                    kind: manifest.kind,
+                    name: manifest.name.clone(),
+                    version: manifest.version.clone(),
+                    description: manifest.description.clone(),
+                })
+                .collect()
+        };
+
+        Ok(listed_versions)
     }
 
     /// Puts a Manifest in the storage

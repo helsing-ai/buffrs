@@ -3,7 +3,7 @@ use buffrs_registry::metadata::memory::InMemoryMetadataStorage;
 use buffrs_registry::proto::buffrs::package::{Compressed, Package};
 use buffrs_registry::proto::buffrs::registry::registry_client::RegistryClient;
 use buffrs_registry::proto::buffrs::registry::registry_server::RegistryServer;
-use buffrs_registry::proto::buffrs::registry::PublishRequest;
+use buffrs_registry::proto::buffrs::registry::{PublishRequest, VersionsRequest};
 use buffrs_registry::storage;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -16,16 +16,23 @@ use tonic::transport::{Endpoint, Uri};
 use tonic::Code;
 use tower::service_fn;
 
-pub fn create_publish_request_sample() -> PublishRequest {
+pub fn create_publish_request_sample(version: Option<String>) -> PublishRequest {
     PublishRequest {
         package: Some(Compressed {
             metadata: Some(Package {
                 name: "testing".to_string(),
-                version: "1.0.0".to_string(),
+                version: version.unwrap_or("1.0.0".to_string()),
                 r#type: 0,
             }),
             tgz: vec![0, 0, 0],
         }),
+    }
+}
+
+pub fn create_list_versions_request_sample(version: String) -> VersionsRequest {
+    VersionsRequest {
+        name: "testing".to_string(),
+        requirement: version,
     }
 }
 
@@ -80,17 +87,64 @@ async fn test_publish_registry() {
 
     // 1. Insert a package and expect it to be successful
     {
-        let req = tonic::Request::new(create_publish_request_sample());
+        let req = tonic::Request::new(create_publish_request_sample(None));
         client.publish(req).await.expect("Shouldn't happen");
-        println!(":: Package Publish OK");
+        println!(":: Package Publish 1.0.0 OK");
     }
 
     // 2. Insert the same package for a duplicate check
     {
         // duplicate check
-        let req = tonic::Request::new(create_publish_request_sample());
+        let req = tonic::Request::new(create_publish_request_sample(None));
         let res = client.publish(req).await.unwrap_err();
         assert_eq!(res.code(), Code::AlreadyExists);
         println!(":: Package Forbid Duplicate OK");
+    }
+
+    // 3. Insert a package with another version and expect it to be successful
+    {
+        let req = tonic::Request::new(create_publish_request_sample(Some("1.0.1".to_string())));
+        client
+            .publish(req)
+            .await
+            .expect("Publishing package failed");
+        println!(":: Package Publish 1.0.1 OK");
+    }
+}
+
+#[tokio::test]
+async fn test_fetching_versions() {
+    let mut client = basic_setup().await;
+
+    // 1. Insert a package with 1.0.0 version and expect it to be successful
+    {
+        let req = tonic::Request::new(create_publish_request_sample(None));
+        client
+            .publish(req)
+            .await
+            .expect("Publishing package failed");
+        println!(":: Package Publish 1.0.0 OK");
+    }
+    // 1. Insert a package with 1.1.1 version and expect it to be successful
+    {
+        let req = tonic::Request::new(create_publish_request_sample(Some("1.1.1".to_string())));
+        client
+            .publish(req)
+            .await
+            .expect("Publishing package failed");
+        println!(":: Package Publish 1.1.1 OK");
+    }
+
+    // 2. Fetch packages with version restriction
+    {
+        // duplicate check
+        let req = tonic::Request::new(create_list_versions_request_sample(">=1.1".to_string()));
+        let res = client.versions(req).await.expect("get versions failed");
+        let versions = res.into_inner().version;
+
+        let expected_version = "1.1.1".to_string();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions, vec![expected_version]);
+        println!(":: Package Versions OK");
     }
 }
