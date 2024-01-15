@@ -26,7 +26,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use buffrs::{manifest::PackageManifest, package::PackageName, package::PackageType};
-use semver::Version;
+use semver::{Version, VersionReq};
 use tonic::{Code, Request, Response, Status};
 use tonic_types::{ErrorDetails, StatusExt};
 
@@ -144,9 +144,43 @@ impl Registry for Context {
         &self,
         request: Request<VersionsRequest>,
     ) -> Result<Response<VersionsResponse>, Status> {
-        let _req: VersionsRequest = request.into_inner();
-        // check from metadata
-        // if not
-        todo!()
+        let req: VersionsRequest = request.into_inner();
+
+        if req.name.len() > PACKAGE_NAME_LIMIT {
+            let mut err_details = ErrorDetails::new();
+            err_details.add_bad_request_violation(
+                "name",
+                format!("package's name exceeds limit: {}", PACKAGE_NAME_LIMIT),
+            );
+
+            // Generate error status
+            let status = Status::with_error_details(
+                Code::InvalidArgument,
+                "request contains invalid arguments",
+                err_details,
+            );
+            return Err(status);
+        }
+
+        let version_requirement = VersionReq::parse(req.requirement.as_str())
+            .map_err(|_x| Status::invalid_argument("Provided version requirement was incorrect, check: https://docs.rs/semver/latest/semver/struct.VersionReq.html"))?;
+
+        let metadata = self.metadata_store();
+
+        let package_name = PackageName::from_str(req.name.as_str())
+            .map_err(|_| Status::invalid_argument("provided name was incorrect"))?;
+
+        let versions = metadata
+            .get_versions(package_name, Some(version_requirement))
+            .await
+            .map_err(|err| match err {
+                MetadataStorageError::PackageMissing(name, ..) => {
+                    Status::invalid_argument(format!("Invalid package: {}", name))
+                }
+                _ => Status::internal("Something went wrong on our side"),
+            })?;
+        let response = versions.iter().map(|x| x.version.to_string()).collect();
+
+        Ok(Response::new(VersionsResponse { version: response }))
     }
 }

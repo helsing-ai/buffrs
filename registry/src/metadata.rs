@@ -20,6 +20,8 @@
 pub mod memory;
 
 use buffrs::manifest::PackageManifest;
+use buffrs::package::PackageName;
+use semver::VersionReq;
 
 use std::fmt;
 use std::sync::Arc;
@@ -39,7 +41,7 @@ pub type SharedError = Arc<dyn std::error::Error + Send + Sync>;
 pub enum MetadataStorageError {
     /// Package missing
     #[error("package missing")]
-    PackageMissing(String, String),
+    PackageMissing(String, Option<String>),
 
     /// Duplicate package
     /// Used on put_version mostly
@@ -67,6 +69,13 @@ pub trait MetadataStorage: Send + Sync + fmt::Debug {
         &self,
         package: PackageVersion,
     ) -> Result<PackageManifest, MetadataStorageError>;
+
+    /// Fetches a package with a given version and all packages above that version
+    async fn get_versions(
+        &self,
+        package_name: PackageName,
+        version: Option<VersionReq>,
+    ) -> Result<Vec<PackageManifest>, MetadataStorageError>;
 
     /// Puts the given package in the storage
     async fn put_version(&self, package: PackageManifest) -> Result<(), MetadataStorageError>;
