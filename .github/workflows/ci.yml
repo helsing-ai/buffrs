@@ -2,18 +2,9 @@ name: Buffrs CLI
 
 on:
   push:
-    branches: ["main"]
-    paths:
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'deny.toml'
-      - 'src/**'
+    branches:
+      - main
   pull_request:
-    paths:
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'deny.toml'
-      - 'src/**'
 
 env:
   MINIMUM_LINE_COVERAGE_PERCENT: 35
