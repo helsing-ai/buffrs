@@ -18,6 +18,8 @@
           inherit nativeBuildInputs;
           src = ./.;
           buildInputs = with pkgs; [ openssl perl ] ++ (pkgs.lib.lists.optionals (stdenv.isDarwin) [ darwin.apple_sdk.frameworks.SystemConfiguration ]);
+
+          OPENSSL_NO_VENDOR = 1;
         };
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; nativeBuildInputs ++ [
