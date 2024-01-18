@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fmt, str::FromStr};
-
 use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
 
 /// Package types
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]

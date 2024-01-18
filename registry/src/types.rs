@@ -14,7 +14,7 @@
 
 //! # Shared type definitions
 
-use buffrs::package::PackageName;
+use buffrs::package::{PackageName, PackageType};
 use semver::Version;
 
 /// Represents a Buffrs package version
@@ -32,5 +32,14 @@ impl PackageVersion {
     pub fn file_name(&self) -> String {
         let Self { package, version } = &self;
         format!("{package}_{version}.tar.gz")
+    }
+}
+
+impl From<crate::proto::buffrs::package::Type> for PackageType {
+    fn from(value: crate::proto::buffrs::package::Type) -> Self {
+        match value {
+            crate::proto::buffrs::package::Type::Library => PackageType::Lib,
+            crate::proto::buffrs::package::Type::Api => PackageType::Api,
+        }
     }
 }
