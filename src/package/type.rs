@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{fmt, str::FromStr};
-
 use serde::{Deserialize, Serialize};
+use std::{fmt, str::FromStr};
 
 /// Package types
 #[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -24,6 +23,18 @@ pub enum PackageType {
     Lib,
     /// An api package containing message and service definition
     Api,
+}
+
+impl TryFrom<i32> for PackageType {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(PackageType::Lib),
+            2 => Ok(PackageType::Api),
+            _ => Err("Invalid value, check `PackageType` potential values"),
+        }
+    }
 }
 
 impl FromStr for PackageType {

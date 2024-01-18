@@ -15,12 +15,24 @@
 //! # Buffrs Registry API
 
 use crate::context::Context;
+use crate::proto::buffrs::registry::registry_server::RegistryServer;
+use eyre::Result;
+use tonic::transport::Server;
 
 mod grpc;
 
 impl Context {
     /// Launch API
-    pub async fn launch_api(&self) {
-        todo!()
+    pub async fn launch_api(&self) -> Result<()> {
+        let ctx = self.clone();
+
+        let server = Server::builder().add_service(RegistryServer::new(ctx));
+
+        let listen_address = self.listen_address();
+        tracing::info!("Starting server: {:?}", listen_address);
+
+        server.serve(listen_address).await?;
+
+        Ok(())
     }
 }

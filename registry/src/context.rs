@@ -17,7 +17,10 @@
 //! This type holds the necessary context for a buffrs registry. It is used to implement the
 //! various APIs that this registry provides.
 
+use crate::metadata::postgresql::PgsqlMetadataStorage;
 use crate::storage::AnyStorage;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 /// Context
 ///
@@ -25,16 +28,38 @@ use crate::storage::AnyStorage;
 #[derive(Clone, Debug)]
 pub struct Context {
     storage: AnyStorage,
+
+    metadata_storage: Arc<PgsqlMetadataStorage>,
+
+    listen_address: SocketAddr,
 }
 
 impl Context {
     /// Create a new context from a metadata instance and a storage instance.
-    pub fn new(storage: AnyStorage) -> Self {
-        Self { storage }
+    pub fn new(
+        storage: AnyStorage,
+        metadata_storage: Arc<PgsqlMetadataStorage>,
+        listen_address: SocketAddr,
+    ) -> Self {
+        Self {
+            storage,
+            metadata_storage,
+            listen_address,
+        }
     }
 
     /// Get reference to the storage instance.
     pub fn storage(&self) -> &AnyStorage {
         &self.storage
+    }
+
+    /// Get reference to the [`MetadataStorage`] instance
+    pub fn metadata_store(&self) -> &PgsqlMetadataStorage {
+        &self.metadata_storage
+    }
+
+    /// Gets the socket address
+    pub fn listen_address(&self) -> SocketAddr {
+        self.listen_address
     }
 }

@@ -35,7 +35,13 @@ message DownloadResponse {
 }
 
 message VersionsRequest {
+    // package name
     string name = 1;
+    /* `requirement` expects to follow the [`semver::VersionReq`] format
+     * https://docs.rs/semver/latest/semver/struct.VersionReq.html
+     * Examples: 
+     * >=1.0.0
+     * >=1.2.3, <1.8 */
     string requirement = 2;
 }
 

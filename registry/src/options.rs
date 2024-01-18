@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use buffrs_registry::metadata::postgresql::PgsqlMetadataStorage;
 use buffrs_registry::{context::Context, storage::*};
 use clap::{Parser, ValueEnum};
 use eyre::Result;
@@ -26,12 +27,20 @@ pub struct Options {
     /// Storage related options.
     #[clap(flatten)]
     pub storage: StorageOptions,
+
+    #[clap(flatten)]
+    pub metadata: PgsqlStorageOptions,
 }
 
 impl Options {
     pub async fn build(&self) -> Result<Context> {
         let storage = self.storage.build().await?;
-        Ok(Context::new(storage))
+
+        let pg_options = PgsqlStorageOptions::parse();
+        let pgsql = pg_options.build().await?;
+        let metadata = Arc::new(pgsql);
+
+        Ok(Context::new(storage, metadata, self.listen))
     }
 }
 
@@ -99,5 +108,28 @@ impl StorageOptions {
         };
 
         Ok(storage)
+    }
+}
+
+/// PgSQL storage options
+#[derive(Parser, Clone, Debug)]
+pub struct PgsqlStorageOptions {
+    /// PostgreSQL Connection string
+    #[clap(
+        long,
+        short,
+        env,
+        default_value = "postgres://buffrs:buffrs@127.0.0.1/buffrs"
+    )]
+    pub connection_string: String,
+
+    /// Connection pool size
+    #[clap(long, short, env, default_value = "5")]
+    pub max_connections: u32,
+}
+
+impl PgsqlStorageOptions {
+    async fn build(&self) -> Result<PgsqlMetadataStorage> {
+        Ok(PgsqlMetadataStorage::connect(&self.connection_string, self.max_connections).await?)
     }
 }

@@ -48,16 +48,6 @@ impl PackageStore {
         Self::open(&current_dir().into_diagnostic()?).await
     }
 
-    /// Open given directory.
-    async fn open(path: &Path) -> miette::Result<Self> {
-        let store = Self::new(path.into());
-
-        PackageStore::create(store.proto_path()).await?;
-        PackageStore::create(store.proto_vendor_path()).await?;
-
-        Ok(store)
-    }
-
     /// Path to the `proto` directory.
     pub fn proto_path(&self) -> PathBuf {
         self.root.join(Self::PROTO_PATH)
@@ -74,8 +64,8 @@ impl PackageStore {
     }
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn create(path: PathBuf) -> miette::Result<Self> {
-        let store = PackageStore::new(path);
+    pub async fn open(path: impl AsRef<Path>) -> miette::Result<Self> {
+        let store = PackageStore::new(path.as_ref().to_path_buf());
         let create = |dir: PathBuf| async move {
             fs::create_dir_all(&dir)
                 .await

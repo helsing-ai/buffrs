@@ -1,8 +1,13 @@
+
+CREATE COLLATION semver_col (
+  LOCALE = 'en-US-u-kn-true',
+  PROVIDER = 'icu'
+);
+
 CREATE TABLE versions (
     id            SERIAL PRIMARY KEY,
     package_id    INTEGER NOT NULL REFERENCES packages(id) ON DELETE RESTRICT,
-    version       TEXT NOT NULL,
-
+    version       TEXT NOT NULL COLLATE semver_col,
     checksum      TEXT NOT NULL, -- sha3 256bit
 
     -- metadata
@@ -13,6 +18,7 @@ CREATE TABLE versions (
     homepage      TEXT,
     license       TEXT,
     repository    TEXT,
+
     -- timestamps
     created_at    TIMESTAMPTZ NOT NULL,
     yanked_at     TIMESTAMPTZ,
@@ -20,7 +26,6 @@ CREATE TABLE versions (
     CONSTRAINT unique_version UNIQUE (package_id, version)
 
 );
-
 
 CREATE TABLE version_dependencies (
     id          SERIAL PRIMARY KEY,

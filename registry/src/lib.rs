@@ -1,5 +1,4 @@
 // Copyright 2023 Helsing GmbH
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -41,6 +40,7 @@
 
 pub mod api;
 pub mod context;
+pub mod metadata;
 pub mod proto;
 pub mod storage;
 pub mod types;
