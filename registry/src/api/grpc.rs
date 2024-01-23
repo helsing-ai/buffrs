@@ -14,7 +14,7 @@
 
 use std::str::FromStr;
 
-use crate::metadata::{Publish, TryFetch, FetchAllMatching};
+use crate::metadata::{FetchAllMatching, Publish, TryFetch};
 use crate::{
     context::Context,
     metadata::MetadataStorageError,

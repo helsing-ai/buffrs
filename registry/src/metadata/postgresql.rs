@@ -132,7 +132,10 @@ impl FetchAllMatching<PgsqlMetadataStorage> for PackageManifest {
 
 #[async_trait::async_trait]
 impl Publish<PgsqlMetadataStorage> for PackageManifest {
-    async fn publish(package: PackageManifest, e: &PgsqlMetadataStorage) -> Result<(), MetadataStorageError> {
+    async fn publish(
+        package: PackageManifest,
+        e: &PgsqlMetadataStorage,
+    ) -> Result<(), MetadataStorageError> {
         let package_lib = PgPackageType::from(package.kind);
 
         let mut tx = e.pool.begin().await.map_err(|x| {
@@ -189,18 +192,19 @@ impl Publish<PgsqlMetadataStorage> for PackageManifest {
 }
 
 impl PgsqlMetadataStorage {
+    /// Creates a PgsqlMetadataStorage from a given Pgsql Connection Pool
     pub fn new(pool: PgPool) -> Self {
         PgsqlMetadataStorage { pool }
     }
 
     /// Connects to the DB, migrate it and then starts the storage
     pub async fn connect(
-        connection_string: &String,
+        connection_string: &str,
         max_connections: u32,
     ) -> Result<PgsqlMetadataStorage, sqlx::Error> {
         let pool = PgPoolOptions::new()
             .max_connections(max_connections)
-            .connect(&connection_string)
+            .connect(connection_string)
             .await?;
 
         sqlx::migrate!().run(&pool).await?;

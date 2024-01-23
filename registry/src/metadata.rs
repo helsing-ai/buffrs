@@ -38,7 +38,6 @@ use crate::types::PackageVersion;
 pub type SharedError = Arc<dyn std::error::Error + Send + Sync>;
 
 /// Packages errors
-///
 #[derive(thiserror::Error, Debug, Clone)]
 pub enum MetadataStorageError {
     /// Package missing
@@ -54,7 +53,7 @@ pub enum MetadataStorageError {
     #[error(transparent)]
     Other(#[from] SharedError),
 
-    /// Unknown error
+    /// Internal stuff error
     #[error("Internal Error")]
     Internal,
 }

@@ -3,7 +3,6 @@ use super::*;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Mutex;
-use tonic::async_trait;
 
 type MemoryMetadataMap = Arc<Mutex<HashMap<String, Mutex<HashMap<String, PackageManifest>>>>>;
 
@@ -22,10 +21,12 @@ impl InMemoryMetadataStorage {
     }
 }
 
-
 #[async_trait::async_trait]
 impl TryFetch<InMemoryMetadataStorage> for PackageManifest {
-    async fn try_fetch(version: PackageVersion, e: &InMemoryMetadataStorage) -> Result<PackageManifest, MetadataStorageError> {
+    async fn try_fetch(
+        version: PackageVersion,
+        e: &InMemoryMetadataStorage,
+    ) -> Result<PackageManifest, MetadataStorageError> {
         let packages = e
             .packages
             .lock()
@@ -58,10 +59,13 @@ impl TryFetch<InMemoryMetadataStorage> for PackageManifest {
     }
 }
 
-
 #[async_trait::async_trait]
 impl FetchAllMatching<InMemoryMetadataStorage> for PackageManifest {
-    async fn fetch_matching(package: PackageName, req: VersionReq, e: &InMemoryMetadataStorage) -> Result<Vec<PackageManifest>, MetadataStorageError> {
+    async fn fetch_matching(
+        package: PackageName,
+        req: VersionReq,
+        e: &InMemoryMetadataStorage,
+    ) -> Result<Vec<PackageManifest>, MetadataStorageError> {
         let packages = e
             .packages
             .lock()
@@ -93,7 +97,10 @@ impl FetchAllMatching<InMemoryMetadataStorage> for PackageManifest {
 
 #[async_trait::async_trait]
 impl Publish<InMemoryMetadataStorage> for PackageManifest {
-    async fn publish(package: PackageManifest, e: &InMemoryMetadataStorage) -> Result<(), MetadataStorageError> {
+    async fn publish(
+        package: PackageManifest,
+        e: &InMemoryMetadataStorage,
+    ) -> Result<(), MetadataStorageError> {
         let mut packages = e
             .packages
             .lock()
