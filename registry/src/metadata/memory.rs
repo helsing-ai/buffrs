@@ -22,20 +22,17 @@ impl InMemoryMetadataStorage {
     }
 }
 
-#[async_trait]
-impl MetadataStorage for InMemoryMetadataStorage {
-    /// fetches the version from the storage
-    async fn get_version(
-        &self,
-        package: PackageVersion,
-    ) -> Result<PackageManifest, MetadataStorageError> {
-        let packages = self
+
+#[async_trait::async_trait]
+impl TryFetch<InMemoryMetadataStorage> for PackageManifest {
+    async fn try_fetch(version: PackageVersion, e: &InMemoryMetadataStorage) -> Result<PackageManifest, MetadataStorageError> {
+        let packages = e
             .packages
             .lock()
             .map_err(|_| MetadataStorageError::Internal)?;
 
-        let name_string = package.package.to_string();
-        let version_string = package.version.to_string();
+        let name_string = version.package.to_string();
+        let version_string = version.version.to_string();
 
         let versions_mutex =
             packages
@@ -59,13 +56,13 @@ impl MetadataStorage for InMemoryMetadataStorage {
 
         Ok(package.clone())
     }
+}
 
-    async fn get_versions(
-        &self,
-        package: PackageName,
-        version: Option<VersionReq>,
-    ) -> Result<Vec<buffrs::manifest::PackageManifest>, MetadataStorageError> {
-        let packages = self
+
+#[async_trait::async_trait]
+impl FetchAllMatching<InMemoryMetadataStorage> for PackageManifest {
+    async fn fetch_matching(package: PackageName, req: VersionReq, e: &InMemoryMetadataStorage) -> Result<Vec<PackageManifest>, MetadataStorageError> {
+        let packages = e
             .packages
             .lock()
             .map_err(|_| MetadataStorageError::Internal)?;
@@ -79,36 +76,25 @@ impl MetadataStorage for InMemoryMetadataStorage {
             .lock()
             .map_err(|_| MetadataStorageError::Internal)?;
 
-        let listed_versions = if let Some(filtered_version) = version {
-            versions
-                .iter()
-                .filter(|(_version, manifest)| filtered_version.matches(&manifest.version))
-                .map(|(_version, manifest)| buffrs::manifest::PackageManifest {
-                    kind: manifest.kind,
-                    name: manifest.name.clone(),
-                    version: manifest.version.clone(),
-                    description: manifest.description.clone(),
-                })
-                .collect()
-        } else {
-            versions
-                .iter()
-                .map(|(_version, manifest)| buffrs::manifest::PackageManifest {
-                    kind: manifest.kind,
-                    name: manifest.name.clone(),
-                    version: manifest.version.clone(),
-                    description: manifest.description.clone(),
-                })
-                .collect()
-        };
+        let listed_versions = versions
+            .iter()
+            .filter(|(_version, manifest)| req.matches(&manifest.version))
+            .map(|(_version, manifest)| buffrs::manifest::PackageManifest {
+                kind: manifest.kind,
+                name: manifest.name.clone(),
+                version: manifest.version.clone(),
+                description: manifest.description.clone(),
+            })
+            .collect();
 
         Ok(listed_versions)
     }
+}
 
-    /// Puts a Manifest in the storage
-    ///
-    async fn put_version(&self, package: PackageManifest) -> Result<(), MetadataStorageError> {
-        let mut packages = self
+#[async_trait::async_trait]
+impl Publish<InMemoryMetadataStorage> for PackageManifest {
+    async fn publish(package: PackageManifest, e: &InMemoryMetadataStorage) -> Result<(), MetadataStorageError> {
+        let mut packages = e
             .packages
             .lock()
             .map_err(|_| MetadataStorageError::Internal)?;

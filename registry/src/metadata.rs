@@ -18,6 +18,8 @@
 
 /// memory provider
 pub mod memory;
+/// PostgreSQL storage
+pub mod postgresql;
 
 use buffrs::manifest::PackageManifest;
 use buffrs::package::PackageName;
@@ -57,26 +59,32 @@ pub enum MetadataStorageError {
     Internal,
 }
 
-/// [`MetadataStorage`] Instance
-pub type AnyMetadataStorage = Arc<dyn MetadataStorage>;
-
-/// Basic definition of a metadata storage
-///
+/// Fetching from metadata Storage
 #[async_trait::async_trait]
-pub trait MetadataStorage: Send + Sync + fmt::Debug {
-    /// Gets the version
-    async fn get_version(
-        &self,
-        package: PackageVersion,
+pub trait TryFetch<Executor> {
+    /// Try fetching a given package version
+    /// Returns [`MetadataStorageError`] if it fails
+    async fn try_fetch(
+        version: PackageVersion,
+        e: &Executor,
     ) -> Result<PackageManifest, MetadataStorageError>;
+}
 
-    /// Fetches a package with a given version and all packages above that version
-    async fn get_versions(
-        &self,
-        package_name: PackageName,
-        version: Option<VersionReq>,
+/// Fetching data storage
+#[async_trait::async_trait]
+pub trait FetchAllMatching<Executor> {
+    /// Try fetching a given package version
+    /// Returns [`MetadataStorageError`] if it fails
+    async fn fetch_matching(
+        package: PackageName,
+        req: VersionReq,
+        e: &Executor,
     ) -> Result<Vec<PackageManifest>, MetadataStorageError>;
+}
 
-    /// Puts the given package in the storage
-    async fn put_version(&self, package: PackageManifest) -> Result<(), MetadataStorageError>;
+/// Publishing to Metadata Storage
+#[async_trait::async_trait]
+pub trait Publish<Executor> {
+    /// Publishes the given package
+    async fn publish(package: PackageManifest, e: &Executor) -> Result<(), MetadataStorageError>;
 }

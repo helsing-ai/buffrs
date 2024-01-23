@@ -14,6 +14,7 @@
 
 use std::str::FromStr;
 
+use crate::metadata::{Publish, TryFetch, FetchAllMatching};
 use crate::{
     context::Context,
     metadata::MetadataStorageError,
@@ -79,7 +80,7 @@ impl Registry for Context {
 
         // need to add some more checks (version conflict, do we allow overriding?)
         let metadata_store = self.metadata_store();
-        match metadata_store.get_version(package_version.clone()).await {
+        match PackageManifest::try_fetch(package_version.clone(), metadata_store).await {
             Ok(_) => {
                 tracing::info!(
                     "Package: {}, version: {} already exists, publish refused",
@@ -119,7 +120,7 @@ impl Registry for Context {
             description: None,
         };
 
-        match metadata_store.put_version(package_manifest).await {
+        match PackageManifest::publish(package_manifest, metadata_store).await {
             Ok(_) => {}
             Err(MetadataStorageError::PackageDuplicate(..)) => {
                 return Err(Status::already_exists(
@@ -170,8 +171,7 @@ impl Registry for Context {
         let package_name = PackageName::from_str(req.name.as_str())
             .map_err(|_| Status::invalid_argument("provided name was incorrect"))?;
 
-        let versions = metadata
-            .get_versions(package_name, Some(version_requirement))
+        let versions = PackageManifest::fetch_matching(package_name, version_requirement, metadata)
             .await
             .map_err(|err| match err {
                 MetadataStorageError::PackageMissing(name, ..) => {

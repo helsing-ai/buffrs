@@ -25,6 +25,18 @@ pub enum PackageType {
     Api,
 }
 
+impl TryFrom<i32> for PackageType {
+    type Error = &'static str;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(PackageType::Lib),
+            2 => Ok(PackageType::Api),
+            _ => Err("Invalid value, check `PackageType` potential values"),
+        }
+    }
+}
+
 impl FromStr for PackageType {
     type Err = serde_typename::Error;
 

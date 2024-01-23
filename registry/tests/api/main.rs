@@ -1,15 +1,30 @@
+// Copyright 2023 Helsing GmbH
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 use buffrs_registry::context::Context;
 use buffrs_registry::metadata::memory::InMemoryMetadataStorage;
+use buffrs_registry::metadata::postgresql::PgsqlMetadataStorage;
 use buffrs_registry::proto::buffrs::package::{Compressed, Package};
 use buffrs_registry::proto::buffrs::registry::registry_client::RegistryClient;
 use buffrs_registry::proto::buffrs::registry::registry_server::RegistryServer;
 use buffrs_registry::proto::buffrs::registry::{PublishRequest, VersionsRequest};
 use buffrs_registry::storage;
+use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-
 use tonic::codegen::tokio_stream;
 use tonic::transport::{Channel, Server};
 use tonic::transport::{Endpoint, Uri};
@@ -36,12 +51,16 @@ pub fn create_list_versions_request_sample(version: String) -> VersionsRequest {
     }
 }
 
-pub async fn basic_setup() -> RegistryClient<Channel> {
+pub async fn basic_setup(pool: PgPool) -> RegistryClient<Channel> {
     let (client, server) = tokio::io::duplex(1024);
 
     let path = Path::new("/tmp");
     let storage = Arc::new(storage::Filesystem::new(path));
-    let metadata = Arc::new(InMemoryMetadataStorage::new());
+
+    let pgsql = PgsqlMetadataStorage::new(pool);
+
+    let _memory_storage = InMemoryMetadataStorage::new();
+    let metadata = Arc::new(pgsql);
 
     let url = "0.0.0.0:0";
 
@@ -81,12 +100,13 @@ pub async fn basic_setup() -> RegistryClient<Channel> {
     RegistryClient::new(channel)
 }
 
-#[tokio::test]
-async fn test_publish_registry() {
-    let mut client = basic_setup().await;
+#[sqlx::test]
+async fn test_publish_registry(pool: PgPool) {
+    let mut client = basic_setup(pool).await;
 
     // 1. Insert a package and expect it to be successful
     {
+        println!(":: Package Publish 1.0.0...");
         let req = tonic::Request::new(create_publish_request_sample(None));
         client.publish(req).await.expect("Shouldn't happen");
         println!(":: Package Publish 1.0.0 OK");
@@ -96,7 +116,10 @@ async fn test_publish_registry() {
     {
         // duplicate check
         let req = tonic::Request::new(create_publish_request_sample(None));
-        let res = client.publish(req).await.unwrap_err();
+        let res = client
+            .publish(req)
+            .await
+            .expect_err("Duplicate was inserted");
         assert_eq!(res.code(), Code::AlreadyExists);
         println!(":: Package Forbid Duplicate OK");
     }
@@ -112,9 +135,9 @@ async fn test_publish_registry() {
     }
 }
 
-#[tokio::test]
-async fn test_fetching_versions() {
-    let mut client = basic_setup().await;
+#[sqlx::test]
+async fn test_fetching_versions(pool: PgPool) {
+    let mut client = basic_setup(pool).await;
 
     // 1. Insert a package with 1.0.0 version and expect it to be successful
     {
