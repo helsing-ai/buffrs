@@ -71,7 +71,7 @@ pub trait TryFetch<Executor> {
 
 /// Fetching data storage
 #[async_trait::async_trait]
-pub trait FetchAllMatching<Executor> {
+pub trait FetchMatching<Executor> {
     /// Try fetching a given package version
     /// Returns [`MetadataStorageError`] if it fails
     async fn fetch_matching(
