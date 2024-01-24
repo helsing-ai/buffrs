@@ -44,33 +44,14 @@ impl TryFetch<PgsqlMetadataStorage> for PackageManifest {
                 error!("Error: SELECT_VERSION_QUERY {}", x);
                 MetadataStorageError::Internal
             })?
-        else {
-            return Err(MetadataStorageError::PackageMissing(
-                package.package.to_string(),
-                Some(package.version.to_string()),
-            ));
-        };
+            else {
+                return Err(MetadataStorageError::PackageMissing(
+                    package.package.to_string(),
+                    Some(package.version.to_string()),
+                ));
+            };
 
-        let manifest = PackageManifest {
-            kind: searched.kind.into(),
-            name: PackageName::from_str(&searched.name).map_err(|x| {
-                error!(
-                    "Error: {}, packageName: {} couldn't be mapped to a PackageName",
-                    x, &searched.name
-                );
-                MetadataStorageError::Internal
-            })?,
-            version: Version::from_str(&searched.version).map_err(|x| {
-                error!(
-                    "Error: {}, version {} couldn't be mapped to a semver::Version",
-                    x, &searched.version
-                );
-                MetadataStorageError::Internal
-            })?,
-            description: Some("unsupported".to_string()),
-        };
-
-        Ok(manifest)
+        Ok(PackageManifest::try_from(searched)?)
     }
 }
 
@@ -104,26 +85,7 @@ impl FetchAllMatching<PgsqlMetadataStorage> for PackageManifest {
                 continue;
             }
 
-            let manifest = PackageManifest {
-                kind: searched.kind.into(),
-                name: PackageName::from_str(&searched.name).map_err(|x| {
-                    error!(
-                        "Error: {}, packageName: {} couldn't be mapped to a PackageName",
-                        x, &searched.name
-                    );
-                    MetadataStorageError::Internal
-                })?,
-                version: Version::from_str(&searched.version).map_err(|x| {
-                    error!(
-                        "Error: {}, version {} couldn't be mapped to a semver::Version",
-                        x, &searched.version
-                    );
-                    MetadataStorageError::Internal
-                })?,
-                description: Some("unsupported".to_string()),
-            };
-
-            manifests.push(manifest);
+            manifests.push(PackageManifest::try_from(searched)?);
         }
 
         Ok(manifests)
@@ -311,6 +273,31 @@ pub enum PgPackageType {
     Library,
     /// An api package
     Api,
+}
+
+impl TryFrom<PgPackageVersionQuery> for PackageManifest {
+    type Error = MetadataStorageError;
+
+    fn try_from(value: PgPackageVersionQuery) -> Result<Self, MetadataStorageError> {
+        Ok(PackageManifest {
+            kind: value.kind.into(),
+            name: PackageName::from_str(&value.name).map_err(|x| {
+                error!(
+                        "Error: {}, packageName: {} couldn't be mapped to a PackageName",
+                        x, &value.name
+                    );
+                MetadataStorageError::Internal
+            })?,
+            version: Version::from_str(&value.version).map_err(|x| {
+                error!(
+                        "Error: {}, version {} couldn't be mapped to a semver::Version",
+                        x, &value.version
+                    );
+                MetadataStorageError::Internal
+            })?,
+            description: Some("unsupported".to_string()),
+        })
+    }
 }
 
 impl From<PgPackageType> for PackageType {
