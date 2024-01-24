@@ -56,7 +56,7 @@ impl TryFetch<PgsqlMetadataStorage> for PackageManifest {
 }
 
 #[async_trait::async_trait]
-impl FetchAllMatching<PgsqlMetadataStorage> for PackageManifest {
+impl FetchMatching<PgsqlMetadataStorage> for PackageManifest {
     async fn fetch_matching(
         package: PackageName,
         version: VersionReq,
