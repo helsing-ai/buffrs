@@ -44,12 +44,12 @@ impl TryFetch<PgsqlMetadataStorage> for PackageManifest {
                 error!("Error: SELECT_VERSION_QUERY {}", x);
                 MetadataStorageError::Internal
             })?
-            else {
-                return Err(MetadataStorageError::PackageMissing(
-                    package.package.to_string(),
-                    Some(package.version.to_string()),
-                ));
-            };
+        else {
+            return Err(MetadataStorageError::PackageMissing(
+                package.package.to_string(),
+                Some(package.version.to_string()),
+            ));
+        };
 
         Ok(PackageManifest::try_from(searched)?)
     }
@@ -283,16 +283,16 @@ impl TryFrom<PgPackageVersionQuery> for PackageManifest {
             kind: value.kind.into(),
             name: PackageName::from_str(&value.name).map_err(|x| {
                 error!(
-                        "Error: {}, packageName: {} couldn't be mapped to a PackageName",
-                        x, &value.name
-                    );
+                    "Error: {}, packageName: {} couldn't be mapped to a PackageName",
+                    x, &value.name
+                );
                 MetadataStorageError::Internal
             })?,
             version: Version::from_str(&value.version).map_err(|x| {
                 error!(
-                        "Error: {}, version {} couldn't be mapped to a semver::Version",
-                        x, &value.version
-                    );
+                    "Error: {}, version {} couldn't be mapped to a semver::Version",
+                    x, &value.version
+                );
                 MetadataStorageError::Internal
             })?,
             description: Some("unsupported".to_string()),
