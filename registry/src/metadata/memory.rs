@@ -60,7 +60,7 @@ impl TryFetch<InMemoryMetadataStorage> for PackageManifest {
 }
 
 #[async_trait::async_trait]
-impl FetchAllMatching<InMemoryMetadataStorage> for PackageManifest {
+impl FetchMatching<InMemoryMetadataStorage> for PackageManifest {
     async fn fetch_matching(
         package: PackageName,
         req: VersionReq,
