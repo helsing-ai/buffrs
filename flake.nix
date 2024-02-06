@@ -24,6 +24,8 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; nativeBuildInputs ++ [
             cargo
+            libgit2
+            libiconv
             rustc
           ];
         };
