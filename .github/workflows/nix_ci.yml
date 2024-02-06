@@ -1,0 +1,46 @@
+name: Buffrs CLI Nix Checks
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+  check_flake_w_nix_on_ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
+      - name: Run `nix flake check`
+        run: nix flake check
+
+  check_flake_w_nix_on_mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
+      - name: Run `nix flake check`
+        run: nix flake check
+
+  check_tests_w_devshell_on_mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          lfs: "true"
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/flake-checker-action@main
+      - name: Setup registry
+        uses: isbang/compose-action@v1.5.1
+        with:
+          compose-file: "./registry/docker-compose.yml"
+      - run: . <(nix print-dev-env .#) && cargo test --workspace
+        env:
+          RUST_BACKTRACE: 1
+

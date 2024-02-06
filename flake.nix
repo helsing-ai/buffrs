@@ -33,6 +33,7 @@
 
         dependencies = with pkgs;
           [
+            libgit2
             openssl
           ]
           ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks;
@@ -42,18 +43,16 @@
           OPENSSL_NO_VENDOR = 1;
         };
       in rec {
-        packages.default =
-          naersk'.buildPackage {
+        packages.default = naersk'.buildPackage ({
             inherit nativeBuildInputs;
             src = ./.;
             buildInputs = dev_tools ++ dependencies;
           }
-          // env_vars;
-        devShells.default =
-          pkgs.mkShell {
+          // env_vars);
+        devShells.default = pkgs.mkShell ({
             buildInputs = nativeBuildInputs ++ dev_tools ++ dependencies;
           }
-          // env_vars;
+          // env_vars);
         checks.builds = packages.default;
       }
     );
