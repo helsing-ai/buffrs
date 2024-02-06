@@ -7,6 +7,7 @@ on:
   pull_request:
   workflow_dispatch:
 
+jobs:
   check_flake_w_nix_on_ubuntu:
     runs-on: ubuntu-latest
     steps:
