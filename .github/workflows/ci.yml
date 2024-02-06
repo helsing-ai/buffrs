@@ -82,11 +82,11 @@ jobs:
       - run: typos --exclude /registry/tests/proptest-regressions/
 
   build_w_nix:
-    runs-on: ubuntu-22.04
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
-      - name: Run `nix build`
+      - name: Run `nix flake check`
         run: nix flake check
