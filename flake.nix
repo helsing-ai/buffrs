@@ -43,17 +43,36 @@
           OPENSSL_NO_VENDOR = 1;
         };
       in rec {
+        # NB: if this does not build and you need to modify the file,
+        #     please ensure you also make the corresponding changes in the devshell
         packages.default = naersk'.buildPackage ({
             inherit nativeBuildInputs;
             src = ./.;
             buildInputs = dev_tools ++ dependencies;
           }
           // env_vars);
+
         devShells.default = pkgs.mkShell ({
             buildInputs = nativeBuildInputs ++ dev_tools ++ dependencies;
           }
           // env_vars);
-        checks.builds = packages.default;
+
+        checks = {
+          builds = packages.default;
+          nix-files-are-formatted = pkgs.stdenvNoCC.mkDerivation {
+            name = "fmt-check";
+            dontBuild = true;
+            src = ./.;
+            doCheck = true;
+            nativeBuildInputs = with pkgs; [alejandra];
+            checkPhase = ''
+              alejandra -c .
+            '';
+            installPhase = ''
+              mkdir "$out"
+            '';
+          };
+        };
       }
     );
 }
