@@ -26,36 +26,34 @@
           SystemConfiguration
         ];
 
-        devtools_not_needed_in_ci = with pkgs; [
-          act
+        dev_tools = with pkgs; [
+          cargo
+          rustc
         ];
 
-        mkshell' = {extra_build_inputs ? []}:
-          pkgs.mkShell {
-            LIBGIT2_NO_VENDOR = 1;
-            buildInputs = with pkgs;
-              [
-                cargo
-                libgit2
-                libiconv
-                rustc
-                zlib
-              ]
-              ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks
-              ++ extra_build_inputs;
-          };
-      in rec {
-        packages.default = naersk'.buildPackage {
-          inherit nativeBuildInputs;
-          src = ./.;
-          buildInputs = with pkgs; [openssl perl] ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks;
+        dependencies = with pkgs;
+          [
+            openssl
+          ]
+          ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks;
 
+        env_vars = {
+          LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };
-        devShells = {
-          default = mkshell' {extra_build_inputs = devtools_not_needed_in_ci;};
-          ci = mkshell' {};
-        };
+      in rec {
+        packages.default =
+          naersk'.buildPackage {
+            inherit nativeBuildInputs;
+            src = ./.;
+            buildInputs = dev_tools ++ dependencies;
+          }
+          // env_vars;
+        devShells.default =
+          pkgs.mkShell {
+            buildInputs = nativeBuildInputs ++ dev_tools ++ dependencies;
+          }
+          // env_vars;
         checks.builds = packages.default;
       }
     );
