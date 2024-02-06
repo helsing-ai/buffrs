@@ -1,4 +1,4 @@
-name: Buffrs CLI Nix Checks
+name: Nix Buffers CI
 
 on:
   push:
