@@ -39,6 +39,7 @@
                 libgit2
                 libiconv
                 rustc
+                zlib
               ]
               ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks
               ++ extra_build_inputs;
