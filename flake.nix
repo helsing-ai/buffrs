@@ -57,6 +57,8 @@
           }
           // env_vars);
 
+        formatter = pkgs.alejandra;
+
         checks = {
           builds = packages.default;
           nix-files-are-formatted = pkgs.stdenvNoCC.mkDerivation {
