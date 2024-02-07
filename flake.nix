@@ -21,12 +21,12 @@
         naersk' = pkgs.callPackage naersk {};
         nativeBuildInputs = with pkgs; [pkg-config];
 
-        darwin_frameworks = with pkgs.darwin.apple_sdk.frameworks; [
+        darwinFrameworks = with pkgs.darwin.apple_sdk.frameworks; [
           Security
           SystemConfiguration
         ];
 
-        dev_tools = with pkgs; [
+        devTools = with pkgs; [
           cargo
           rustc
         ];
@@ -36,9 +36,9 @@
             libgit2
             openssl
           ]
-          ++ lib.lists.optionals stdenv.isDarwin darwin_frameworks;
+          ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
-        env_vars = {
+        envVars = {
           LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };
@@ -48,14 +48,14 @@
         packages.default = naersk'.buildPackage ({
             inherit nativeBuildInputs;
             src = ./.;
-            buildInputs = dev_tools ++ dependencies;
+            buildInputs = devTools ++ dependencies;
           }
-          // env_vars);
+          // envVars);
 
         devShells.default = pkgs.mkShell ({
-            buildInputs = nativeBuildInputs ++ dev_tools ++ dependencies;
+            buildInputs = nativeBuildInputs ++ devTools ++ dependencies;
           }
-          // env_vars);
+          // envVars);
 
         formatter = pkgs.alejandra;
 
