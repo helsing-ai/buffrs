@@ -7,3 +7,4 @@ target
 .DS_Store
 registry/.idea
 .vscode
+.envrc
