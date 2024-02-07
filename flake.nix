@@ -5,37 +5,24 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
-  outputs = {
-    self,
-    flake-utils,
-    naersk,
-    nixpkgs,
-  }:
-    flake-utils.lib.eachDefaultSystem (
-      system: let
-        pkgs = (import nixpkgs) {
-          inherit system;
-        };
+  outputs = { self, flake-utils, naersk, nixpkgs, }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = (import nixpkgs) { inherit system; };
         inherit (pkgs) lib;
 
-        naersk' = pkgs.callPackage naersk {};
-        nativeBuildInputs = with pkgs; [pkg-config];
+        naersk' = pkgs.callPackage naersk { };
+        nativeBuildInputs = with pkgs; [ pkg-config ];
 
         darwinFrameworks = with pkgs.darwin.apple_sdk.frameworks; [
           Security
           SystemConfiguration
         ];
 
-        devTools = with pkgs; [
-          cargo
-          rustc
-        ];
+        devTools = with pkgs; [ cargo rustc ];
 
         dependencies = with pkgs;
-          [
-            libgit2
-            openssl
-          ]
+          [ libgit2 openssl ]
           ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
         envVars = {
@@ -46,18 +33,21 @@
         # NB: if this does not build and you need to modify the file,
         #     please ensure you also make the corresponding changes in the devshell
         packages.default = naersk'.buildPackage ({
-            inherit nativeBuildInputs;
-            src = ./.;
-            buildInputs = devTools ++ dependencies;
-          }
-          // envVars);
+          inherit nativeBuildInputs;
+          src = ./.;
+          buildInputs = devTools ++ dependencies;
+        } // envVars);
 
         devShells.default = pkgs.mkShell ({
-            buildInputs = nativeBuildInputs ++ devTools ++ dependencies;
-          }
-          // envVars);
+          buildInputs = nativeBuildInputs ++ devTools ++ dependencies;
+        } // envVars);
 
-        formatter = pkgs.alejandra;
+        formatter = with pkgs;
+          writeShellApplication {
+            name = "nixfmt-nix-files";
+            runtimeInputs = [ fd nixfmt ];
+            text = "fd \\.nix\\$ | xargs nixfmt";
+          };
 
         checks = {
           builds = packages.default;
@@ -66,15 +56,16 @@
             dontBuild = true;
             src = ./.;
             doCheck = true;
-            nativeBuildInputs = with pkgs; [alejandra];
+            nativeBuildInputs = with pkgs; [ fd nixfmt ];
             checkPhase = ''
-              alejandra -c .
+              set -e
+              # find all nix files, and verify that they're formatted correctly
+              fd \.nix\$ | xargs nixfmt -c
             '';
             installPhase = ''
               mkdir "$out"
             '';
           };
         };
-      }
-    );
+      });
 }
