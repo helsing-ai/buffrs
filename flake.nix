@@ -46,7 +46,7 @@
           writeShellApplication {
             name = "nixfmt-nix-files";
             runtimeInputs = [ fd nixfmt ];
-            text = "fd \\.nix\\$ | xargs nixfmt";
+            text = "fd \\.nix\\$ --hidden | xargs nixfmt";
           };
 
         checks = {
@@ -60,7 +60,7 @@
             checkPhase = ''
               set -e
               # find all nix files, and verify that they're formatted correctly
-              fd \.nix\$ | xargs nixfmt -c
+              fd \.nix\$ --hidden | xargs nixfmt -c
             '';
             installPhase = ''
               mkdir "$out"
