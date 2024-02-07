@@ -32,7 +32,9 @@
         ];
 
         devTools = [ rustToolchain ];
-        libgit2_1_7_2 = callPackage ./.nix/libgit2 { };
+        libgit2_1_7_2 = callPackage ./.nix/libgit2.nix {
+          inherit (pkgs.darwin.apple_sdk.frameworks) Security;
+        };
 
         dependencies = with pkgs;
           [ libgit2_1_7_2 openssl openssl.dev ]
@@ -41,7 +43,7 @@
         nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
 
         buildEnvVars = {
-          pkg_config_path = [ "${pkgs.libgit2_1_7_2}/lib/pkgconfig" ];
+          pkg_config_path = [ "${libgit2_1_7_2}/lib/pkgconfig" ];
           LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };

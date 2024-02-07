@@ -13,7 +13,7 @@ stdenv.mkDerivation rec {
     owner = "libgit2";
     repo = "libgit2";
     rev = "v${version}";
-    hash = "";
+    hash = "sha256-fVPY/byE2/rxmv/bUykcAbmUFMlF3UZogVuTzjOXJUU";
   };
 
   cmakeFlags = [
