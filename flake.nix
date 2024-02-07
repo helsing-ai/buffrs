@@ -1,15 +1,20 @@
 {
   inputs = {
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     flake-utils.url = "github:numtide/flake-utils";
     naersk.url = "github:nix-community/naersk";
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   };
 
-  outputs = { self, flake-utils, naersk, nixpkgs, }:
+  outputs = { self, flake-utils, fenix, naersk, nixpkgs, }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = (import nixpkgs) { inherit system; };
-        inherit (pkgs) lib;
+        inherit (pkgs) lib callPackage;
+        rustToolchain = callPackage ./.nix/toolchain.nix { inherit fenix; };
 
         naersk' = pkgs.callPackage naersk { };
         nativeBuildInputs = with pkgs; [ pkg-config ];
@@ -19,7 +24,7 @@
           SystemConfiguration
         ];
 
-        devTools = with pkgs; [ cargo rustc ];
+        devTools = [ rustToolchain ];
 
         dependencies = with pkgs;
           [ libgit2 openssl ]
@@ -46,7 +51,7 @@
           writeShellApplication {
             name = "nixfmt-nix-files";
             runtimeInputs = [ fd nixfmt ];
-            text = "fd \\.nix\\$ --hidden | xargs nixfmt";
+            text = "fd \\.nix\\$ --hidden --type f | xargs nixfmt";
           };
 
         checks = {
@@ -60,7 +65,7 @@
             checkPhase = ''
               set -e
               # find all nix files, and verify that they're formatted correctly
-              fd \.nix\$ --hidden | xargs nixfmt -c
+              fd \.nix\$ --hidden --type f | xargs nixfmt -c
             '';
             installPhase = ''
               mkdir "$out"
