@@ -18,16 +18,7 @@ jobs:
       - run: rustup update && rustup component add rustfmt
       - run: cargo fmt --check --all
 
-  clippy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - run: rustup update && rustup component add clippy
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v2
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
-
+  # TODO: get registry nixified so we set up an equivalent task in `Nix Buffrs CI`
   test:
     runs-on: ubuntu-latest
     steps:
@@ -46,15 +37,7 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
-  deny:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - run: rustup update
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-deny || true
-      - run: cargo deny --workspace check
-
+  # TODO: get registry nixified so we set up an equivalent task in `Nix Buffrs CI`
   coverage:
     runs-on: ubuntu-latest
     steps:
