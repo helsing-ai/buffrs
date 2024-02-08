@@ -34,12 +34,9 @@
         ];
 
         devTools = [ rustToolchain ];
-        libgit2_1_7_2 = callPackage ./nix/libgit2.nix {
-          inherit (pkgs.darwin.apple_sdk.frameworks) Security;
-        };
 
         dependencies = with pkgs;
-          [ libgit2_1_7_2 libiconv openssl openssl.dev ]
+          [ libgit2 libiconv openssl openssl.dev ]
           ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
         nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
