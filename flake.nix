@@ -26,7 +26,7 @@
           overlays = [ (import rust-overlay) ];
         };
         inherit (pkgs) lib callPackage;
-        rustToolchain = callPackage ./.nix/toolchain.nix { };
+        rustToolchain = callPackage ./nix/toolchain.nix { };
 
         darwinFrameworks = with pkgs.darwin.apple_sdk.frameworks; [
           Security
@@ -34,7 +34,7 @@
         ];
 
         devTools = [ rustToolchain ];
-        libgit2_1_7_2 = callPackage ./.nix/libgit2.nix {
+        libgit2_1_7_2 = callPackage ./nix/libgit2.nix {
           inherit (pkgs.darwin.apple_sdk.frameworks) Security;
         };
 
@@ -51,7 +51,7 @@
           OPENSSL_NO_VENDOR = 1;
         };
 
-        buffrs = callPackage ./.nix/buffrs.nix {
+        buffrs = callPackage ./nix/buffrs.nix {
           inherit crane advisory-db buildEnvVars nativeBuildInputs
             rustToolchain;
           buildInputs = [ rustToolchain ];
