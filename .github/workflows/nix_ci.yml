@@ -26,4 +26,5 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - uses: DeterminateSystems/flake-checker-action@main
       - name: Run `nix flake check`
-        run: nix flake check
+      # we only check if buffrs builds as mac runners are expensive
+        run: nix build .
