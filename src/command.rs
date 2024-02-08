@@ -250,7 +250,8 @@ pub async fn publish(
     dry_run: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    if let Ok(statuses) = git_statuses().await {
+    {
+        let statuses = git_statuses().await?;
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
 
