@@ -25,4 +25,5 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Run `nix flake check`
-        run: nix flake check
+      # only test if it builds as mac job runners are expensive, and slow
+        run: nix build .
