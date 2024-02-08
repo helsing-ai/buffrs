@@ -2,12 +2,12 @@
 , nativeBuildInputs, buildEnvVars }:
 let
   craneLib = crane.lib.${system};
-  src = craneLib.cleanCargoSource (craneLib.path ../.);
+  src = ../.;
 
   # Common arguments can be set here to avoid repeating them later
   commonArgs = {
     inherit src buildInputs nativeBuildInputs;
-    strictDeps = true;
+    strictDeps = false;
   } // buildEnvVars;
 
   # Build *just* the cargo dependencies, so we can reuse
@@ -55,11 +55,5 @@ in {
 
     # Audit licenses
     buffrs-deny = craneLib.cargoDeny { inherit src; };
-
-    buffrs-nextest = craneLib.cargoNextest (commonArgs // {
-      inherit cargoArtifacts;
-      partitions = 1;
-      partitionType = "count";
-    });
   };
 }

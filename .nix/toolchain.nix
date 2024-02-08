@@ -1,10 +1,7 @@
-{ fenix, system }:
+{ rust-bin }:
 
-fenix.packages.${system}.stable.withComponents [
-  "cargo"
-  "clippy"
-  "rust-analyzer"
-  "rust-src"
-  "rustc"
-  "rustfmt"
-]
+rust-bin.stable.latest.default.override {
+  extensions = [ "rust-src" "rust-analyzer" ];
+  targets = [ "arm-unknown-linux-gnueabihf" ];
+}
+

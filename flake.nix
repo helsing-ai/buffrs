@@ -7,10 +7,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    fenix = {
-      url = "github:nix-community/fenix";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.rust-analyzer-src.follows = "";
     };
 
     advisory-db = {
@@ -19,12 +18,15 @@
     };
   };
 
-  outputs = { self, flake-utils, fenix, crane, advisory-db, nixpkgs, }:
+  outputs = { self, flake-utils, rust-overlay, crane, advisory-db, nixpkgs, }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = (import nixpkgs) { inherit system; };
+        pkgs = (import nixpkgs) {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
         inherit (pkgs) lib callPackage;
-        rustToolchain = callPackage ./.nix/toolchain.nix { inherit fenix; };
+        rustToolchain = callPackage ./.nix/toolchain.nix { };
 
         darwinFrameworks = with pkgs.darwin.apple_sdk.frameworks; [
           Security
@@ -37,13 +39,14 @@
         };
 
         dependencies = with pkgs;
-          [ libgit2_1_7_2 openssl openssl.dev ]
+          [ libgit2_1_7_2 libiconv openssl openssl.dev ]
           ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
         nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
 
         buildEnvVars = {
-          pkg_config_path = [ "${libgit2_1_7_2}/lib/pkgconfig" ];
+          NIX_LDFLAGS = [ "-L" "${pkgs.libiconv}/lib" ];
+
           LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };
@@ -57,7 +60,7 @@
         # NB: if this does not build and you need to modify the file,
         #     please ensure you also make the corresponding changes in the devshell
         packages.default = buffrs.package;
-        apps.default = flake-utils.lib.makeApp { drv = buffrs.package; };
+        apps.default = flake-utils.lib.mkApp { drv = buffrs.package; };
 
         devShells.default = pkgs.mkShell ({
           inherit nativeBuildInputs;
