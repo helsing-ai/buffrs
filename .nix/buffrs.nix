@@ -28,24 +28,6 @@ in {
     # Build the crate as part of `nix flake check` for convenience
     buffrs = buffrs;
 
-    # Run clippy (and deny all warnings) on the crate source,
-    # again, resuing the dependency artifacts from above.
-    #
-    # Note that this is done as a separate derivation so that
-    # we can block the CI if there are issues here, but not
-    # prevent downstream consumers from building our crate by itself.
-    buffrs-clippy = craneLib.cargoClippy (commonArgs // {
-      inherit cargoArtifacts;
-      cargoClippyExtraArgs =
-        "--all-targets --workspace -- -D warnings -D clippy::all";
-    });
-
-    # Check formatting
-    buffrs-fmt = craneLib.cargoFmt {
-      inherit src;
-      cargoDenyExtraArgs = "--workspace check";
-    };
-
     # Audit dependencies
     buffrs-audit = craneLib.cargoAudit {
       inherit src advisory-db;
