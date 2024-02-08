@@ -30,6 +30,8 @@ use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, str::FromStr};
+#[cfg(feature = "git")]
+use tokio::process;
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -195,6 +197,51 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
         ))
 }
 
+#[cfg(feature = "git")]
+async fn git_statuses() -> miette::Result<Vec<String>> {
+    let output = process::Command::new("git")
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .await;
+
+    let output = match output {
+        Ok(output) => output,
+        Err(e) => {
+            tracing::error!("failed to run `git status`: {}", e);
+            return Ok(Vec::new());
+        }
+    };
+
+    if output.status.success() {
+        let stdout = String::from_utf8(output.stdout)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "invalid utf-8 character in the output of `git status`"
+            ))?;
+        let lines: Option<Vec<_>> = stdout
+            .lines()
+            .map(|line| {
+                line.split_once(' ')
+                    .map(|(_, filename)| filename.to_string())
+            })
+            .collect();
+
+        match lines {
+            Some(statuses) => Ok(statuses),
+            None => bail!("failed to parse `git status` output: {}", stdout),
+        }
+    } else {
+        let stderr = String::from_utf8(output.stderr)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "invalid utf-8 character in the error output of `git status`"
+            ))?;
+        tracing::error!("`git status` returned an error: {}", stderr);
+        Ok(Vec::new())
+    }
+}
+
 /// Publishes the api package to the registry
 pub async fn publish(
     registry: RegistryUri,
@@ -203,18 +250,11 @@ pub async fn publish(
     dry_run: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
-        let statuses = repository
-            .statuses(None)
-            .into_diagnostic()
-            .wrap_err(miette!("failed to determine repository status"))?;
-
+    if let Ok(statuses) = git_statuses().await {
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
 
-            statuses
-                .iter()
-                .for_each(|s| tracing::error!("{}", s.path().unwrap_or_default()));
+            statuses.iter().for_each(|s| tracing::error!("{}", s));
 
             tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
 
