@@ -30,8 +30,6 @@ use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, str::FromStr};
-#[cfg(feature = "git")]
-use tokio::process;
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -199,7 +197,7 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
 
 #[cfg(feature = "git")]
 async fn git_statuses() -> miette::Result<Vec<String>> {
-    let output = process::Command::new("git")
+    let output = tokio::process::Command::new("git")
         .arg("status")
         .arg("--porcelain")
         .output()
