@@ -72,7 +72,7 @@ impl Artifactory {
 
             let path = dependency.manifest.registry.path().to_owned();
 
-            let mut url = dependency.manifest.registry.clone();
+            let mut url = self.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
                 path,
