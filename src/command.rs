@@ -211,7 +211,7 @@ async fn git_statuses() -> miette::Result<Vec<String>> {
         }
     };
 
-    if output.status.success() {
+    let statuses = if output.status.success() {
         let stdout = String::from_utf8(output.stdout)
             .into_diagnostic()
             .wrap_err(miette!(
@@ -225,9 +225,11 @@ async fn git_statuses() -> miette::Result<Vec<String>> {
             })
             .collect();
 
-        match lines {
-            Some(statuses) => Ok(statuses),
-            None => bail!("failed to parse `git status` output: {}", stdout),
+        if let Some(statuses) = lines {
+            statuses
+        } else {
+            tracing::warn!("failed to parse `git status` output: {}", stdout);
+            Vec::new()
         }
     } else {
         let stderr = String::from_utf8(output.stderr)
@@ -236,8 +238,9 @@ async fn git_statuses() -> miette::Result<Vec<String>> {
                 "invalid utf-8 character in the error output of `git status`"
             ))?;
         tracing::error!("`git status` returned an error: {}", stderr);
-        Ok(Vec::new())
-    }
+        Vec::new()
+    };
+    Ok(statuses)
 }
 
 /// Publishes the api package to the registry
