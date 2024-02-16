@@ -204,8 +204,16 @@ pub async fn publish(
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     if let Ok(repository) = git2::Repository::discover(Path::new(".")) {
+        
+        let mut status_options = git2::StatusOptions::default();
+        let status_options = Some(status_options
+            .include_untracked(true)
+            .pathspec("Proto.toml")
+            .pathspec("proto/*.proto")
+        );
+
         let statuses = repository
-            .statuses(None)
+            .statuses(status_options)
             .into_diagnostic()
             .wrap_err(miette!("failed to determine repository status"))?;
 
