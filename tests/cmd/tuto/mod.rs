@@ -132,8 +132,10 @@ fn fixture() {
             )
             .unwrap();
 
-            let git_repo = git2::Repository::discover(crate::parent_directory!())
-                .expect("unable to find git root");
+            let path = std::env::current_dir()
+                .unwrap()
+                .join(crate::parent_directory!());
+            let git_repo = gix::discover(path).expect("unable to find git root");
             let git_root = git_repo
                 .path()
                 .parent()
