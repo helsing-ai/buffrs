@@ -21,11 +21,6 @@ use crate::{
     resolver::DependencyGraph,
 };
 
-#[cfg(feature = "build")]
-use crate::generator::{Generator, Language};
-#[cfg(feature = "build")]
-use std::path::PathBuf;
-
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
@@ -249,10 +244,10 @@ pub async fn publish(
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
+    version: Option<Version>,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    {
-        let statuses = git_statuses().await?;
+    if let Ok(statuses) = git_statuses().await {
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
 
@@ -264,13 +259,21 @@ pub async fn publish(
         }
     }
 
-    let manifest = Manifest::read().await?;
+    let mut manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
+    }
+
+    if let Some(version) = version {
+        if let Some(ref mut package) = manifest.package {
+            tracing::info!(":: modifed version in published manifest to {version}");
+
+            package.version = version;
+        }
     }
 
     let package = store.release(&manifest).await?;
@@ -426,15 +429,6 @@ pub async fn lint() -> miette::Result<()> {
     Ok(())
 }
 
-/// Generate bindings for a given language
-#[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
-    Generator::Protoc { language, out_dir }
-        .generate()
-        .await
-        .wrap_err(miette!("failed to generate {language} bindings"))
-}
-
 /// Logs you in for a registry
 pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
@@ -471,6 +465,27 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
+}
+
+/// Commands on the lockfile
+pub mod lock {
+    use crate::lock::FileRequirement;
+
+    use super::*;
+
+    /// Prints the file requirements serialized as JSON
+    pub async fn requirements() -> miette::Result<()> {
+        let lock = Lockfile::read().await?;
+
+        let requirements: Vec<FileRequirement> = lock.into();
+
+        // hint: always ok, as per serde_json doc
+        if let Ok(json) = serde_json::to_string_pretty(&requirements) {
+            println!("{json}");
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

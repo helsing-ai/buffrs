@@ -15,15 +15,14 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+/// Caching implementation
+pub mod cache;
 /// CLI command implementations
 pub mod command;
 /// Credential management
 pub mod credentials;
 /// Common error types
 pub mod errors;
-/// Code generator
-#[cfg(feature = "build")]
-pub mod generator;
 /// Lockfile implementation
 pub mod lock;
 /// Manifest format and IO

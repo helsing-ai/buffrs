@@ -107,6 +107,7 @@ impl Credentials {
 
     /// Loads the credentials from the file system, returning default credentials if
     /// they do not exist.
+    ///
     /// Note, this should not create files in the user's home directory, as we should
     /// not be performing global stateful operations in absence of a user instruction.
     pub async fn load() -> miette::Result<Self> {
