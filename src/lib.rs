@@ -38,24 +38,6 @@ pub mod resolver;
 #[cfg(feature = "validation")]
 pub mod validation;
 
-/// Cargo build integration for buffrs
-///
-/// Important: Only use this inside of cargo build scripts!
-#[cfg(feature = "build")]
-#[tokio::main(flavor = "current_thread")]
-pub async fn build() -> miette::Result<()> {
-    println!(
-        "cargo:rerun-if-changed={}",
-        package::PackageStore::PROTO_PATH
-    );
-
-    command::install().await?;
-
-    generator::Generator::Tonic.generate().await?;
-
-    Ok(())
-}
-
 /// Include generated rust language bindings for buffrs.
 ///
 /// ```rust,ignore
