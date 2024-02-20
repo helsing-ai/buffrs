@@ -162,9 +162,21 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
-    let manifest = Manifest::read().await?;
+pub async fn package(
+    directory: impl AsRef<Path>,
+    dry_run: bool,
+    version: Option<Version>,
+) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
+
+    if let Some(version) = version {
+        if let Some(ref mut package) = manifest.package {
+            tracing::info!(":: modifed version in published manifest to {version}");
+
+            package.version = version;
+        }
+    }
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
@@ -264,16 +276,16 @@ pub async fn publish(
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-    }
-
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
             tracing::info!(":: modifed version in published manifest to {version}");
 
             package.version = version;
         }
+    }
+
+    if let Some(ref pkg) = manifest.package {
+        store.populate(pkg).await?;
     }
 
     let package = store.release(&manifest).await?;
@@ -469,12 +481,11 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
 
 /// Commands on the lockfile
 pub mod lock {
+    use super::*;
     use crate::lock::FileRequirement;
 
-    use super::*;
-
     /// Prints the file requirements serialized as JSON
-    pub async fn requirements() -> miette::Result<()> {
+    pub async fn print_files() -> miette::Result<()> {
         let lock = Lockfile::read().await?;
 
         let requirements: Vec<FileRequirement> = lock.into();

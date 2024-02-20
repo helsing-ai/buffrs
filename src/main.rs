@@ -74,6 +74,10 @@ enum Command {
         /// Generate package but do not write it to filesystem
         #[clap(long)]
         dry_run: bool,
+        /// Override the version from the manifest
+        ///
+        /// Note: This overrides the version in the manifest.
+        version: Option<Version>,
     },
 
     /// Packages and uploads this api to the registry
@@ -90,7 +94,7 @@ enum Command {
         /// Abort right before uploading the release to the registry
         #[clap(long)]
         dry_run: bool,
-        /// Publish the current package under a specific version
+        /// Override the version from the manifest
         ///
         /// Note: This overrides the version in the manifest.
         version: Option<Version>,
@@ -130,7 +134,7 @@ enum LockfileCommand {
     /// Prints the file requirements derived from the lockfile serialized as JSON
     ///
     /// This is useful for consumption of the lockfile in other programs.
-    Requirements,
+    PrintFiles,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -206,7 +210,8 @@ async fn main() -> miette::Result<()> {
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run)
+            version,
+        } => command::package(output_directory, dry_run, version)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -242,7 +247,7 @@ async fn main() -> miette::Result<()> {
             "failed to list installed protobuf files for `{package}`"
         )),
         Command::Lock { command } => match command {
-            LockfileCommand::Requirements => command::lock::requirements().await.wrap_err(miette!(
+            LockfileCommand::PrintFiles => command::lock::print_files().await.wrap_err(miette!(
                 "failed to print locked file requirements of `{package}`"
             )),
         },
