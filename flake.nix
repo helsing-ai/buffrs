@@ -36,8 +36,7 @@
         devTools = [ rustToolchain ];
 
         dependencies = with pkgs;
-          [ libgit2 libiconv openssl openssl.dev ]
-          ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
+          [ libiconv ] ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
         nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
 
@@ -58,6 +57,8 @@
         #     please ensure you also make the corresponding changes in the devshell
         packages.default = buffrs.package;
         apps.default = flake-utils.lib.mkApp { drv = buffrs.package; };
+
+        lib.vendorDependencies = pkgs.callPackage ./downloadBuffrsDependencies.nix { inherit buffrs; };
 
         devShells.default = pkgs.mkShell ({
           inherit nativeBuildInputs;
