@@ -58,7 +58,8 @@
         packages.default = buffrs.package;
         apps.default = flake-utils.lib.mkApp { drv = buffrs.package; };
 
-        lib.vendorDependencies = pkgs.callPackage ./nix/cache.nix { inherit buffrs; };
+        lib.vendorDependencies =
+          pkgs.callPackage ./nix/cache.nix { inherit buffrs; };
 
         devShells.default = pkgs.mkShell ({
           inherit nativeBuildInputs;
