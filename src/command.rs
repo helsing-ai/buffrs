@@ -173,7 +173,7 @@ pub async fn package(
 
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modifed version in published manifest to {version}");
+            tracing::info!(":: modified version in published manifest to {version}");
 
             package.version = version;
         }
@@ -270,7 +270,7 @@ pub async fn publish(
 
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modifed version in published manifest to {version}");
+            tracing::info!(":: modified version in published manifest to {version}");
 
             package.version = version;
         }
