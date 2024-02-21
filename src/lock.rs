@@ -59,8 +59,6 @@ pub struct LockedPackage {
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
-    ///
-    /// Note that despite returning a Result this function never fails
     pub fn lock(
         package: &Package,
         registry: RegistryUri,
@@ -233,6 +231,7 @@ impl From<Lockfile> for Vec<FileRequirement> {
 /// by setting the filename to the digest in whatever download directory.
 #[derive(Serialize, Clone, PartialEq, Eq)]
 pub struct FileRequirement {
+    pub(crate) package: PackageName,
     pub(crate) url: Url,
     pub(crate) digest: Digest,
 }
@@ -264,9 +263,22 @@ impl FileRequirement {
         url.set_path(&new_path);
 
         Self {
+            package: name.to_owned(),
             url: url.into(),
             digest: digest.clone(),
         }
+    }
+}
+
+impl From<LockedPackage> for FileRequirement {
+    fn from(package: LockedPackage) -> Self {
+        Self::new(
+            &package.registry,
+            &package.repository,
+            &package.name,
+            &package.version,
+            &package.digest,
+        )
     }
 }
 

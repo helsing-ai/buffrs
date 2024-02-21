@@ -15,6 +15,10 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+use miette::Diagnostic;
+use std::{env, path::PathBuf};
+use thiserror::Error;
+
 /// Caching implementation
 pub mod cache;
 /// CLI command implementations
@@ -37,18 +41,24 @@ pub mod resolver;
 #[cfg(feature = "validation")]
 pub mod validation;
 
-/// Include generated rust language bindings for buffrs.
-///
-/// ```rust,ignore
-/// mod protos {
-///     buffrs::include!();
-/// }
-/// ```
-#[macro_export]
-macro_rules! include {
-    () => {
-        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
-    };
+/// Managed directory for `buffrs`
+pub const BUFFRS_HOME: &str = ".buffrs";
+
+pub(crate) const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
+
+#[derive(Error, Diagnostic, Debug)]
+#[error("could not determine buffrs home location")]
+struct HomeError(#[diagnostic_source] miette::Report);
+
+fn home() -> Result<PathBuf, HomeError> {
+    env::var(BUFFRS_HOME_VAR)
+        .map(PathBuf::from)
+        .or_else(|_| {
+            home::home_dir()
+                .ok_or_else(|| miette::miette!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+        })
+        .map(|home| home.join(BUFFRS_HOME))
+        .map_err(HomeError)
 }
 
 #[derive(Debug)]

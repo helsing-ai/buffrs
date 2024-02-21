@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use miette::{miette, Context, Diagnostic, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, io::ErrorKind, path::PathBuf};
-use thiserror::Error;
+use std::{collections::HashMap, io::ErrorKind, path::PathBuf};
 use tokio::fs;
 
 use crate::{
@@ -24,8 +23,6 @@ use crate::{
     ManagedFile,
 };
 
-/// Global configuration directory for `buffrs`
-pub const BUFFRS_HOME: &str = ".buffrs";
 /// Filename of the credential store
 pub const CREDENTIALS_FILE: &str = "credentials.toml";
 
@@ -38,26 +35,14 @@ pub struct Credentials {
     pub registry_tokens: HashMap<RegistryUri, String>,
 }
 
-const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
-
-#[derive(Error, Diagnostic, Debug)]
-#[error("could not determine credentials location")]
-struct LocateError(#[diagnostic_source] miette::Report);
-
-fn location() -> Result<PathBuf, LocateError> {
-    env::var(BUFFRS_HOME_VAR)
-        .map(PathBuf::from)
-        .or_else(|_| {
-            home::home_dir()
-                .ok_or_else(|| miette!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
-        })
-        .map(|home| home.join(BUFFRS_HOME).join(CREDENTIALS_FILE)).map_err(LocateError)
-}
-
 impl Credentials {
+    fn location() -> miette::Result<PathBuf> {
+        Ok(crate::home().into_diagnostic()?.join(CREDENTIALS_FILE))
+    }
+
     /// Checks if the credentials exists
     pub async fn exists() -> miette::Result<bool> {
-        fs::try_exists(location().into_diagnostic()?)
+        fs::try_exists(Self::location()?)
             .await
             .into_diagnostic()
             .wrap_err(FileExistsError(CREDENTIALS_FILE))
@@ -65,10 +50,8 @@ impl Credentials {
 
     /// Reads the credentials from the file system
     pub async fn read() -> miette::Result<Option<Self>> {
-        let location = location().into_diagnostic()?;
-
         // if the file does not exist, we don't need to treat it as an error.
-        match fs::read_to_string(&location).await {
+        match fs::read_to_string(Self::location()?).await {
             Ok(contents) => {
                 let raw: RawCredentialCollection = toml::from_str(&contents)
                     .into_diagnostic()
@@ -84,7 +67,7 @@ impl Credentials {
 
     /// Writes the credentials to the file system
     pub async fn write(&self) -> miette::Result<()> {
-        let location = location()?;
+        let location = Self::location()?;
 
         if let Some(parent) = location.parent() {
             // if directory already exists, error is returned but that is fine
