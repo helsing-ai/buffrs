@@ -32,7 +32,7 @@ let
 
   allPackages = map fetchPackages fileRequirements;
 in {
-  cache = symlinkJoin {
+  BUFFRS_CACHE_DIR = symlinkJoin {
     name = "buffrs-cache";
     paths = allPackages;
   };
