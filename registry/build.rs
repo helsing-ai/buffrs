@@ -26,14 +26,14 @@ async fn main() {
         dir
     };
 
-    env::set_current_dir(cwd).unwrap();
+    env::set_current_dir(&cwd).unwrap();
 
-    let store = Path::new(PackageStore::PROTO_VENDOR_PATH);
+    let store = cwd.join(PackageStore::PROTO_PATH);
 
-    let protos = PackageStore::current()
+    let protos = PackageStore::open(&store)
         .await
         .unwrap()
-        .collect(store, true)
+        .collect(&store, true)
         .await;
 
     let includes = &[store];
