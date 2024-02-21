@@ -1,9 +1,33 @@
-use std::path::Path;
+use std::{env, path::Path};
 
 use buffrs::package::PackageStore;
 
 #[tokio::main]
 async fn main() {
+    let cwd = {
+        let root = env!("CARGO_MANIFEST_DIR");
+
+        let mut workspace_dir = Path::new(root);
+
+        while !workspace_dir.ends_with("buffrs") {
+            workspace_dir = workspace_dir
+                .parent()
+                .expect("no path ending in 'buffrs' found in {root}");
+        }
+
+        let dir = workspace_dir.join("registry");
+
+        assert!(
+            dir.is_dir(),
+            "current directory not found in {}",
+            workspace_dir.display()
+        );
+
+        dir
+    };
+
+    env::set_current_dir(cwd).unwrap();
+
     let store = Path::new(PackageStore::PROTO_VENDOR_PATH);
 
     let protos = PackageStore::current()
