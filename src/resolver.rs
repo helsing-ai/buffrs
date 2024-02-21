@@ -186,7 +186,7 @@ impl DependencyGraph {
                     version: dependency.manifest.version,
                 })?;
 
-            cache.put(&local_locked, package.tgz.clone()).await.ok();
+            cache.put(local_locked, package.tgz.clone()).await.ok();
 
             Ok(package)
         } else {

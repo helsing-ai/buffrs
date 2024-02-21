@@ -175,7 +175,7 @@ mod deserializer {
                 {
                     match value {
                         c if c == CANARY_EDITION => Ok(Edition::Canary),
-                        c if c == "0.7" => Ok(Edition::Canary07),
+                        "0.7" => Ok(Edition::Canary07),
                         _ => Ok(Edition::Unknown),
                     }
                 }

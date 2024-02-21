@@ -91,7 +91,7 @@ impl Cache {
 
         cache.homogenize().await?;
 
-        return Ok(cache);
+        Ok(cache)
     }
 
     /// Homogenize the cache contents to adhere to the cache specification of buffrs
