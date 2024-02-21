@@ -28,9 +28,11 @@ async fn main() {
 
     env::set_current_dir(&cwd).unwrap();
 
-    let store = cwd.join(PackageStore::PROTO_PATH);
+    let store = cwd.join(PackageStore::PROTO_VENDOR_PATH);
 
-    let protos = PackageStore::open(&store)
+    dbg!(&store);
+
+    let protos = PackageStore::open(&cwd)
         .await
         .unwrap()
         .collect(&store, true)
