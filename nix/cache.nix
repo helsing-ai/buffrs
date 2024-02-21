@@ -15,6 +15,7 @@ let
   fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 
   fetchPackages = (file: let
+    package = file.package;
     prefix = "sha256:";
     sha256 = with lib; with file;
       assert strings.hasPrefix prefix digest;
@@ -26,7 +27,7 @@ let
     };
   in runCommand "extract" {} ''
     mkdir -p $out
-    cp ${tar} $out/sha256-${tar}.tgz
+    cp ${tar} $out/${package}.sha256.${tar}.tgz
   '');
 
   allPackages = map fetchPackages fileRequirements;
