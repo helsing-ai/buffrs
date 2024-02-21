@@ -77,7 +77,8 @@ enum Command {
         /// Override the version from the manifest
         ///
         /// Note: This overrides the version in the manifest.
-        version: Option<Version>,
+        #[clap(long)]
+        set_version: Option<Version>,
     },
 
     /// Packages and uploads this api to the registry
@@ -97,7 +98,8 @@ enum Command {
         /// Override the version from the manifest
         ///
         /// Note: This overrides the version in the manifest.
-        version: Option<Version>,
+        #[clap(long)]
+        set_version: Option<Version>,
     },
 
     /// Installs dependencies
@@ -210,8 +212,8 @@ async fn main() -> miette::Result<()> {
         Command::Package {
             output_directory,
             dry_run,
-            version,
-        } => command::package(output_directory, dry_run, version)
+            set_version,
+        } => command::package(output_directory, dry_run, set_version)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -221,13 +223,13 @@ async fn main() -> miette::Result<()> {
             repository,
             allow_dirty,
             dry_run,
-            version,
+            set_version,
         } => command::publish(
             registry.to_owned(),
             repository.to_owned(),
             allow_dirty,
             dry_run,
-            version,
+            set_version,
         )
         .await
         .wrap_err(miette!(

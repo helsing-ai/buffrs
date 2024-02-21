@@ -203,54 +203,6 @@ pub async fn package(
         ))
 }
 
-#[cfg(feature = "git")]
-async fn git_statuses() -> miette::Result<Vec<String>> {
-    let output = tokio::process::Command::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .output()
-        .await;
-
-    let output = match output {
-        Ok(output) => output,
-        Err(e) => {
-            tracing::error!("failed to run `git status`: {}", e);
-            return Ok(Vec::new());
-        }
-    };
-
-    let statuses = if output.status.success() {
-        let stdout = String::from_utf8(output.stdout)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the output of `git status`"
-            ))?;
-        let lines: Option<Vec<_>> = stdout
-            .lines()
-            .map(|line| {
-                line.split_once(' ')
-                    .map(|(_, filename)| filename.to_string())
-            })
-            .collect();
-
-        if let Some(statuses) = lines {
-            statuses
-        } else {
-            tracing::warn!("failed to parse `git status` output: {}", stdout);
-            Vec::new()
-        }
-    } else {
-        let stderr = String::from_utf8(output.stderr)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the error output of `git status`"
-            ))?;
-        tracing::error!("`git status` returned an error: {}", stderr);
-        Vec::new()
-    };
-    Ok(statuses)
-}
-
 /// Publishes the api package to the registry
 pub async fn publish(
     registry: RegistryUri,
@@ -259,6 +211,45 @@ pub async fn publish(
     dry_run: bool,
     version: Option<Version>,
 ) -> miette::Result<()> {
+    #[cfg(feature = "git")]
+    async fn git_statuses() -> miette::Result<Vec<String>> {
+        use std::process::Stdio;
+
+        let output = tokio::process::Command::new("git")
+            .arg("status")
+            .arg("--porcelain")
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        let output = match output {
+            Ok(output) => output,
+            Err(_) => {
+                return Ok(Vec::new());
+            }
+        };
+
+        if !output.status.success() {
+            return Ok(Vec::new());
+        }
+
+        let stdout = String::from_utf8(output.stdout)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "invalid utf-8 character in the output of `git status`"
+            ))?;
+
+        let lines: Option<Vec<_>> = stdout
+            .lines()
+            .map(|line| {
+                line.split_once(' ')
+                    .map(|(_, filename)| filename.to_string())
+            })
+            .collect();
+
+        Ok(lines.unwrap_or_default())
+    }
+
     #[cfg(feature = "git")]
     if let Ok(statuses) = git_statuses().await {
         if !allow_dirty && !statuses.is_empty() {

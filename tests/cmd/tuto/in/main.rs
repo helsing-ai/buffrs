@@ -1,5 +1,5 @@
 mod protos {
-    buffrs::include!();
+    tonic::include_proto!("buffrs");
 }
 
 struct Sensor;
