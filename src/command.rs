@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::{
+    cache::Cache,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
@@ -304,6 +305,7 @@ pub async fn install() -> miette::Result<()> {
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
+    let cache = Cache::open().await?;
 
     store.clear().await?;
 
@@ -312,7 +314,7 @@ pub async fn install() -> miette::Result<()> {
     }
 
     let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache)
             .await
             .wrap_err(miette!("dependency resolution failed"))?;
 
