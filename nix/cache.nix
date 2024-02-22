@@ -15,12 +15,10 @@ let
 
   fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 
-  fetchPackages = (file:
+  cachePackage = (file:
     let
-      package = file.package;
       prefix = "sha256:";
-      sha256 = with lib;
-        with file;
+      sha256 = with lib file;
         assert strings.hasPrefix prefix digest;
         strings.removePrefix prefix digest;
 
@@ -28,15 +26,15 @@ let
         inherit sha256;
         url = file.url;
       };
-    in runCommand "extract" { } ''
+    in runCommand "extract" { } (with file; ''
       mkdir -p $out
-      cp ${tar} $out/${package}.sha256.${tar}.tgz
-    '');
+      cp ${tar} $out/${package}.sha256.${digest}.tgz
+    ''));
 
-  allPackages = map fetchPackages fileRequirements;
+  cache = map cachePackage fileRequirements;
 in {
   BUFFRS_CACHE_DIR = symlinkJoin {
     name = "buffrs-cache";
-    paths = allPackages;
+    paths = cache;
   };
 }

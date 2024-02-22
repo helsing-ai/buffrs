@@ -6,12 +6,10 @@
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -42,14 +40,13 @@
 
         buildEnvVars = {
           NIX_LDFLAGS = [ "-L" "${pkgs.libiconv}/lib" ];
-
-          LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };
 
         buffrs = callPackage ./nix/buffrs.nix {
           inherit crane advisory-db buildEnvVars nativeBuildInputs
             rustToolchain;
+
           buildInputs = [ rustToolchain ];
         };
       in {
