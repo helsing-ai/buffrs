@@ -34,7 +34,7 @@ let
 
   cache = map cachePackage fileRequirements;
 in {
-  BUFFRS_CACHE_DIR = symlinkJoin {
+  BUFFRS_CACHE = symlinkJoin {
     name = "buffrs-cache";
     paths = cache;
   };
