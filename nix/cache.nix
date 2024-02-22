@@ -1,4 +1,5 @@
 { fetchurl, runCommand, lib, buffrs, symlinkJoin }:
+
 lockfile:
 
 let
@@ -18,18 +19,18 @@ let
   cachePackage = (file:
     let
       prefix = "sha256:";
-      sha256 = with lib file;
-        assert strings.hasPrefix prefix digest;
-        strings.removePrefix prefix digest;
+
+      sha256 = assert lib.strings.hasPrefix prefix file.digest;
+        lib.strings.removePrefix prefix file.digest;
 
       tar = fetchurl {
         inherit sha256;
         url = file.url;
       };
-    in runCommand "extract" { } (with file; ''
+    in runCommand "cache-${file.package}" { } ''
       mkdir -p $out
-      cp ${tar} $out/${package}.sha256.${digest}.tgz
-    ''));
+      cp ${tar} $out/${file.package}.sha256.${sha256}.tgz
+    '');
 
   cache = map cachePackage fileRequirements;
 in {
