@@ -1,4 +1,4 @@
-name: Buffrs CLI
+name: Buffrs CI
 
 on:
   push:
@@ -30,21 +30,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
 
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          lfs: "true"
-      - run: rustup update
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v2
-      - run: cargo install buffrs && cd registry && buffrs install
-      - run: cargo test --workspace
-        env:
-          RUST_BACKTRACE: 1
-
   deny:
     runs-on: ubuntu-latest
     steps:
@@ -54,7 +39,7 @@ jobs:
       - run: cargo install cargo-deny || true
       - run: cargo deny --workspace check
 
-  coverage:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -69,6 +54,8 @@ jobs:
         uses: arduino/setup-protoc@v2
       - run: cargo install buffrs && cd registry && buffrs install
       - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
+        env:
+          RUST_BACKTRACE: 1
 
   typos:
     runs-on: ubuntu-latest
