@@ -294,6 +294,8 @@ pub async fn install() -> miette::Result<()> {
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
+
+        tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
     }
 
     let dependency_graph =
