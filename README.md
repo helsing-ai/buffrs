@@ -12,10 +12,7 @@
 [![Buffrs Crate](https://img.shields.io/crates/v/buffrs.svg)](https://crates.io/crates/buffrs)
 [![Buffrs Book](https://img.shields.io/badge/book-latest-blueviolet.svg)](https://helsing-ai.github.io/buffrs)
 [![Buffrs Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://docs.rs/buffrs)
-
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/helsing-ai/buffrs/nix_ci_mac.yml?logo=nixos&label=mac%20build)
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/helsing-ai/buffrs/nix_ci_ubuntu.yml?logo=nixos&label=ubuntu%20build)
-
+![Nix Flake](https://img.shields.io/github/actions/workflow/status/helsing-ai/buffrs/nix.yml?logo=nixos&label=flake)
 
 </div>
 
