@@ -15,15 +15,18 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
+use miette::Diagnostic;
+use std::{env, path::PathBuf};
+use thiserror::Error;
+
+/// Caching implementation
+pub mod cache;
 /// CLI command implementations
 pub mod command;
 /// Credential management
 pub mod credentials;
 /// Common error types
 pub mod errors;
-/// Code generator
-#[cfg(feature = "build")]
-pub mod generator;
 /// Lockfile implementation
 pub mod lock;
 /// Manifest format and IO
@@ -38,36 +41,24 @@ pub mod resolver;
 #[cfg(feature = "validation")]
 pub mod validation;
 
-/// Cargo build integration for buffrs
-///
-/// Important: Only use this inside of cargo build scripts!
-#[cfg(feature = "build")]
-#[tokio::main(flavor = "current_thread")]
-pub async fn build() -> miette::Result<()> {
-    println!(
-        "cargo:rerun-if-changed={}",
-        package::PackageStore::PROTO_PATH
-    );
+/// Managed directory for `buffrs`
+pub const BUFFRS_HOME: &str = ".buffrs";
 
-    command::install().await?;
+pub(crate) const BUFFRS_HOME_VAR: &str = "BUFFRS_HOME";
 
-    generator::Generator::Tonic.generate().await?;
+#[derive(Error, Diagnostic, Debug)]
+#[error("could not determine buffrs home location")]
+struct HomeError(#[diagnostic_source] miette::Report);
 
-    Ok(())
-}
-
-/// Include generated rust language bindings for buffrs.
-///
-/// ```rust,ignore
-/// mod protos {
-///     buffrs::include!();
-/// }
-/// ```
-#[macro_export]
-macro_rules! include {
-    () => {
-        ::std::include!(concat!(env!("OUT_DIR"), "/buffrs.rs",));
-    };
+fn home() -> Result<PathBuf, HomeError> {
+    env::var(BUFFRS_HOME_VAR)
+        .map(PathBuf::from)
+        .or_else(|_| {
+            home::home_dir()
+                .ok_or_else(|| miette::miette!("{BUFFRS_HOME_VAR} is not set and the user's home folder could not be determined"))
+        })
+        .map(|home| home.join(BUFFRS_HOME))
+        .map_err(HomeError)
 }
 
 #[derive(Debug)]

@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "buffrs"
-version = "0.7.6"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -879,7 +879,6 @@ dependencies = [
  "pretty_assertions",
  "protobuf",
  "protobuf-parse",
- "protoc",
  "reqwest",
  "semver",
  "serde",
@@ -892,7 +891,6 @@ dependencies = [
  "thiserror",
  "tokio",
  "toml",
- "tonic-build",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -915,6 +913,7 @@ dependencies = [
  "eyre",
  "proptest",
  "prost",
+ "prost-types",
  "rand",
  "semver",
  "serde",
@@ -925,6 +924,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+ "tonic-build",
  "tonic-types",
  "tower",
  "tracing",
@@ -2799,9 +2799,9 @@ dependencies = [
 
 [[package]]
 name = "num_threads"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2819ce041d2ee131036f4fc9d6ae7ae125a3a40e97ba64d04fe799ad9dabbb44"
+checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
 dependencies = [
  "libc",
 ]
@@ -3175,16 +3175,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6872f4d4f4b98303239a2b5838f5bbbb77b01ffc892d627957f37a22d7cfe69c"
 dependencies = [
  "thiserror",
-]
-
-[[package]]
-name = "protoc"
-version = "2.28.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0218039c514f9e14a5060742ecd50427f8ac4f85a6dc58f2ddb806e318c55ee"
-dependencies = [
- "log",
- "which",
 ]
 
 [[package]]
@@ -4371,9 +4361,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d560933a0de61cf715926b9cac824d4c883c2c43142f787595e48280c40a1d0e"
+checksum = "76c4eb7a4e9ef9d4763600161f12f5070b92a578e1b634db88a6887844c91a13"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -4398,9 +4388,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
+checksum = "be4ef6dd70a610078cb4e338a0f79d06bc759ff1b22d2120c2ff02ae264ba9c2"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -4411,9 +4401,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-types"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b39bd850e4bf99146b3fd244019562cafd30338db068c5795c55b448eb02411"
+checksum = "f4aa089471d8d4c60ec3aef047739713a4695f0b309d4cea0073bc55201064f4"
 dependencies = [
  "prost",
  "prost-types",

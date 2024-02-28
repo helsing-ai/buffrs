@@ -151,7 +151,7 @@ impl Package {
     }
 
     /// Load a package from a precompressed archive.
-    fn parse(tgz: Bytes) -> miette::Result<Self> {
+    pub(crate) fn parse(tgz: Bytes) -> miette::Result<Self> {
         let mut tar = Vec::new();
 
         let mut gz = flate2::read::GzDecoder::new(tgz.clone().reader());

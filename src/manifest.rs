@@ -45,6 +45,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.7.x
+    Canary07,
     /// Unknown edition of manifests
     ///
     /// This is unrecommended as breaking changes could be introduced due to being
@@ -109,6 +111,7 @@ mod serializer {
         {
             match self {
                 Self::Canary => serializer.serialize_str(CANARY_EDITION),
+                Self::Canary07 => serializer.serialize_str("0.7"),
                 Self::Unknown => serializer.serialize_str("unknown"),
             }
         }
@@ -172,6 +175,7 @@ mod deserializer {
                 {
                     match value {
                         c if c == CANARY_EDITION => Ok(Edition::Canary),
+                        "0.7" => Ok(Edition::Canary07),
                         _ => Ok(Edition::Unknown),
                     }
                 }
@@ -226,7 +230,7 @@ mod deserializer {
                     let edition = serde_typename::from_str(&edition);
 
                     match edition {
-                        Ok(Edition::Canary) => Ok(RawManifest::Canary {
+                        Ok(Edition::Canary | Edition::Canary07) => Ok(RawManifest::Canary {
                             package,
                             dependencies,
                         }),
@@ -251,7 +255,7 @@ impl From<Manifest> for RawManifest {
             .collect();
 
         match manifest.edition {
-            Edition::Canary => RawManifest::Canary {
+            Edition::Canary | Edition::Canary07 => RawManifest::Canary {
                 package: manifest.package,
                 dependencies,
             },

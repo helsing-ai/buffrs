@@ -16,7 +16,6 @@ generally be more up-to-date.
     * [buffrs](buffrs.md)
     * [buffrs help](buffrs-help.md)
 * [Build Commands](build-commands.md)
-    * [buffrs generate](buffrs-generate.md)
     * [buffrs list](buffrs-list.md)
 * [Manifest Commands](manifest-commands.md)
     * [buffrs add](buffrs-add.md)

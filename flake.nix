@@ -6,12 +6,10 @@
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -36,21 +34,19 @@
         devTools = [ rustToolchain ];
 
         dependencies = with pkgs;
-          [ libgit2 libiconv openssl openssl.dev ]
-          ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
+          [ libiconv ] ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
 
         nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
 
         buildEnvVars = {
           NIX_LDFLAGS = [ "-L" "${pkgs.libiconv}/lib" ];
-
-          LIBGIT2_NO_VENDOR = 1;
           OPENSSL_NO_VENDOR = 1;
         };
 
         buffrs = callPackage ./nix/buffrs.nix {
           inherit crane advisory-db buildEnvVars nativeBuildInputs
             rustToolchain;
+
           buildInputs = [ rustToolchain ];
         };
       in {
@@ -58,6 +54,9 @@
         #     please ensure you also make the corresponding changes in the devshell
         packages.default = buffrs.package;
         apps.default = flake-utils.lib.mkApp { drv = buffrs.package; };
+
+        lib.vendorDependencies =
+          pkgs.callPackage ./nix/cache.nix { buffrs = buffrs.package; };
 
         devShells.default = pkgs.mkShell ({
           inherit nativeBuildInputs;

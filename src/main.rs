@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::path::PathBuf;
-
 use buffrs::command;
-use buffrs::generator::Language;
 use buffrs::manifest::Manifest;
 use buffrs::package::{PackageName, PackageStore};
 use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
-use miette::{miette, IntoDiagnostic, WrapErr};
+use miette::{miette, WrapErr};
+use semver::Version;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -76,6 +74,11 @@ enum Command {
         /// Generate package but do not write it to filesystem
         #[clap(long)]
         dry_run: bool,
+        /// Override the version from the manifest
+        ///
+        /// Note: This overrides the version in the manifest.
+        #[clap(long)]
+        set_version: Option<Version>,
     },
 
     /// Packages and uploads this api to the registry
@@ -92,6 +95,11 @@ enum Command {
         /// Abort right before uploading the release to the registry
         #[clap(long)]
         dry_run: bool,
+        /// Override the version from the manifest
+        ///
+        /// Note: This overrides the version in the manifest.
+        #[clap(long)]
+        set_version: Option<Version>,
     },
 
     /// Installs dependencies
@@ -102,18 +110,6 @@ enum Command {
     /// Lists all protobuf files managed by Buffrs to stdout
     #[clap(alias = "ls")]
     List,
-
-    /// Generate code from installed buffrs packages
-    #[clap(alias = "gen")]
-    Generate {
-        /// Language used for code generation
-        #[clap(long = "lang")]
-        #[arg(value_enum)]
-        language: Language,
-        /// Directory where generated code should be created
-        #[clap(long = "out-dir")]
-        out_dir: PathBuf,
-    },
 
     /// Logs you in for a registry
     Login {
@@ -127,6 +123,20 @@ enum Command {
         #[clap(long)]
         registry: RegistryUri,
     },
+
+    /// Lockfile related commands
+    Lock {
+        #[command(subcommand)]
+        command: LockfileCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum LockfileCommand {
+    /// Prints the file requirements derived from the lockfile serialized as JSON
+    ///
+    /// This is useful for consumption of the lockfile in other programs.
+    PrintFiles,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -151,9 +161,19 @@ async fn main() -> miette::Result<()> {
         None
     };
 
-    let package: PackageName = manifest
-        .and_then(|m| m.package.map(|p| p.name))
-        .unwrap_or(PackageName::new("current").into_diagnostic()?);
+    let package = {
+        let cwd = std::env::current_dir().unwrap();
+
+        let name = cwd
+            .file_name()
+            .ok_or_else(|| miette!("failed to locate current directory"))?
+            .to_str()
+            .ok_or_else(|| miette!("internal error"))?;
+
+        manifest
+            .and_then(|m| m.package.map(|p| p.name.to_string()))
+            .unwrap_or_else(|| name.to_string())
+    };
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -192,7 +212,8 @@ async fn main() -> miette::Result<()> {
         Command::Package {
             output_directory,
             dry_run,
-        } => command::package(output_directory, dry_run)
+            set_version,
+        } => command::package(output_directory, dry_run, set_version)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -202,11 +223,13 @@ async fn main() -> miette::Result<()> {
             repository,
             allow_dirty,
             dry_run,
+            set_version,
         } => command::publish(
             registry.to_owned(),
             repository.to_owned(),
             allow_dirty,
             dry_run,
+            set_version,
         )
         .await
         .wrap_err(miette!(
@@ -225,8 +248,10 @@ async fn main() -> miette::Result<()> {
         Command::List => command::list().await.wrap_err(miette!(
             "failed to list installed protobuf files for `{package}`"
         )),
-        Command::Generate { language, out_dir } => command::generate(language, out_dir)
-            .await
-            .wrap_err(miette!("failed to generate {language} language bindings")),
+        Command::Lock { command } => match command {
+            LockfileCommand::PrintFiles => command::lock::print_files().await.wrap_err(miette!(
+                "failed to print locked file requirements of `{package}`"
+            )),
+        },
     }
 }

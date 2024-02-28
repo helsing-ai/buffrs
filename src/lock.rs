@@ -19,6 +19,7 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
+use url::Url;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
@@ -36,7 +37,7 @@ pub const LOCKFILE: &str = "Proto.lock";
 /// Captures immutable metadata about a given package
 ///
 /// It is used to ensure that future installations will use the exact same dependencies.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LockedPackage {
     /// The name of the package
     pub name: PackageName,
@@ -58,8 +59,6 @@ pub struct LockedPackage {
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
-    ///
-    /// Note that despite returning a Result this function never fails
     pub fn lock(
         package: &Package,
         registry: RegistryUri,
@@ -218,5 +217,79 @@ impl FromIterator<LockedPackage> for Lockfile {
                 .map(|locked| (locked.name.clone(), locked))
                 .collect(),
         }
+    }
+}
+
+impl From<Lockfile> for Vec<FileRequirement> {
+    fn from(lock: Lockfile) -> Self {
+        lock.packages.values().map(FileRequirement::from).collect()
+    }
+}
+
+/// A requirement from a lockfile on a specific file being available in order to build the
+/// overall graph. It's expected that when a file is downloaded, it's made available to buffrs
+/// by setting the filename to the digest in whatever download directory.
+#[derive(Serialize, Clone, PartialEq, Eq)]
+pub struct FileRequirement {
+    pub(crate) package: PackageName,
+    pub(crate) url: Url,
+    pub(crate) digest: Digest,
+}
+
+impl FileRequirement {
+    /// URL where the file can be located.
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    /// Construct new file requirement.
+    pub fn new(
+        url: &RegistryUri,
+        repository: &String,
+        name: &PackageName,
+        version: &Version,
+        digest: &Digest,
+    ) -> Self {
+        let mut url = url.clone();
+        let new_path = format!(
+            "{}/{}/{}/{}-{}.tgz",
+            url.path(),
+            repository,
+            name,
+            name,
+            version
+        );
+
+        url.set_path(&new_path);
+
+        Self {
+            package: name.to_owned(),
+            url: url.into(),
+            digest: digest.clone(),
+        }
+    }
+}
+
+impl From<LockedPackage> for FileRequirement {
+    fn from(package: LockedPackage) -> Self {
+        Self::new(
+            &package.registry,
+            &package.repository,
+            &package.name,
+            &package.version,
+            &package.digest,
+        )
+    }
+}
+
+impl From<&LockedPackage> for FileRequirement {
+    fn from(package: &LockedPackage) -> Self {
+        Self::new(
+            &package.registry,
+            &package.repository,
+            &package.name,
+            &package.version,
+            &package.digest,
+        )
     }
 }

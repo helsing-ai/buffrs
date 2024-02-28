@@ -158,7 +158,7 @@ fn fixture() {
                     "add",
                     "buffrs",
                     "--build",
-                    "--features=build",
+                    "--no-default-features",
                     "--path",
                     git_root
                 ])

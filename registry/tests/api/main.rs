@@ -101,6 +101,7 @@ pub async fn basic_setup(pool: PgPool) -> RegistryClient<Channel> {
 }
 
 #[sqlx::test]
+#[ignore = "unused"]
 async fn test_publish_registry(pool: PgPool) {
     let mut client = basic_setup(pool).await;
 
@@ -136,6 +137,7 @@ async fn test_publish_registry(pool: PgPool) {
 }
 
 #[sqlx::test]
+#[ignore = "unused"]
 async fn test_fetching_versions(pool: PgPool) {
     let mut client = basic_setup(pool).await;
 

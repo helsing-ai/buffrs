@@ -21,8 +21,8 @@
     * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)
     * [Buffrs Home](guide/buffrs-home.md)
 
-* [Buffrs Integrations](integrations/index.md)
-    * [Cargo](integrations/cargo.md)
+* [Buffrs Integrations]()
+    * [Cargo]()
     * [Poetry]()
     * [Npm]()
 

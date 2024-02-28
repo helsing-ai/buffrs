@@ -6,6 +6,7 @@ use semver::VersionReq;
 use thiserror::Error;
 
 use crate::{
+    cache::Cache,
     credentials::Credentials,
     lock::Lockfile,
     manifest::{Dependency, Manifest},
@@ -53,6 +54,7 @@ impl DependencyGraph {
         manifest: &Manifest,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache: &Cache,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -69,6 +71,7 @@ impl DependencyGraph {
                 true,
                 lockfile,
                 credentials,
+                cache,
                 &mut entries,
             )
             .await?;
@@ -84,6 +87,7 @@ impl DependencyGraph {
         is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -91,17 +95,17 @@ impl DependencyGraph {
             ensure!(
                 version_req.matches(entry.package.version()),
                 "a dependency of your project requires {}@{} which collides with {}@{} required by {:?}", 
-                    dependency.package,
-                    dependency.manifest.version,
-                    entry.dependants[0].name.clone(),
-                    dependency.manifest.version,
-                    entry.package.manifest.package.as_ref().map(|p| &p.version)
+                dependency.package,
+                dependency.manifest.version,
+                entry.dependants[0].name.clone(),
+                dependency.manifest.version,
+                entry.package.manifest.package.as_ref().map(|p| &p.version)
             );
 
             entry.dependants.push(Dependant { name, version_req });
         } else {
             let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials).await?;
+                Self::resolve(dependency.clone(), is_root, lockfile, credentials, cache).await?;
 
             let dependency_name = dependency_pkg.name().clone();
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -128,6 +132,7 @@ impl DependencyGraph {
                     false,
                     lockfile,
                     credentials,
+                    cache,
                     entries,
                 )
                 .await?;
@@ -142,6 +147,7 @@ impl DependencyGraph {
         is_root: bool,
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
+        cache: &Cache,
     ) -> miette::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
@@ -160,6 +166,12 @@ impl DependencyGraph {
                     local_locked.registry,
             );
 
+            if let Some(cached) = cache.get(local_locked.into()).await? {
+                local_locked.validate(&cached)?;
+
+                return Ok(cached);
+            }
+
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
                 .wrap_err(DownloadError {
                     name: dependency.package.clone(),
@@ -174,7 +186,7 @@ impl DependencyGraph {
                     version: dependency.manifest.version,
                 })?;
 
-            local_locked.validate(&package)?;
+            cache.put(local_locked, package.tgz.clone()).await.ok();
 
             Ok(package)
         } else {

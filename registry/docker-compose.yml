@@ -21,15 +21,3 @@ services:
       MINIO_DOMAIN: localhost
     ports:
       - 127.0.0.1:9000:9000
-  database-migration:
-    image: postgres:16
-    environment:
-      POSTGRES_PASSWORD: buffrs
-      POSTGRES_USER: buffrs
-      POSTGRES_HOST: database
-    depends_on:
-      database:
-        condition: service_healthy
-    volumes:
-    - "./migrations:/migrations"
-    command: ["/bin/bash", "/migrations/up.sh", "/migrations"]

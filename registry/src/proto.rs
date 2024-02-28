@@ -18,4 +18,4 @@
 
 #![allow(missing_docs)]
 
-::buffrs::include!();
+::tonic::include_proto!("buffrs");

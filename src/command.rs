@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::{
+    cache::Cache,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
@@ -20,11 +21,6 @@ use crate::{
     registry::{Artifactory, RegistryUri},
     resolver::DependencyGraph,
 };
-
-#[cfg(feature = "build")]
-use crate::generator::{Generator, Language};
-#[cfg(feature = "build")]
-use std::path::PathBuf;
 
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
@@ -167,9 +163,21 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 }
 
 /// Packages the api and writes it to the filesystem
-pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Result<()> {
-    let manifest = Manifest::read().await?;
+pub async fn package(
+    directory: impl AsRef<Path>,
+    dry_run: bool,
+    version: Option<Version>,
+) -> miette::Result<()> {
+    let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
+
+    if let Some(version) = version {
+        if let Some(ref mut package) = manifest.package {
+            tracing::info!(":: modified version in published manifest to {version}");
+
+            package.version = version;
+        }
+    }
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
@@ -195,28 +203,42 @@ pub async fn package(directory: impl AsRef<Path>, dry_run: bool) -> miette::Resu
         ))
 }
 
-#[cfg(feature = "git")]
-async fn git_statuses() -> miette::Result<Vec<String>> {
-    let output = tokio::process::Command::new("git")
-        .arg("status")
-        .arg("--porcelain")
-        .output()
-        .await;
+/// Publishes the api package to the registry
+pub async fn publish(
+    registry: RegistryUri,
+    repository: String,
+    #[cfg(feature = "git")] allow_dirty: bool,
+    dry_run: bool,
+    version: Option<Version>,
+) -> miette::Result<()> {
+    #[cfg(feature = "git")]
+    async fn git_statuses() -> miette::Result<Vec<String>> {
+        use std::process::Stdio;
 
-    let output = match output {
-        Ok(output) => output,
-        Err(e) => {
-            tracing::error!("failed to run `git status`: {}", e);
+        let output = tokio::process::Command::new("git")
+            .arg("status")
+            .arg("--porcelain")
+            .stderr(Stdio::null())
+            .output()
+            .await;
+
+        let output = match output {
+            Ok(output) => output,
+            Err(_) => {
+                return Ok(Vec::new());
+            }
+        };
+
+        if !output.status.success() {
             return Ok(Vec::new());
         }
-    };
 
-    let statuses = if output.status.success() {
         let stdout = String::from_utf8(output.stdout)
             .into_diagnostic()
             .wrap_err(miette!(
                 "invalid utf-8 character in the output of `git status`"
             ))?;
+
         let lines: Option<Vec<_>> = stdout
             .lines()
             .map(|line| {
@@ -225,34 +247,11 @@ async fn git_statuses() -> miette::Result<Vec<String>> {
             })
             .collect();
 
-        if let Some(statuses) = lines {
-            statuses
-        } else {
-            tracing::warn!("failed to parse `git status` output: {}", stdout);
-            Vec::new()
-        }
-    } else {
-        let stderr = String::from_utf8(output.stderr)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the error output of `git status`"
-            ))?;
-        tracing::error!("`git status` returned an error: {}", stderr);
-        Vec::new()
-    };
-    Ok(statuses)
-}
+        Ok(lines.unwrap_or_default())
+    }
 
-/// Publishes the api package to the registry
-pub async fn publish(
-    registry: RegistryUri,
-    repository: String,
-    #[cfg(feature = "git")] allow_dirty: bool,
-    dry_run: bool,
-) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    {
-        let statuses = git_statuses().await?;
+    if let Ok(statuses) = git_statuses().await {
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
 
@@ -264,10 +263,18 @@ pub async fn publish(
         }
     }
 
-    let manifest = Manifest::read().await?;
+    let mut manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
+
+    if let Some(version) = version {
+        if let Some(ref mut package) = manifest.package {
+            tracing::info!(":: modified version in published manifest to {version}");
+
+            package.version = version;
+        }
+    }
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
@@ -289,6 +296,7 @@ pub async fn install() -> miette::Result<()> {
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
+    let cache = Cache::open().await?;
 
     store.clear().await?;
 
@@ -299,7 +307,7 @@ pub async fn install() -> miette::Result<()> {
     }
 
     let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into())
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache)
             .await
             .wrap_err(miette!("dependency resolution failed"))?;
 
@@ -428,15 +436,6 @@ pub async fn lint() -> miette::Result<()> {
     Ok(())
 }
 
-/// Generate bindings for a given language
-#[cfg(feature = "build")]
-pub async fn generate(language: Language, out_dir: PathBuf) -> miette::Result<()> {
-    Generator::Protoc { language, out_dir }
-        .generate()
-        .await
-        .wrap_err(miette!("failed to generate {language} bindings"))
-}
-
 /// Logs you in for a registry
 pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
@@ -473,6 +472,26 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await
+}
+
+/// Commands on the lockfile
+pub mod lock {
+    use super::*;
+    use crate::lock::FileRequirement;
+
+    /// Prints the file requirements serialized as JSON
+    pub async fn print_files() -> miette::Result<()> {
+        let lock = Lockfile::read().await?;
+
+        let requirements: Vec<FileRequirement> = lock.into();
+
+        // hint: always ok, as per serde_json doc
+        if let Ok(json) = serde_json::to_string_pretty(&requirements) {
+            println!("{json}");
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

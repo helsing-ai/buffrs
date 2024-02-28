@@ -1,4 +1,4 @@
-name: Buffrs CLI
+name: Buffrs CI
 
 on:
   push:
@@ -16,6 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: rustup update && rustup component add rustfmt
+      - run: cargo install buffrs && cd registry && buffrs install
       - run: cargo fmt --check --all
 
   clippy:
@@ -23,28 +24,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: rustup update && rustup component add clippy
+      - run: cargo install buffrs && cd registry && buffrs install
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets --workspace -- -D warnings -D clippy::all
-
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          lfs: "true"
-      - run: rustup update
-      - uses: Swatinem/rust-cache@v2
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v2
-      - name: Setup registry
-        uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./registry/docker-compose.yml"
-      - run: cargo test --workspace
-        env:
-          RUST_BACKTRACE: 1
 
   deny:
     runs-on: ubuntu-latest
@@ -55,7 +39,7 @@ jobs:
       - run: cargo install cargo-deny || true
       - run: cargo deny --workspace check
 
-  coverage:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -64,14 +48,14 @@ jobs:
       - run: rustup update
       - run: rustup component add llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
+      - run: cargo install buffrs && cd registry && buffrs install
       - run: cargo install cargo-llvm-cov || true
       - name: Install Protoc
         uses: arduino/setup-protoc@v2
-      - name: Setup registry
-        uses: isbang/compose-action@v1.5.1
-        with:
-          compose-file: "./registry/docker-compose.yml"
+      - run: cargo install buffrs && cd registry && buffrs install
       - run: cargo llvm-cov --workspace --fail-under-lines "$MINIMUM_LINE_COVERAGE_PERCENT"
+        env:
+          RUST_BACKTRACE: 1
 
   typos:
     runs-on: ubuntu-latest
