@@ -7,6 +7,7 @@ let
 
   intoFileRequirement = locked: {
     inherit (locked) digest;
+    package = locked.name;
     url = locked.registry + "/" + locked.repository + "/" + locked.name + "/" locked.name + "-" +  locked.version + ".tgz";
   };
 
