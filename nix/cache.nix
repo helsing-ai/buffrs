@@ -3,18 +3,14 @@
 lockfile:
 
 let
-  src = runCommand "vendor-lockfile" { } ''
-    mkdir -p $out
-    cp ${lockfile} $out/Proto.lock
-  '';
+  lock = builtins.fromTOML (builtins.readFile lockfile);
 
-  fileRequirementsJson =
-    runCommand "buffrs-urls" { buildInputs = [ buffrs ]; } ''
-      cd ${src}
-      buffrs lock print-files > $out
-    '';
+  intoFileRequirement = locked: {
+    inherit (locked) digest;
+    url = locked.registry + "/" + locked.repository + "/" + locked.name + "/" locked.name + "-" +  locked.version + ".tgz";
+  };
 
-  fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
+  fileRequirements = map intoFileRequirement lock.packages;
 
   cachePackage = (file:
     let
