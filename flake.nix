@@ -59,7 +59,7 @@
           pkgs.callPackage ./nix/cache.nix { buffrs = buffrs.package; };
 
         devShells.default = pkgs.mkShell ({
-          inherit nativeBuildInputs;
+          nativeBuildInputs = nativeBuildInputs ++ [ pkgs.protobuf ];
           buildInputs = devTools ++ dependencies;
         } // buildEnvVars);
 
