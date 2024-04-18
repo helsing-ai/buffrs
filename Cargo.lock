@@ -868,9 +868,9 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_test",
- "serde_typename",
  "sha2",
  "similar-asserts",
+ "strum",
  "tar",
  "thiserror",
  "tokio",
@@ -3549,15 +3549,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_typename"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2531ff92ba8ea226702685bdd332d30dd56e7d2717c322ec035fc7bb277abfbd"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3980,6 +3971,28 @@ checksum = "a60bcaff7397072dca0017d1db428e30d5002e00b6847703e2e42005c95fbe00"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn 2.0.60",
+]
+
+[[package]]
+name = "strum"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d8cec3501a5194c432b2b7976db6b7d10ec95c253208b45f83f7136aa985e29"
+dependencies = [
+ "strum_macros",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.26.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6cf59daf282c0a494ba14fd21610a0325f9f90ec9d1231dea26bcb1d696c946"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "rustversion",
  "syn 2.0.60",
 ]
 
