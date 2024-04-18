@@ -38,7 +38,7 @@ impl Cache {
     /// Open the cache
     pub async fn open() -> miette::Result<Self> {
         if let Ok(cache) = std::env::var(CACHE_ENV_VAR).map(PathBuf::from) {
-            if let false = tokio::fs::try_exists(&cache)
+            let cache_dir_exists = tokio::fs::try_exists(&cache)
                 .await
                 .into_diagnostic()
                 .wrap_err_with(|| {
@@ -46,8 +46,8 @@ impl Cache {
                         "internal: failed to verify if cache set by {CACHE_ENV_VAR} ({}) exists",
                         cache.display()
                     )
-                })?
-            {
+                })?;
+            if !cache_dir_exists {
                 tokio::fs::create_dir_all(&cache)
                     .await
                     .into_diagnostic()
