@@ -66,7 +66,7 @@
         formatter = with pkgs;
           writeShellApplication {
             name = "nixfmt-nix-files";
-            runtimeInputs = [ fd nixfmt ];
+            runtimeInputs = [ fd nixfmt-classic ];
             text = "fd \\.nix\\$ --hidden --type f | xargs nixfmt";
           };
 
@@ -76,7 +76,7 @@
             dontBuild = true;
             src = ./.;
             doCheck = true;
-            nativeBuildInputs = with pkgs; [ fd nixfmt ];
+            nativeBuildInputs = with pkgs; [ fd nixfmt-classic ];
             checkPhase = ''
               set -e
               # find all nix files, and verify that they're formatted correctly
