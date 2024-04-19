@@ -37,7 +37,8 @@ pub const MANIFEST_FILE: &str = "Proto.toml";
 pub const CANARY_EDITION: &str = concat!("0.", env!("CARGO_PKG_VERSION_MINOR"));
 
 /// Edition of the buffrs manifest
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(into = "&str", from = "&str")]
 pub enum Edition {
     /// The canary edition of manifests
     ///
@@ -58,6 +59,26 @@ impl Edition {
     /// The current / latest edition of buffrs
     pub fn latest() -> Self {
         Self::Canary
+    }
+}
+
+impl From<&str> for Edition {
+    fn from(value: &str) -> Self {
+        match value {
+            self::CANARY_EDITION => Self::Canary,
+            "0.7" => Self::Canary07,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<Edition> for &'static str {
+    fn from(value: Edition) -> Self {
+        match value {
+            Edition::Canary => CANARY_EDITION,
+            Edition::Canary07 => "0.7",
+            Edition::Unknown => "unknown",
+        }
     }
 }
 
@@ -104,19 +125,6 @@ mod serializer {
     use super::*;
     use serde::{ser::SerializeStruct, Serializer};
 
-    impl Serialize for Edition {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            match self {
-                Self::Canary => serializer.serialize_str(CANARY_EDITION),
-                Self::Canary07 => serializer.serialize_str("0.7"),
-                Self::Unknown => serializer.serialize_str("unknown"),
-            }
-        }
-    }
-
     impl Serialize for RawManifest {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
@@ -154,36 +162,6 @@ mod deserializer {
     };
 
     use super::*;
-
-    impl<'de> Deserialize<'de> for Edition {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            struct EditionVisitor;
-
-            impl<'de> serde::de::Visitor<'de> for EditionVisitor {
-                type Value = Edition;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a valid edition string")
-                }
-
-                fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-                where
-                    E: serde::de::Error,
-                {
-                    match value {
-                        c if c == CANARY_EDITION => Ok(Edition::Canary),
-                        "0.7" => Ok(Edition::Canary07),
-                        _ => Ok(Edition::Unknown),
-                    }
-                }
-            }
-
-            deserializer.deserialize_str(EditionVisitor)
-        }
-    }
 
     impl<'de> Deserialize<'de> for RawManifest {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -227,14 +205,12 @@ mod deserializer {
                         });
                     };
 
-                    let edition = serde_typename::from_str(&edition);
-
-                    match edition {
-                        Ok(Edition::Canary | Edition::Canary07) => Ok(RawManifest::Canary {
+                    match Edition::from(edition.as_str()) {
+                        Edition::Canary | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
                         }),
-                        Ok(Edition::Unknown) | Err(_) => Err(de::Error::custom(
+                        Edition::Unknown => Err(de::Error::custom(
                             format!("unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}", env!("CARGO_PKG_VERSION"))
                         )),
                     }

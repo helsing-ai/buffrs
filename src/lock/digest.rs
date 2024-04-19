@@ -16,14 +16,18 @@ use std::{fmt, str::FromStr};
 
 use serde::{de::Visitor, Deserialize, Serialize};
 use sha2::Digest as _;
+use strum::{Display, EnumString};
 use thiserror::Error;
 
 /// Supported types of digest algorithms.
 // Do not reorder variants; the ordering is significant, see #38 and #106.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, EnumString, Display,
+)]
 pub enum DigestAlgorithm {
     /// SHA-2 with 256 bits
     #[serde(rename = "sha256")]
+    #[strum(serialize = "sha256")]
     SHA256,
 }
 
@@ -49,30 +53,10 @@ pub enum DigestAlgorithmError {
     UnsupportedAlgorithm(String),
 }
 
-impl FromStr for DigestAlgorithm {
-    type Err = DigestAlgorithmError;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match serde_typename::from_str(input) {
-            Ok(value) => Ok(value),
-            _other => Err(DigestAlgorithmError::UnsupportedAlgorithm(input.into())),
-        }
-    }
-}
-
 #[test]
 fn can_parse_digest_algorithm() {
     assert!(matches!("sha256".parse(), Ok(DigestAlgorithm::SHA256)));
     assert!("md5".parse::<DigestAlgorithm>().is_err());
-}
-
-impl fmt::Display for DigestAlgorithm {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match serde_typename::to_str(self) {
-            Ok(name) => fmt.write_str(name),
-            Err(error) => unreachable!("cannot convert DigestAlgorithm to string: {error}"),
-        }
-    }
 }
 
 #[test]
@@ -121,7 +105,9 @@ impl FromStr for Digest {
         let Some((algorithm_str, digest_str)) = input.split_once(':') else {
             return Err(DigestError::MissingDelimiter);
         };
-        let algorithm: DigestAlgorithm = algorithm_str.parse()?;
+        let algorithm: DigestAlgorithm = algorithm_str
+            .parse()
+            .map_err(|_| DigestAlgorithmError::UnsupportedAlgorithm(algorithm_str.into()))?;
         let digest = hex::decode(digest_str)?;
         Ok(Self { algorithm, digest })
     }

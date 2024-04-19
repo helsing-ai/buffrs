@@ -186,8 +186,8 @@ mod test {
     #[test]
     fn snake_case() {
         assert_eq!(
-            PackageName::new("serde_typename"),
-            Err(PackageNameError::InvalidCharacter('_', 5))
+            PackageName::new("with_underscore"),
+            Err(PackageNameError::InvalidCharacter('_', 4))
         );
     }
 }

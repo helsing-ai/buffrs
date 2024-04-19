@@ -13,10 +13,23 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
-use std::{fmt, str::FromStr};
+use strum::{Display, EnumString};
 
 /// Package types
-#[derive(Copy, Clone, Debug, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Hash,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    EnumString,
+    Display,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PackageType {
     /// A library package containing primitive type definitions
@@ -33,23 +46,6 @@ impl TryFrom<i32> for PackageType {
             1 => Ok(PackageType::Lib),
             2 => Ok(PackageType::Api),
             _ => Err("Invalid value, check `PackageType` potential values"),
-        }
-    }
-}
-
-impl FromStr for PackageType {
-    type Err = serde_typename::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        serde_typename::from_str(s)
-    }
-}
-
-impl fmt::Display for PackageType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match serde_typename::to_str(self) {
-            Ok(value) => f.write_str(value),
-            Err(_error) => unreachable!(),
         }
     }
 }

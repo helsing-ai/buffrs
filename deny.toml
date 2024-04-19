@@ -1,7 +1,6 @@
 [licenses]
-unlicensed = "deny"
-allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-DFS-2016", "ISC"]
-default = "deny"
+version = 2
+allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-DFS-2016", "ISC", "MPL-2.0"]
 
 [[licenses.clarify]]
 name = "ring"
@@ -12,5 +11,18 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 multiple-versions = "warn"
 wildcards = "deny"
 
+skip = [
+    { crate = "bitflags@1",     reason = "used by `redox`, `security-framework` and `system-configuration`" },
+    { crate = "hashbrown@0.12", reason = "used by `protobuf-parse`" },
+    { crate = "heck@0.4",       reason = "used by `strum` and `sqlx`" },
+    { crate = "indexmap@1",     reason = "used by `protobuf-parse`" },
+    { crate = "syn@1",          reason = "used by `diff_derive`" },
+]
+
+skip-tree = [
+    { crate = "windows-sys",     reason = "Several foundational crates are not yet up to date" },
+    { crate = "windows-targets", reason = "Several foundational crates are not yet up to date" },
+]
+
 [advisories]
-ignore = ["RUSTSEC-2024-0013"]
+version = 2
