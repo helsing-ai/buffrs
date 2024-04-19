@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::{
+    io::ErrorKind,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -38,25 +39,35 @@ impl Cache {
     /// Open the cache
     pub async fn open() -> miette::Result<Self> {
         if let Ok(cache) = std::env::var(CACHE_ENV_VAR).map(PathBuf::from) {
-            let cache_dir_exists = tokio::fs::try_exists(&cache)
-                .await
-                .into_diagnostic()
-                .wrap_err_with(|| {
+            let res = tokio::fs::create_dir_all(&cache).await;
+
+            match res {
+                Ok(()) => (),
+                // If the filesystem entry already exists, check if it's a directory,
+                // this allow us to give a nicer error message
+                Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+                    let is_dir = tokio::fs::metadata(&cache)
+                        .await
+                        .into_diagnostic()
+                        .wrap_err_with(|| miette!(
+                            "internal: failed to get metadata for cache dir set by {CACHE_ENV_VAR} ({})",
+                            cache.display()
+                        ))?
+                        .is_dir();
+
+                    if !is_dir {
+                        return Err(miette!(
+                            "internal: failed to initialize cache dir set by {CACHE_ENV_VAR}: '{}' exists but is not directory",
+                            cache.display()
+                        ));
+                    }
+                }
+                other => other.into_diagnostic().wrap_err_with(|| {
                     miette!(
-                        "internal: failed to verify if cache set by {CACHE_ENV_VAR} ({}) exists",
+                        "internal: failed to initialize cache dir set by {CACHE_ENV_VAR} ({})",
                         cache.display()
                     )
-                })?;
-            if !cache_dir_exists {
-                tokio::fs::create_dir_all(&cache)
-                    .await
-                    .into_diagnostic()
-                    .wrap_err_with(|| {
-                        miette!(
-                            "internal: failed to initialize cache dir set by {CACHE_ENV_VAR} ({})",
-                            cache.display()
-                        )
-                    })?
+                })?,
             }
 
             let path = tokio::fs::canonicalize(cache)
