@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 #[serde(try_from = "String", into = "String")]
 pub struct PackageName(String);
 
-/// Errors that can be generated parsing [`PackageName`][], see [`PackageName::new()`][].
+/// Errors that can be generated parsing [`PackageName`], see [`PackageName::new()`].
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum PackageNameError {
     /// Empty package name.
