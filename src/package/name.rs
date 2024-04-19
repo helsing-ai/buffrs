@@ -39,8 +39,29 @@ pub enum PackageNameError {
     InvalidCharacter(char, usize),
 }
 
+impl super::ParseError for PackageNameError {
+    #[inline]
+    fn empty() -> Self {
+        Self::Empty
+    }
+
+    #[inline]
+    fn too_long(current_length: usize) -> Self {
+        Self::TooLong(current_length)
+    }
+
+    #[inline]
+    fn invalid_start(first: char) -> Self {
+        Self::InvalidStart(first)
+    }
+
+    #[inline]
+    fn invalid_character(found: char, pos: usize) -> Self {
+        Self::InvalidCharacter(found, pos)
+    }
+}
+
 impl PackageName {
-    const MIN_LENGTH: usize = 1;
     const MAX_LENGTH: usize = 128;
 
     /// New package name from string.
@@ -55,53 +76,9 @@ impl PackageName {
         Self(value.into())
     }
 
-    /// Determine if this character is allowed at the start of a package name.
-    fn is_allowed_start(c: char) -> bool {
-        c.is_alphabetic()
-    }
-
-    /// Determine if this character is allowed anywhere in a package name.
-    fn is_allowed(c: char) -> bool {
-        let is_ascii_lowercase_alphanumeric =
-            |c: char| c.is_ascii_alphanumeric() && !c.is_ascii_uppercase();
-        match c {
-            '-' => true,
-            c if is_ascii_lowercase_alphanumeric(c) => true,
-            _ => false,
-        }
-    }
-
     /// Validate a package name.
     pub fn validate(name: impl AsRef<str>) -> Result<(), PackageNameError> {
-        let name = name.as_ref();
-
-        // validate length
-        if name.len() < Self::MIN_LENGTH {
-            return Err(PackageNameError::Empty);
-        }
-
-        if name.len() > Self::MAX_LENGTH {
-            return Err(PackageNameError::TooLong(name.len()));
-        }
-
-        // validate first character
-        match name.chars().next() {
-            Some(c) if Self::is_allowed_start(c) => {}
-            Some(c) => return Err(PackageNameError::InvalidStart(c)),
-            None => unreachable!(),
-        }
-
-        // validate all characters
-        let illegal = name
-            .chars()
-            .enumerate()
-            .find(|(_, c)| !Self::is_allowed(*c));
-
-        if let Some((index, c)) = illegal {
-            return Err(PackageNameError::InvalidCharacter(c, index));
-        }
-
-        Ok(())
+        super::validate(name.as_ref(), &[b'-'], Self::MAX_LENGTH)
     }
 }
 
@@ -148,7 +125,6 @@ mod test {
     #[test]
     fn ascii_lowercase() {
         assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
-        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
     }
 
     #[test]
@@ -160,13 +136,13 @@ mod test {
     #[test]
     fn long() {
         assert_eq!(
-            PackageName::new("a".repeat(128)),
-            Ok(PackageName("a".repeat(128)))
+            PackageName::new("a".repeat(PackageName::MAX_LENGTH)),
+            Ok(PackageName("a".repeat(PackageName::MAX_LENGTH)))
         );
 
         assert_eq!(
-            PackageName::new("a".repeat(129)),
-            Err(PackageNameError::TooLong(129))
+            PackageName::new("a".repeat(PackageName::MAX_LENGTH + 1)),
+            Err(PackageNameError::TooLong(PackageName::MAX_LENGTH + 1))
         );
     }
 
