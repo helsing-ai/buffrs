@@ -32,6 +32,8 @@ use crate::{
     ManagedFile,
 };
 
+use super::PackageDirectory;
+
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
@@ -206,6 +208,31 @@ impl Package {
             .as_ref()
             .expect("compressed package contains invalid manifest (package section missing)")
             .name
+    }
+
+    /// The directory of this package
+    #[inline]
+    pub fn directory(&self) -> Option<&PackageDirectory> {
+        assert!(self.manifest.package.is_some());
+
+        self.manifest
+            .package
+            .as_ref()
+            .expect("compressed package contains invalid manifest (package section missing)")
+            .directory
+            .as_ref()
+    }
+
+    /// Directory for this oackage
+    #[inline]
+    pub fn directory_str(&self) -> &str {
+        assert!(self.manifest.package.is_some());
+
+        self.manifest
+            .package
+            .as_ref()
+            .expect("compressed package contains invalid manifest (package section missing)")
+            .directory()
     }
 
     /// The version of this package

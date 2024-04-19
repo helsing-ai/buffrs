@@ -13,11 +13,15 @@
 // limitations under the License.
 
 mod compressed;
+mod directory;
 mod name;
 mod store;
 mod r#type;
 
-pub use self::{compressed::Package, name::PackageName, r#type::PackageType, store::PackageStore};
+pub use self::{
+    compressed::Package, directory::PackageDirectory, name::PackageName, r#type::PackageType,
+    store::PackageStore,
+};
 
 trait ParseError {
     fn empty() -> Self;

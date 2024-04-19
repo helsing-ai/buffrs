@@ -68,7 +68,7 @@ impl LocalRegistry {
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
             repository,
-            package.name(),
+            package.directory_str(),
             package.name(),
             package.version(),
         )));
@@ -115,6 +115,7 @@ mod tests {
             Some(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
+                directory: None,
                 version: "0.1.0".parse().unwrap(),
                 description: None,
             }),
