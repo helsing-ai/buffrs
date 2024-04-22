@@ -65,6 +65,20 @@ fn can_display_digest_algorithm() {
 }
 
 /// A representation of a cryptographic digest for data integrity validation
+///
+/// ```rust
+/// use buffrs::lock::{Digest, DigestAlgorithm};
+///
+/// let algorithm = DigestAlgorithm::SHA256;
+/// let hello = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+///
+/// let digest = Digest::from_parts(algorithm, hello).unwrap();
+/// // You can also parse `Digest` from the string representation
+/// assert_eq!(digest, format!("{algorithm}:{hello}").parse().unwrap());
+///
+/// // Roundtripping is possible
+/// assert_eq!(digest, format!("{digest}").parse().unwrap());
+/// ```
 // Do not reorder fields: the ordering is significant, see #38 and #106.
 #[derive(Clone, PartialEq, Eq, Ord, PartialOrd, Debug)]
 pub struct Digest {
@@ -75,6 +89,12 @@ pub struct Digest {
 }
 
 impl Digest {
+    /// Digest are displayed as `algorithm:digest`, this takes the two in separate variables.
+    pub fn from_parts(algorithm: DigestAlgorithm, digest: &str) -> Result<Self, DigestError> {
+        let digest = hex::decode(digest)?;
+        Ok(Self { algorithm, digest })
+    }
+
     /// Algorithm used to create this digest.
     pub fn algorithm(&self) -> DigestAlgorithm {
         self.algorithm
@@ -108,8 +128,7 @@ impl FromStr for Digest {
         let algorithm: DigestAlgorithm = algorithm_str
             .parse()
             .map_err(|_| DigestAlgorithmError::UnsupportedAlgorithm(algorithm_str.into()))?;
-        let digest = hex::decode(digest_str)?;
-        Ok(Self { algorithm, digest })
+        Self::from_parts(algorithm, digest_str)
     }
 }
 
@@ -207,5 +226,16 @@ mod tests {
     fn can_serialize() {
         let digest: Digest = HELLO_DIGEST.parse().unwrap();
         assert_tokens(&digest, &[Token::Str(HELLO_DIGEST)]);
+    }
+
+    #[test]
+    fn from_parts() {
+        let algorithm = DigestAlgorithm::SHA256;
+        let hello = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+
+        let digest = Digest::from_parts(algorithm, hello).unwrap();
+        assert_eq!(digest, HELLO_DIGEST.parse().unwrap());
+
+        assert_eq!(digest, format!("{digest}").parse().unwrap());
     }
 }
