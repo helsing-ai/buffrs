@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
+use super::{Registry, RegistryTable, RegistryUri};
 use crate::{credentials::Credentials, manifest::Dependency, package::Package};
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Body, Method, Response};
@@ -21,17 +21,17 @@ use url::Url;
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    registry: RegistryUri,
-    token: Option<String>,
+    registries: RegistryTable,
+    credentials: Credentials,
     client: reqwest::Client,
 }
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
+    pub fn new(registries: RegistryTable, credentials: Credentials) -> miette::Result<Self> {
         Ok(Self {
-            registry: registry.clone(),
-            token: credentials.registry_tokens.get(&registry).cloned(),
+            registries,
+            credentials,
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
@@ -39,26 +39,41 @@ impl Artifactory {
         })
     }
 
-    fn new_request(&self, method: Method, url: Url) -> RequestBuilder {
+    fn new_request(
+        &self,
+        method: Method,
+        registry: &Registry,
+        url: Url,
+    ) -> miette::Result<RequestBuilder> {
         let mut request_builder = RequestBuilder::new(self.client.clone(), method, url);
 
-        if let Some(token) = &self.token {
-            request_builder = request_builder.auth(token.clone());
+        let uri = self
+            .registries
+            .get(&registry)
+            .ok_or(miette!("unknown registry: {registry}"))?;
+
+        if let Some(token) = &self.credentials.tokens.get(&registry) {
+            request_builder = request_builder.auth(token.to_string());
         }
 
-        request_builder
+        Ok(request_builder)
     }
 
     /// Pings artifactory to ensure registry access is working
-    pub async fn ping(&self) -> miette::Result<()> {
-        let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
+    pub async fn ping(&self, registry: &Registry) -> miette::Result<()> {
+        let url: Url = {
+            let mut uri = self
+                .registries
+                .get(&registry)
+                .ok_or(miette!("unknown registry: {registry}"))?
+                .base();
+
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
             uri.into()
         };
 
-        self.new_request(Method::GET, repositories_url)
+        self.new_request(Method::GET, registry, url)?
             .send()
             .await
             .map(|_| ())
@@ -67,16 +82,22 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        let registry = &dependency.manifest.registry;
+
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = dependency.manifest.registry.path().to_owned();
+            let uri = self.registries.get(registry).ok_or(miette!(
+                "cannot download {} because there is no uri for the registry {}",
+                dependency.package,
+                registry
+            ))?;
 
-            let mut url = dependency.manifest.registry.clone();
+            let mut url = uri.raw.clone();
+
             url.set_path(&format!(
-                "{}/{}/{}/{}-{}.tgz",
-                path,
-                dependency.manifest.repository,
+                "{}/{}/{}-{}.tgz",
+                url.path(),
                 dependency.package,
                 dependency.package,
                 version
@@ -85,9 +106,12 @@ impl Artifactory {
             url.into()
         };
 
-        tracing::debug!("Hitting download URL: {artifact_url}");
+        tracing::debug!("hitting download URL: {artifact_url}");
 
-        let response = self.new_request(Method::GET, artifact_url).send().await?;
+        let response = self
+            .new_request(Method::GET, registry, artifact_url)?
+            .send()
+            .await?;
 
         let response: reqwest::Response = response.into();
 
@@ -110,11 +134,14 @@ impl Artifactory {
     }
 
     /// Publishes a package to artifactory
-    pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
+    pub async fn publish(&self, package: Package, registry: &Registry) -> miette::Result<()> {
+        let uri = self.registries.get(registry).ok_or(miette!(
+            "cannot publish because there is no uri configured for the registry {registry}",
+        ))?;
+
         let artifact_uri: Url = format!(
-            "{}/{}/{}/{}-{}.tgz",
-            self.registry,
-            repository,
+            "{}/{}/{}-{}.tgz",
+            uri.raw.path(),
             package.name(),
             package.name(),
             package.version(),
@@ -126,17 +153,12 @@ impl Artifactory {
         ))?;
 
         let _ = self
-            .new_request(Method::PUT, artifact_uri)
+            .new_request(Method::PUT, registry, artifact_uri)?
             .body(package.tgz.clone())
             .send()
             .await?;
 
-        tracing::info!(
-            ":: published {}/{}@{}",
-            repository,
-            package.name(),
-            package.version()
-        );
+        tracing::info!(":: published {}@{}", package.name(), package.version());
 
         Ok(())
     }

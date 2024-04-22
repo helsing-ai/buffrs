@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::{
+    collections::HashMap,
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
@@ -25,39 +25,131 @@ mod cache;
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use thiserror::Error;
 use url::Url;
 
 use crate::manifest::Dependency;
 
-/// A representation of a registry URI
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RegistryUri(Url);
+/// A registry lookup table to retrieve actual registry uris from
+///
+/// Must contain at least the default registry
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RegistryTable {
+    default: RegistryUri,
+    named: HashMap<String, RegistryUri>,
+}
+
+impl RegistryTable {
+    pub fn get(&self, reg: &Registry) -> Option<&RegistryUri> {
+        match reg {
+            &Registry::Default => Some(&self.default),
+            &Registry::Named(name) => self.named.get(&name),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RegistryTable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut named = HashMap::deserialize(deserializer)?;
+
+        let default = named
+            .remove("default")
+            .ok_or_else(|| de::Error::missing_field("default"))?;
+
+        Ok(Self { default, named })
+    }
+}
+
+/// A pointer to a registry in the registry table
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(into = "&str", from = "&str")]
+pub enum Registry {
+    /// Use the registry configured as default registry
+    Default,
+    /// Use a named registry that is configured in the configuration
+    Named(String),
+}
+
+impl Registry {
+    const DEFAULT: &'static str = "default";
+
+    pub fn is_default(&self) -> bool {
+        matches!(self, &Self::Default)
+    }
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl From<Registry> for &str {
+    fn from(value: Registry) -> Self {
+        match value {
+            Registry::Default => &Registry::DEFAULT,
+            Registry::Named(v) => &v,
+        }
+    }
+}
+
+impl From<&str> for Registry {
+    fn from(value: &str) -> Self {
+        if value == Self::DEFAULT {
+            return Self::Default;
+        }
+
+        Self::Named(value.to_owned())
+    }
+}
+
+impl Display for Registry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let fmt = match self {
+            &Registry::Default => Registry::DEFAULT,
+            &Registry::Named(ref v) => v,
+        };
+
+        write!(f, "{fmt}")
+    }
+}
+
+/// A representation of a artifactory registry URI
+///
+/// This is compatible with everything in the format `<org>.jfrog.io/artifactory/<repository>`
+#[derive(
+    Debug, Clone, Hash, SerializeDisplay, DeserializeFromStr, PartialEq, Eq, PartialOrd, Ord,
+)]
+pub struct RegistryUri {
+    raw: Url,
+    repository: String,
+}
+
+impl RegistryUri {
+    /// Get the base path of the artifactory instance
+    pub fn base(&self) -> Url {
+        let mut url = self.raw.clone();
+
+        url.set_path("/artifactory");
+
+        url
+    }
+}
 
 impl From<RegistryUri> for Url {
     fn from(value: RegistryUri) -> Self {
-        value.0
-    }
-}
-
-impl Deref for RegistryUri {
-    type Target = Url;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for RegistryUri {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        value.raw
     }
 }
 
 impl Display for RegistryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.raw)
     }
 }
 
@@ -69,13 +161,13 @@ impl FromStr for RegistryUri {
             .into_diagnostic()
             .wrap_err(miette!("not a valid URL: {value}"))?;
 
-        sanity_check_url(&url)?;
+        let (raw, repository) = inspect_url(url)?;
 
-        Ok(Self(url))
+        Ok(Self { raw, repository })
     }
 }
 
-fn sanity_check_url(url: &Url) -> miette::Result<()> {
+fn inspect_url(url: Url) -> miette::Result<(Url, String)> {
     let scheme = url.scheme();
 
     ensure!(
@@ -83,15 +175,25 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
         "invalid URI scheme {scheme} - must be http or https"
     );
 
-    if let Some(host) = url.host_str() {
-        ensure!(
-            !host.ends_with(".jfrog.io") || url.path().ends_with("/artifactory"),
-            "the url must end with '/artifactory' when using a *.jfrog.io host"
-        );
-        Ok(())
-    } else {
-        Err(miette!("the URI must contain a host component: {url}"))
-    }
+    ensure!(
+        url.has_host(),
+        "the URI must contain a host component: {url}"
+    );
+
+    let mut path = url
+        .path_segments()
+        .ok_or(miette!("the URI must contain a path"))?;
+
+    ensure!(
+        path.next() == Some("artifactory"),
+        "expecting URI in the format of `<host>/artifactory/<repository>`"
+    );
+
+    let repository = path.next().ok_or(miette!(
+        "registry URI is missing the repository component: {url}"
+    ))?;
+
+    Ok((url, repository.to_string()))
 }
 
 #[derive(Error, Debug)]
@@ -149,14 +251,12 @@ mod tests {
         registry::{dependency_version_string, VersionNotPinned},
     };
 
-    use super::RegistryUri;
+    use super::{Registry, RegistryUri};
 
     fn get_dependency(version: &str) -> Dependency {
-        let registry = RegistryUri::from_str("https://my-registry.com").unwrap();
-        let repository = String::from("my-repo");
         let package = PackageName::from_str("package").unwrap();
         let version = VersionReq::from_str(version).unwrap();
-        Dependency::new(registry, repository, package, version)
+        Dependency::new(Registry::Default, package, version)
     }
 
     #[test]

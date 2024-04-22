@@ -19,7 +19,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
-    registry::RegistryUri,
+    registry::Registry,
     ManagedFile,
 };
 
@@ -31,8 +31,8 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 /// This type represents a snapshot of the read credential store.
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
-    /// A mapping from registry URIs to their corresponding tokens
-    pub registry_tokens: HashMap<RegistryUri, String>,
+    /// A mapping from registry to their corresponding tokens
+    pub tokens: HashMap<Registry, String>,
 }
 
 impl Credentials {
@@ -108,7 +108,7 @@ struct RawCredentialCollection {
 /// Credentials for a single registry. Serialization type.
 #[derive(Serialize, Deserialize)]
 struct RawRegistryCredentials {
-    uri: RegistryUri,
+    registry: Registry,
     token: String,
 }
 
@@ -117,11 +117,11 @@ impl From<RawCredentialCollection> for Credentials {
         let credentials = value
             .credentials
             .into_iter()
-            .map(|it| (it.uri, it.token))
+            .map(|it| (it.registry, it.token))
             .collect();
 
         Self {
-            registry_tokens: credentials,
+            tokens: credentials,
         }
     }
 }
@@ -129,9 +129,9 @@ impl From<RawCredentialCollection> for Credentials {
 impl From<Credentials> for RawCredentialCollection {
     fn from(value: Credentials) -> Self {
         let credentials = value
-            .registry_tokens
+            .tokens
             .into_iter()
-            .map(|(uri, token)| RawRegistryCredentials { uri, token })
+            .map(|(registry, token)| RawRegistryCredentials { registry, token })
             .collect();
 
         Self { credentials }
