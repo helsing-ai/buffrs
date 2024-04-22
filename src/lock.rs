@@ -51,20 +51,11 @@ pub struct LockedPackage {
     pub version: Version,
     /// Names of dependency packages
     pub dependencies: Vec<PackageName>,
-    /// Count of dependant packages in the current graph
-    ///
-    /// This is used to detect when an entry can be safely removed from the lockfile.
-    pub dependants: usize,
 }
 
 impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
-    pub fn lock(
-        package: &Package,
-        registry: RegistryUri,
-        repository: String,
-        dependants: usize,
-    ) -> Self {
+    pub fn lock(package: &Package, registry: RegistryUri, repository: String) -> Self {
         Self {
             name: package.name().to_owned(),
             registry,
@@ -77,7 +68,6 @@ impl LockedPackage {
                 .iter()
                 .map(|d| d.package.clone())
                 .collect(),
-            dependants,
         }
     }
 
