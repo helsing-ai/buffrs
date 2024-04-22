@@ -138,27 +138,27 @@ impl Cache {
             let parts: Vec<_> = filename.split('.').collect();
 
             // invalid – we should have: {name}.{type}.{digest}.{ext}
-            if parts.len() != 4 {
+            let &[name, r#type, digest, ext] = parts.as_slice() else {
                 return true;
-            }
+            };
 
             // package name part is invalid
-            if PackageName::new(parts[0]).is_err() {
+            if PackageName::new(name).is_err() {
                 return true;
             }
 
             // unknown / unsupported digest algorithm
-            let Ok(alg) = DigestAlgorithm::from_str(parts[1]) else {
+            let Ok(algorithm) = DigestAlgorithm::from_str(r#type) else {
                 return true;
             };
 
             // invalid digest
-            if Digest::from_str(&format!("{alg}:{}", parts[2])).is_err() {
+            if Digest::from_parts(algorithm, digest).is_err() {
                 return true;
             }
 
             // invalid extension
-            if parts[3] != "tgz" {
+            if ext != "tgz" {
                 return true;
             }
 
