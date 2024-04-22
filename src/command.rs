@@ -13,16 +13,13 @@
 // limitations under the License.
 
 use crate::{
-    cache::Cache,
     credentials::Credentials,
-    lock::{LockedPackage, Lockfile},
+    lock::Lockfile,
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver::DependencyGraph,
 };
 
-use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{env, path::Path, str::FromStr};
@@ -293,10 +290,7 @@ pub async fn publish(
 /// Installs dependencies
 pub async fn install() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-    let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
-    let credentials = Credentials::load().await?;
-    let cache = Cache::open().await?;
 
     store.clear().await?;
 
@@ -306,73 +300,9 @@ pub async fn install() -> miette::Result<()> {
         tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
     }
 
-    let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache)
-            .await
-            .wrap_err(miette!("dependency resolution failed"))?;
+    //Lockfile::from_iter(locked.into_iter()).write().await
 
-    let mut locked = Vec::new();
-
-    #[async_recursion]
-    async fn traverse_and_install(
-        name: &PackageName,
-        graph: &DependencyGraph,
-        store: &PackageStore,
-        locked: &mut Vec<LockedPackage>,
-        prefix: String,
-    ) -> miette::Result<()> {
-        let resolved = graph.get(name).ok_or(miette!(
-            "unexpected error: missing dependency in dependency graph"
-        ))?;
-
-        store.unpack(&resolved.package).await.wrap_err(miette!(
-            "failed to unpack package {}",
-            &resolved.package.name()
-        ))?;
-
-        tracing::info!(
-            "{} installed {}@{}",
-            if prefix.is_empty() { "::" } else { &prefix },
-            name,
-            resolved.package.version()
-        );
-
-        locked.push(resolved.package.lock(
-            resolved.registry.clone(),
-            resolved.repository.clone(),
-            resolved.dependants.len(),
-        ));
-
-        for (index, dependency) in resolved.depends_on.iter().enumerate() {
-            let tree_char = if index + 1 == resolved.depends_on.len() {
-                '┗'
-            } else {
-                '┣'
-            };
-
-            let new_prefix = format!(
-                "{} {tree_char}",
-                if prefix.is_empty() { "  " } else { &prefix }
-            );
-
-            traverse_and_install(dependency, graph, store, locked, new_prefix).await?;
-        }
-
-        Ok(())
-    }
-
-    for dependency in manifest.dependencies {
-        traverse_and_install(
-            &dependency.package,
-            &dependency_graph,
-            &store,
-            &mut locked,
-            String::new(),
-        )
-        .await?;
-    }
-
-    Lockfile::from_iter(locked.into_iter()).write().await
+    Ok(())
 }
 
 /// Uninstalls dependencies

@@ -13,9 +13,17 @@
 // limitations under the License.
 
 use super::RegistryUri;
-use crate::{credentials::Credentials, manifest::Dependency, package::Package};
+use crate::{
+    cache::Cache,
+    credentials::Credentials,
+    lock::LockedPackage,
+    manifest::Dependency,
+    package::{Package, PackageName},
+};
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Body, Method, Response};
+use semver::Version;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -66,7 +74,11 @@ impl Artifactory {
     }
 
     /// Downloads a package from artifactory
-    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+    pub async fn download(
+        &self,
+        dependency: Dependency,
+        cache: Option<&Cache>,
+    ) -> miette::Result<Package> {
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
@@ -103,10 +115,22 @@ impl Artifactory {
 
         let data = response.bytes().await.into_diagnostic()?;
 
-        Package::try_from(data).wrap_err(miette!(
+        let package = Package::try_from(data.clone()).wrap_err(miette!(
             "failed to download dependency {}",
             dependency.package
-        ))
+        ))?;
+
+        if let Some(ref cache) = cache {
+            let locked = LockedPackage::lock(
+                &package,
+                self.registry.clone(),
+                dependency.manifest.repository.clone(),
+            );
+
+            cache.put(&locked, data).await.ok();
+        }
+
+        Ok(package)
     }
 
     /// Publishes a package to artifactory
@@ -139,6 +163,60 @@ impl Artifactory {
         );
 
         Ok(())
+    }
+
+    /// Publishes a package to artifactory
+    pub async fn versions(
+        &self,
+        package: PackageName,
+        repository: String,
+    ) -> miette::Result<Vec<Version>> {
+        let artifact_uri: Url = format!(
+            "{}/api/search/pattern?pattern={repository}:{package}/{package}-*.tgz",
+            self.registry
+        )
+        .parse()
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "unexpected error: failed to construct artifactory url"
+        ))?;
+
+        let response: reqwest::Response = self
+            .new_request(Method::GET, artifact_uri)
+            .send()
+            .await?
+            .into();
+
+        let text = response
+            .text()
+            .await
+            .into_diagnostic()
+            .wrap_err(miette!("unexpected error: artifactory body is empty"))?;
+
+        #[derive(Serialize, Deserialize)]
+        struct Body {
+            files: Vec<String>,
+        }
+
+        let json: Body = serde_json::from_str(&text)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "unexpected error: failed to deserialize artifactory response"
+            ))?;
+
+        let versions = json
+            .files
+            .into_iter()
+            .filter_map(|file| {
+                let ending = file.strip_prefix(&format!("{package}/{package}"))?;
+
+                let version = ending.strip_suffix(".tgz")?;
+
+                version.parse().ok()
+            })
+            .collect();
+
+        Ok(versions)
     }
 }
 

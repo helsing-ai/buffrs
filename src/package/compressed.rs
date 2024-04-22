@@ -222,13 +222,8 @@ impl Package {
     }
 
     /// Lock this package
-    pub fn lock(
-        &self,
-        registry: RegistryUri,
-        repository: String,
-        dependants: usize,
-    ) -> LockedPackage {
-        LockedPackage::lock(self, registry, repository, dependants)
+    pub fn lock(&self, registry: RegistryUri, repository: String) -> LockedPackage {
+        LockedPackage::lock(self, registry, repository)
     }
 }
 
