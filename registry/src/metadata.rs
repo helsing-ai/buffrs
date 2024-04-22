@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Metadata Storage trait and implementations.
+//! # Metadata storage traits and implementations.
 //!
-//! [`MetadataStorage`]
+//! [`TryFetch`], [`FetchMatching`] and [`Publish`]
 
 /// memory provider
 pub mod memory;

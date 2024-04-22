@@ -20,7 +20,8 @@
 //! ## Dependencies
 //!
 //! It requires two stateful services: one to store metadata, which is expressed by the
-//! [`Database`](db::Database) trait. Typically, this would be implemented using a Postgres
+//! [`FetchMatching`](metadata::FetchMatching), [`Publish`](metadata::Publish) and
+//! [`TryFetch`](metadata::TryFetch) traits. Typically, this would be implemented using a Postgres
 //! database, but the code is written in a way that other services can be plugged in instead.
 //!
 //! The other dependency it has is on a way to store package sources, which is expressed using the
