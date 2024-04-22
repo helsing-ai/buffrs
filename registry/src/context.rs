@@ -53,7 +53,7 @@ impl Context {
         &self.storage
     }
 
-    /// Get reference to the [`MetadataStorage`] instance
+    /// Get reference to the [`PgsqlMetadataStorage`] instance
     pub fn metadata_store(&self) -> &PgsqlMetadataStorage {
         &self.metadata_storage
     }
