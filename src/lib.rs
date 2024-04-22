@@ -23,6 +23,8 @@ use thiserror::Error;
 pub mod cache;
 /// CLI command implementations
 pub mod command;
+/// Configuration for the CLI
+pub mod config;
 /// Credential management
 pub mod credentials;
 /// Common error types
@@ -63,6 +65,7 @@ fn home() -> Result<PathBuf, HomeError> {
 
 #[derive(Debug)]
 pub(crate) enum ManagedFile {
+    Configuration,
     Credentials,
     Manifest,
     Lock,
@@ -70,11 +73,13 @@ pub(crate) enum ManagedFile {
 
 impl ManagedFile {
     fn name(&self) -> &str {
+        use config::CONFIG_FILE;
         use credentials::CREDENTIALS_FILE;
         use lock::LOCKFILE;
         use manifest::MANIFEST_FILE;
 
         match self {
+            ManagedFile::Configuration => CONFIG_FILE,
             ManagedFile::Manifest => MANIFEST_FILE,
             ManagedFile::Lock => LOCKFILE,
             ManagedFile::Credentials => CREDENTIALS_FILE,
