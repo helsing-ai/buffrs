@@ -26,7 +26,7 @@ use tokio::fs;
 use crate::{
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
-    registry::RegistryUri,
+    registry::Registry,
     ManagedFile,
 };
 
@@ -46,8 +46,6 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
-    /// The canary edition used by buffrs 0.7.x
-    Canary07,
     /// Unknown edition of manifests
     ///
     /// This is unrecommended as breaking changes could be introduced due to being
@@ -66,7 +64,6 @@ impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
             self::CANARY_EDITION => Self::Canary,
-            "0.7" => Self::Canary07,
             _ => Self::Unknown,
         }
     }
@@ -76,7 +73,6 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
-            Edition::Canary07 => "0.7",
             Edition::Unknown => "unknown",
         }
     }
@@ -206,7 +202,7 @@ mod deserializer {
                     };
 
                     match Edition::from(edition.as_str()) {
-                        Edition::Canary | Edition::Canary07 => Ok(RawManifest::Canary {
+                        Edition::Canary => Ok(RawManifest::Canary {
                             package,
                             dependencies,
                         }),
@@ -231,7 +227,7 @@ impl From<Manifest> for RawManifest {
             .collect();
 
         match manifest.edition {
-            Edition::Canary | Edition::Canary07 => RawManifest::Canary {
+            Edition::Canary => RawManifest::Canary {
                 package: manifest.package,
                 dependencies,
             },
@@ -394,19 +390,10 @@ pub struct Dependency {
 
 impl Dependency {
     /// Creates a new dependency
-    pub fn new(
-        registry: RegistryUri,
-        repository: String,
-        package: PackageName,
-        version: VersionReq,
-    ) -> Self {
+    pub fn new(registry: Registry, package: PackageName, version: VersionReq) -> Self {
         Self {
             package,
-            manifest: DependencyManifest {
-                repository,
-                version,
-                registry,
-            },
+            manifest: DependencyManifest { version, registry },
         }
     }
 
@@ -428,11 +415,7 @@ impl Dependency {
 
 impl Display for Dependency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}@{}",
-            self.manifest.repository, self.package, self.manifest.version
-        )
+        write!(f, "{}@{}", self.package, self.manifest.version)
     }
 }
 
@@ -441,8 +424,8 @@ impl Display for Dependency {
 pub struct DependencyManifest {
     /// Version requirement in the buffrs format, currently only supports pinning
     pub version: VersionReq,
-    /// Artifactory repository to pull dependency from
-    pub repository: String,
-    /// Artifactory registry to pull from
-    pub registry: RegistryUri,
+    /// Registry ID to pull dependency from, this must be configured
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Registry::is_default")]
+    pub registry: Registry,
 }
