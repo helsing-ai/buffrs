@@ -132,21 +132,18 @@ fn fixture() {
             )
             .unwrap();
 
-            let path = std::env::current_dir()
-                .unwrap()
-                .join(crate::parent_directory!());
-            let git_repo = gix::discover(path).expect("unable to find git root");
-            let git_root = git_repo
-                .path()
-                .parent()
-                .expect("failed to move from path to .git to its parent")
-                .to_str()
-                .expect("failed to convert path git root to string");
-            dbg!(git_root);
+            let buffrs_path = env!("CARGO_MANIFEST_DIR");
+            dbg!(buffrs_path);
 
             // cargo add buffrs --no-default-features
             assert!(Command::new("cargo")
-                .args(["add", "buffrs", "--no-default-features", "--path", git_root])
+                .args([
+                    "add",
+                    "buffrs",
+                    "--no-default-features",
+                    "--path",
+                    buffrs_path
+                ])
                 .current_dir(&cwd)
                 .status()
                 .unwrap()
@@ -160,7 +157,7 @@ fn fixture() {
                     "--build",
                     "--no-default-features",
                     "--path",
-                    git_root
+                    buffrs_path
                 ])
                 .current_dir(&cwd)
                 .status()

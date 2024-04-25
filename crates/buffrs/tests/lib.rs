@@ -40,6 +40,7 @@ impl VirtualFileSystem {
     const ROOT_NAME: &'static str = "root";
 
     /// Init an empty virtual file system
+    #[track_caller]
     pub fn empty() -> Self {
         let tmp_dir = TempDir::new().unwrap();
         let root = tmp_dir.join(Self::ROOT_NAME);
@@ -54,6 +55,7 @@ impl VirtualFileSystem {
     }
 
     /// Init a virtual file system from a local directory
+    #[track_caller]
     pub fn copy(template: impl AsRef<Path>) -> Self {
         let tmp_dir = TempDir::new().unwrap();
         let root = tmp_dir.join(Self::ROOT_NAME);
@@ -83,17 +85,20 @@ impl VirtualFileSystem {
     }
 
     /// Root path to run operations in
+    #[track_caller]
     pub fn root(&self) -> PathBuf {
         self.tmp_dir.join(Self::ROOT_NAME)
     }
 
     /// Enable verification of the virtual home
+    #[track_caller]
     pub fn with_virtual_home(mut self) -> Self {
         self.virtual_home = true;
         self
     }
 
     /// Verify the virtual file system to be equal to a local directory
+    #[track_caller]
     pub fn verify_against(&self, expected: impl AsRef<Path>) {
         let vfs = get_dir_content(self.root()).unwrap();
         let exp = get_dir_content(expected.as_ref()).unwrap();
@@ -183,6 +188,7 @@ impl VirtualFileSystem {
 }
 
 impl Drop for VirtualFileSystem {
+    #[track_caller]
     fn drop(&mut self) {
         fs_extra::dir::remove(self.root()).expect("failed to cleanup vfs");
     }
@@ -191,7 +197,14 @@ impl Drop for VirtualFileSystem {
 #[macro_export]
 macro_rules! parent_directory {
     () => {{
-        std::path::Path::new(file!()).parent().unwrap()
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(file!())
+            .parent()
+            .unwrap()
     }};
 }
 
@@ -201,6 +214,7 @@ enum FileType {
 }
 
 impl FileType {
+    #[track_caller]
     pub fn from_extension(ext: impl AsRef<str>) -> Self {
         match ext.as_ref() {
             "tgz" => Self::Package,

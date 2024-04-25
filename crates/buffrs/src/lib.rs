@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #![warn(missing_docs)]
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../../../README.md")]
 
 use miette::Diagnostic;
 use std::{env, path::PathBuf};
