@@ -76,7 +76,7 @@ mod tests {
                     let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
                     parser.input(std::path::Path::new(concat!("tests/data/parsing/", stringify!($name), ".proto")));
                     let packages = parser.parse().unwrap();
-                    let expected = include_str!(concat!("../tests/data/parsing/", stringify!($name), ".json"));
+                    let expected = include_str!(concat!("../../tests/data/parsing/", stringify!($name), ".json"));
                     let expected = serde_json::from_str(&expected).unwrap();
                     similar_asserts::assert_eq!(packages, expected);
                 }

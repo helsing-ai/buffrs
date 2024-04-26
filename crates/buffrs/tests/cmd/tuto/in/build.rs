@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use buffrs::package::PackageStore;
+use buffrs_core::package::PackageStore;
 
 #[tokio::main]
 async fn main() {

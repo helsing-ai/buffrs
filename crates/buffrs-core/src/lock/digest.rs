@@ -67,7 +67,7 @@ fn can_display_digest_algorithm() {
 /// A representation of a cryptographic digest for data integrity validation
 ///
 /// ```rust
-/// use buffrs::lock::{Digest, DigestAlgorithm};
+/// use buffrs_core::lock::{Digest, DigestAlgorithm};
 ///
 /// let algorithm = DigestAlgorithm::SHA256;
 /// let hello = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";

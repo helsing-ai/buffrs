@@ -132,14 +132,14 @@ fn fixture() {
             )
             .unwrap();
 
-            let buffrs_path = env!("CARGO_MANIFEST_DIR");
+            let buffrs_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../buffrs-core");
             dbg!(buffrs_path);
 
             // cargo add buffrs --no-default-features
             assert!(Command::new("cargo")
                 .args([
                     "add",
-                    "buffrs",
+                    "buffrs-core",
                     "--no-default-features",
                     "--path",
                     buffrs_path
@@ -153,7 +153,7 @@ fn fixture() {
             assert!(Command::new("cargo")
                 .args([
                     "add",
-                    "buffrs",
+                    "buffrs-core",
                     "--build",
                     "--no-default-features",
                     "--path",

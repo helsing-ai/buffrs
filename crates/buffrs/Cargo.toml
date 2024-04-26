@@ -13,64 +13,30 @@ readme.workspace = true
 repository.workspace = true
 version.workspace = true
 
-[[bin]]
-name = "buffrs"
-path = "src/main.rs"
-required-features = ["git", "validation"]
-
 [[test]]
 name = "e2e"
 path = "tests/lib.rs"
 test = true
 
-[features]
-default = ["git", "validation"]
-validation = ["dep:anyhow", "dep:protobuf", "dep:protobuf-parse", "dep:diff-struct"]
-git = []
-
-
 [dependencies]
-async-recursion.workspace = true
-bytes.workspace = true
+buffrs-core = { workspace = true, features = ["git", "validation"] }
+
 clap.workspace = true
-flate2.workspace = true
-hex.workspace = true
-home.workspace = true
 human-panic.workspace = true
 miette.workspace = true
-reqwest.workspace = true
 semver.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tar.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
-toml.workspace = true
-tracing.workspace = true
 tracing-subscriber.workspace = true
-url.workspace = true
-walkdir.workspace = true
-sha2.workspace = true
-strum.workspace = true
-
-anyhow = { workspace = true, optional = true }
-diff-struct = { workspace = true, optional = true }
-protobuf = { workspace = true, optional = true }
-protobuf-parse = { workspace = true, optional = true }
 
 [dev-dependencies]
 assert_cmd.workspace = true
 assert_fs.workspace = true
 axum.workspace = true
+bytes.workspace = true
 fs_extra.workspace = true
-hex.workspace = true
-paste.workspace = true
-predicates.workspace = true
 pretty_assertions.workspace = true
-serde_json.workspace = true
-serde_test.workspace = true
-similar-asserts.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread"] }
+reqwest.workspace = true
+tracing.workspace = true
 
 [package.metadata.deb]
 section = "utils"

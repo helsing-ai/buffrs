@@ -26,11 +26,13 @@ version = "0.8.0"
 resolver = "2"
 members = [
   "crates/buffrs",
+  "crates/buffrs-core",
 ]
 
 [workspace.dependencies]
 # Our own
 buffrs = { version = "0.8.0", path = "crates/buffrs/" }
+buffrs-core = { version = "0.8.0", path = "crates/buffrs-core/" }
 
 # Main deps
 anyhow = "1.0"

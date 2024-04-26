@@ -1,4 +1,4 @@
-use buffrs::package::Package;
+use buffrs_core::package::Package;
 
 use std::{
     fs,

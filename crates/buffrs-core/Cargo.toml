@@ -1,0 +1,51 @@
+[package]
+name = "buffrs-core"
+documentation = "https://docs.rs/buffrs-core"
+categories = ["command-line-utilities"]
+
+authors.workspace = true
+description.workspace = true
+edition.workspace = true
+exclude.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+version.workspace = true
+
+[features]
+default = ["git", "validation"]
+validation = ["dep:anyhow", "dep:protobuf", "dep:protobuf-parse", "dep:diff-struct"]
+git = []
+
+[dependencies]
+async-recursion.workspace = true
+bytes.workspace = true
+flate2.workspace = true
+hex.workspace = true
+home.workspace = true
+miette.workspace = true
+reqwest.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tar.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+url.workspace = true
+walkdir.workspace = true
+sha2.workspace = true
+strum.workspace = true
+
+anyhow = { workspace = true, optional = true }
+diff-struct = { workspace = true, optional = true }
+protobuf = { workspace = true, optional = true }
+protobuf-parse = { workspace = true, optional = true }
+
+[dev-dependencies]
+paste.workspace = true
+serde_test.workspace = true
+similar-asserts.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
