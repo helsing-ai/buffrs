@@ -21,9 +21,6 @@ readme = "README.md"
 license = "Apache-2.0"
 exclude = ["/.github", "/tests"]
 
-[workspace]
-members = ["registry"]
-
 [[bin]]
 name = "buffrs"
 path = "src/main.rs"
