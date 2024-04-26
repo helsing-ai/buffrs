@@ -5,6 +5,5 @@ target
 .idea/*
 
 .DS_Store
-registry/.idea
 .vscode
 .envrc
