@@ -2,6 +2,7 @@ mod protos {
     tonic::include_proto!("buffrs");
 }
 
+#[allow(dead_code)]
 struct Sensor;
 
 impl protos::sensor_api::sensor_server::Sensor for Sensor {

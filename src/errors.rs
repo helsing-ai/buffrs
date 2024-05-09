@@ -3,10 +3,6 @@ use miette::Diagnostic;
 use crate::ManagedFile;
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
-#[error("environment variable {0} is not set")]
-pub(crate) struct EnvVarNotSet(pub &'static str);
-
-#[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("failed to determine if {0} file exists")]
 pub(crate) struct FileExistsError(pub &'static str);
 
