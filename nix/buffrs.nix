@@ -44,7 +44,7 @@ in {
       partitions = 1;
       partitionType = "count";
       # Ignore tutorial and publish tests because they need TLS certificates 
-      # which doens't yet work in our next setup
+      # which doens't yet work in our nix setup
       cargoNextestExtraArgs =
         "--filter-expr 'all() - test(=cmd::tuto::fixture) - test(=cmd::publish::fixture)'";
     });
