@@ -37,5 +37,16 @@ in {
 
     # Audit licenses
     buffrs-deny = craneLib.cargoDeny { inherit src; };
+
+    # Rust unit and integration tests
+    buffers-nextest = craneLib.cargoNextest (commonArgs // {
+      inherit cargoArtifacts;
+      partitions = 1;
+      partitionType = "count";
+      # Ignore tutorial and publish tests because they need TLS certificates 
+      # which doens't yet work in our next setup
+      cargoNextestExtraArgs =
+        "--filter-expr 'all() - test(=cmd::tuto::fixture) - test(=cmd::publish::fixture)'";
+    });
   };
 }
