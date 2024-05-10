@@ -43,10 +43,10 @@ in {
       inherit cargoArtifacts;
       partitions = 1;
       partitionType = "count";
-      # Ignore tutorial and publish tests because they need TLS certificates 
-      # which doesn't yet work in our nix setup
+      # Ignore tutorial test because it requires git and cargo to work
       cargoNextestExtraArgs =
-        "--filter-expr 'all() - test(=cmd::tuto::fixture) - test(=cmd::publish::fixture)'";
+        "--filter-expr 'all() - test(=cmd::tuto::fixture)'";
+      SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     });
   };
 }
