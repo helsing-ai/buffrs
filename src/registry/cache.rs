@@ -16,15 +16,9 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 use miette::{miette, Context, IntoDiagnostic};
-use semver::VersionReq;
-use thiserror::Error;
 use tokio::fs;
 
 use crate::{manifest::Dependency, package::Package};
-
-#[derive(Error, Debug)]
-#[error("{0} is not a supported version requirement")]
-struct UnsupportedVersionRequirement(VersionReq);
 
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
