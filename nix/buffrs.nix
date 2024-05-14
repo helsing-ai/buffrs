@@ -37,5 +37,16 @@ in {
 
     # Audit licenses
     buffrs-deny = craneLib.cargoDeny { inherit src; };
+
+    # Rust unit and integration tests
+    buffers-nextest = craneLib.cargoNextest (commonArgs // {
+      inherit cargoArtifacts;
+      partitions = 1;
+      partitionType = "count";
+      # Ignore tutorial test because it requires git and cargo to work
+      cargoNextestExtraArgs =
+        "--filter-expr 'all() - test(=cmd::tuto::fixture)'";
+      SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    });
   };
 }
