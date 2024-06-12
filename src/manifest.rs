@@ -25,7 +25,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
-    package::{PackageName, PackageType},
+    package::{PackageDirectory, PackageName, PackageType},
     registry::RegistryUri,
     ManagedFile,
 };
@@ -377,10 +377,21 @@ pub struct PackageManifest {
     pub kind: PackageType,
     /// Name of the package
     pub name: PackageName,
+    /// Directory in which to put the cache. If unset, defaults to the package name
+    pub directory: Option<PackageDirectory>,
     /// Version of the package
     pub version: Version,
     /// Description of the api package
     pub description: Option<String>,
+}
+
+impl PackageManifest {
+    /// Get the directory where the package contents will be stored.
+    ///
+    /// This fallbacks to `name` if `directory` is unset.
+    pub fn directory(&self) -> &str {
+        self.directory.as_deref().unwrap_or(self.name.as_ref())
+    }
 }
 
 /// Represents a single project dependency

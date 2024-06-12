@@ -23,7 +23,7 @@ use url::Url;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
-    package::{Package, PackageName},
+    package::{Package, PackageDirectory, PackageName},
     registry::RegistryUri,
     ManagedFile,
 };
@@ -41,6 +41,8 @@ pub const LOCKFILE: &str = "Proto.lock";
 pub struct LockedPackage {
     /// The name of the package
     pub name: PackageName,
+    /// Directory where the package's contents are stored
+    pub directory: Option<PackageDirectory>,
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
@@ -67,6 +69,7 @@ impl LockedPackage {
     ) -> Self {
         Self {
             name: package.name().to_owned(),
+            directory: package.directory().cloned(),
             registry,
             repository,
             digest: DigestAlgorithm::SHA256.digest(&package.tgz),

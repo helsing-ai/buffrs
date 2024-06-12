@@ -60,7 +60,7 @@ impl PackageStore {
 
     /// Path to where the package contents are populated.
     fn populated_path(&self, manifest: &PackageManifest) -> PathBuf {
-        self.proto_vendor_path().join(manifest.name.to_string())
+        self.proto_vendor_path().join(manifest.directory())
     }
 
     /// Creates the expected directory structure for `buffrs`
@@ -96,7 +96,7 @@ impl PackageStore {
 
     /// Unpacks a package into a local directory
     pub async fn unpack(&self, package: &Package) -> miette::Result<()> {
-        let pkg_dir = self.locate(package.name());
+        let pkg_dir = self.locate(package.directory_str());
 
         package.unpack(&pkg_dir).await?;
 
@@ -181,8 +181,8 @@ impl PackageStore {
     }
 
     /// Directory for the vendored installation of a package
-    pub fn locate(&self, package: &PackageName) -> PathBuf {
-        self.proto_vendor_path().join(&**package)
+    pub fn locate(&self, directory: &str) -> PathBuf {
+        self.proto_vendor_path().join(directory)
     }
 
     /// Collect .proto files in a given path
@@ -214,7 +214,7 @@ impl PackageStore {
     /// Sync this stores proto files to the vendor directory
     pub async fn populate(&self, manifest: &PackageManifest) -> miette::Result<()> {
         let source_path = self.proto_path();
-        let target_dir = self.proto_vendor_path().join(manifest.name.to_string());
+        let target_dir = self.populated_path(manifest);
 
         if tokio::fs::try_exists(&target_dir)
             .await

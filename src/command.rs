@@ -60,6 +60,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
             Ok(PackageManifest {
                 kind,
                 name,
+                directory: None,
                 version: INITIAL_VERSION,
                 description: None,
             })
