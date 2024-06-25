@@ -18,8 +18,10 @@ use buffrs::package::{PackageName, PackageStore};
 use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
+use miette::IntoDiagnostic;
 use miette::{miette, WrapErr};
 use semver::Version;
+use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -85,7 +87,7 @@ enum Command {
     Publish {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUri,
+        registry: Option<RegistryUri>,
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
@@ -224,17 +226,22 @@ async fn main() -> miette::Result<()> {
             allow_dirty,
             dry_run,
             set_version,
-        } => command::publish(
-            registry.to_owned(),
-            repository.to_owned(),
-            allow_dirty,
-            dry_run,
-            set_version,
-        )
-        .await
-        .wrap_err(miette!(
-            "failed to publish `{package}` to `{registry}:{repository}`",
-        )),
+        } => {
+            let registry = registry
+                .or_else(get_default_registry)
+                .ok_or_else(|| miette!("no registry provided and no default registry found"))?;
+            command::publish(
+                registry.to_owned(),
+                repository.to_owned(),
+                allow_dirty,
+                dry_run,
+                set_version,
+            )
+            .await
+            .wrap_err(miette!(
+                "failed to publish `{package}` to `{registry}:{repository}`",
+            ))
+        }
         Command::Lint => command::lint().await.wrap_err(miette!(
             "failed to lint protocol buffers in `{}`",
             PackageStore::PROTO_PATH
@@ -254,4 +261,36 @@ async fn main() -> miette::Result<()> {
             )),
         },
     }
+}
+
+/// Get the default registry from the .buffrs/config.toml file in the current directory or parent directories
+///
+/// Looks up
+/// ```toml
+/// [registry]
+/// default = "https://<domain>/artifactory"
+/// ```
+fn get_default_registry() -> Option<RegistryUri> {
+    // try to locate registry from .buffrs/config.toml in the current directory or parent directories
+    let mut current_dir = std::env::current_dir().into_diagnostic().ok()?;
+    loop {
+        let config_path = current_dir.join(".buffrs/config.toml");
+        if config_path.exists() {
+            let config = std::fs::read_to_string(config_path)
+                .into_diagnostic()
+                .ok()?;
+            let config: toml::Value = toml::from_str(&config).into_diagnostic().ok()?;
+            let registry = config
+                .get("registry")
+                .and_then(|registry| registry.get("default"))
+                .and_then(|registry| registry.as_str())
+                .and_then(|registry| RegistryUri::from_str(registry).ok());
+
+            return registry;
+        }
+        if !current_dir.pop() {
+            break;
+        }
+    }
+    None
 }

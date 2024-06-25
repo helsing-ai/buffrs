@@ -119,8 +119,7 @@ fn map_registry_name(value: &str) -> Option<RegistryUri> {
                 .get("registries")
                 .and_then(|registries| registries.get(value))
                 .and_then(|registry| registry.as_str())
-                .map(|registry| RegistryUri::from_str(registry).ok())
-                .flatten();
+                .and_then(|registry| RegistryUri::from_str(registry).ok());
 
             if let Some(registry) = registry {
                 return Some(registry);
@@ -128,10 +127,9 @@ fn map_registry_name(value: &str) -> Option<RegistryUri> {
         }
 
         if !current_dir.pop() {
-            break;
+            break None;
         }
     }
-    todo!()
 }
 
 #[derive(Error, Debug)]
