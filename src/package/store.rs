@@ -34,10 +34,8 @@ pub struct PackageStore {
 }
 
 impl PackageStore {
-    /// Path to the proto directory
-    pub const PROTO_PATH: &'static str = "proto";
     /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &'static str = "proto/vendor";
+    pub const PROTO_VENDOR_PATH: &'static str = "vendor";
 
     fn new(root: PathBuf) -> Self {
         Self { root }
@@ -50,7 +48,7 @@ impl PackageStore {
 
     /// Path to the `proto` directory.
     pub fn proto_path(&self) -> PathBuf {
-        self.root.join(Self::PROTO_PATH)
+        self.root.clone()
     }
 
     /// Path to the vendor directory.
@@ -60,7 +58,9 @@ impl PackageStore {
 
     /// Path to where the package contents are populated.
     fn populated_path(&self, manifest: &PackageManifest) -> PathBuf {
-        self.proto_vendor_path().join(manifest.name.to_string())
+        // Convert dots in the package name to path separators
+        let name = manifest.name.to_string().replace(".", "/");
+        self.proto_vendor_path().join(name.to_string())
     }
 
     /// Creates the expected directory structure for `buffrs`
@@ -112,7 +112,8 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(&self, package: &PackageName) -> miette::Result<()> {
-        let pkg_dir = self.proto_vendor_path().join(&**package);
+        let package_dir = package.to_string().replace(".", "/");
+        let pkg_dir = self.proto_vendor_path().join(package_dir);
 
         fs::remove_dir_all(&pkg_dir)
             .await
@@ -182,7 +183,10 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(&self, package: &PackageName) -> PathBuf {
-        self.proto_vendor_path().join(&**package)
+        // Convert dots in the package name to path separators
+        let package = package.to_string().replace(".", "/");
+
+        self.proto_vendor_path().join(package)
     }
 
     /// Collect .proto files in a given path
@@ -214,7 +218,8 @@ impl PackageStore {
     /// Sync this stores proto files to the vendor directory
     pub async fn populate(&self, manifest: &PackageManifest) -> miette::Result<()> {
         let source_path = self.proto_path();
-        let target_dir = self.proto_vendor_path().join(manifest.name.to_string());
+        let name = manifest.name.replace(".", "/");
+        let target_dir = self.proto_vendor_path().join(name.to_string());
 
         if tokio::fs::try_exists(&target_dir)
             .await

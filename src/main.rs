@@ -14,7 +14,7 @@
 
 use buffrs::command;
 use buffrs::manifest::Manifest;
-use buffrs::package::{PackageName, PackageStore};
+use buffrs::package::PackageName;
 use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
@@ -261,10 +261,9 @@ async fn main() -> miette::Result<()> {
                 "failed to publish `{package}` to `{registry}:{repository}`",
             ))
         }
-        Command::Lint => command::lint().await.wrap_err(miette!(
-            "failed to lint protocol buffers in `{}`",
-            PackageStore::PROTO_PATH
-        )),
+        Command::Lint => command::lint()
+            .await
+            .wrap_err(miette!("failed to lint protocol buffers",)),
         Command::Install => command::install()
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
@@ -295,7 +294,6 @@ fn get_default_registry() -> Option<RegistryUri> {
     loop {
         let config_path = current_dir.join(".buffrs/config.toml");
 
-        println!("{:?}", config_path);
         if config_path.exists() {
             let config = std::fs::read_to_string(config_path)
                 .into_diagnostic()

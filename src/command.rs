@@ -391,6 +391,17 @@ pub async fn list() -> miette::Result<()> {
 
     let protos = store.collect(&store.proto_vendor_path(), true).await;
 
+    // Canonicalize the protos
+    let protos = protos
+        .into_iter()
+        .map(|proto| {
+            proto
+                .canonicalize()
+                .into_diagnostic()
+                .wrap_err(miette!("failed to canonicalize proto path"))
+        })
+        .collect::<miette::Result<Vec<_>>>()?;
+
     let cwd = {
         let cwd = std::env::current_dir()
             .into_diagnostic()
