@@ -155,7 +155,7 @@ mod tests {
         let repository = String::from("my-repo");
         let package = PackageName::from_str("package").unwrap();
         let version = VersionReq::from_str(version).unwrap();
-        Dependency::new(registry, repository, package, version)
+        Dependency::new(&registry, repository, package, version)
     }
 
     #[test]
