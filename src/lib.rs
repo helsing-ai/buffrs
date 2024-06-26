@@ -23,6 +23,8 @@ use thiserror::Error;
 pub mod cache;
 /// CLI command implementations
 pub mod command;
+/// Configuration file (.buffrs/config.toml) handling
+pub mod config;
 /// Credential management
 pub mod credentials;
 /// Common error types
@@ -40,8 +42,6 @@ pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;
-/// Configuration file (.buffrs/config.toml) handling
-pub mod config;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
