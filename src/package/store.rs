@@ -50,12 +50,12 @@ impl PackageStore {
 
     /// Path to the `proto` directory.
     pub fn proto_path(&self) -> PathBuf {
-        self.root.join(&self.config.proto_path())
+        self.root.join(self.config.proto_path())
     }
 
     /// Path to the vendor directory.
     pub fn proto_vendor_path(&self) -> PathBuf {
-        self.root.join(&self.config.proto_vendor_path())
+        self.root.join(self.config.proto_vendor_path())
     }
 
     /// Path to where the package contents are populated.
@@ -184,7 +184,7 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(&self, package: &PackageName) -> PathBuf {
-        let package_path = self.config.get_relative_package_dir(&package);
+        let package_path = self.config.get_relative_package_dir(package);
         self.proto_vendor_path().join(package_path)
     }
 

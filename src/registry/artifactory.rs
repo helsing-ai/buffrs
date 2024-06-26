@@ -31,7 +31,7 @@ impl Artifactory {
     pub fn new(registry: &RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
-            token: credentials.registry_tokens.get(&registry).cloned(),
+            token: credentials.registry_tokens.get(registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()

@@ -101,7 +101,7 @@ impl Config {
     /// * `package` - The package name
     pub fn get_relative_package_dir(&self, package: &PackageName) -> PathBuf {
         if self.hierarchical_packages {
-            package.to_string().replace(".", "/").into()
+            package.to_string().replace('.', "/").into()
         } else {
             PathBuf::from(package.to_string())
         }

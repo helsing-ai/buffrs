@@ -144,7 +144,7 @@ pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()>
 
     manifest
         .dependencies
-        .push(Dependency::new(&registry, repository, package, version));
+        .push(Dependency::new(registry, repository, package, version));
 
     manifest
         .write()
@@ -276,7 +276,7 @@ pub async fn publish(
     let mut manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
     let store = PackageStore::current(config).await?;
-    let artifactory = Artifactory::new(&registry, &credentials)?;
+    let artifactory = Artifactory::new(registry, &credentials)?;
 
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
@@ -491,7 +491,7 @@ pub async fn login(registry: &RegistryUri) -> miette::Result<()> {
 /// Logs you out from a registry
 pub async fn logout(registry: &RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
-    credentials.registry_tokens.remove(&registry);
+    credentials.registry_tokens.remove(registry);
     credentials.write().await
 }
 
