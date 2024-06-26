@@ -103,7 +103,12 @@ enum Command {
     },
 
     /// Installs dependencies
-    Install,
+    Install {
+        /// Only install dependencies
+        #[clap(long, default_value = "false")]
+        only_dependencies: bool,
+    },
+
     /// Uninstalls dependencies
     Uninstall,
 
@@ -239,7 +244,7 @@ async fn main() -> miette::Result<()> {
             "failed to lint protocol buffers in `{}`",
             PackageStore::PROTO_PATH
         )),
-        Command::Install => command::install()
+        Command::Install { only_dependencies } => command::install(only_dependencies)
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()
