@@ -28,10 +28,10 @@ pub struct Artifactory {
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
+    pub fn new(registry: &RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
-            token: credentials.registry_tokens.get(&registry).cloned(),
+            token: credentials.registry_tokens.get(registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()

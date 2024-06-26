@@ -172,11 +172,12 @@ impl DependencyGraph {
                 return Ok(cached);
             }
 
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
+            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
+                DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
-                })?;
+                },
+            )?;
 
             let package = registry
                 .download(dependency.with_version(&local_locked.version))
@@ -190,11 +191,12 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
+            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
+                DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
-                })?;
+                },
+            )?;
 
             registry
                 .download(dependency.clone())

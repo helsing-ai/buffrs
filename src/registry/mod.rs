@@ -22,14 +22,13 @@ mod artifactory;
 #[cfg(test)]
 mod cache;
 
+use crate::manifest::Dependency;
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
-
-use crate::manifest::Dependency;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -156,7 +155,7 @@ mod tests {
         let repository = String::from("my-repo");
         let package = PackageName::from_str("package").unwrap();
         let version = VersionReq::from_str(version).unwrap();
-        Dependency::new(registry, repository, package, version)
+        Dependency::new(&registry, repository, package, version)
     }
 
     #[test]

@@ -147,7 +147,7 @@ mod tests {
         // had published.
         let fetched = registry
             .download(Dependency::new(
-                registry_uri,
+                &registry_uri,
                 "test-repo".into(),
                 "test-api".parse().unwrap(),
                 "=0.1.0".parse().unwrap(),

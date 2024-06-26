@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use buffrs::command;
+use buffrs::config::Config;
 use buffrs::manifest::Manifest;
-use buffrs::package::{PackageName, PackageStore};
-use buffrs::registry::RegistryUri;
+use buffrs::package::PackageName;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
 use miette::{miette, WrapErr};
@@ -53,7 +53,7 @@ enum Command {
     Add {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUri,
+        registry: Option<String>,
         /// Dependency to add (Format <repository>/<package>@<version>
         dependency: String,
     },
@@ -85,7 +85,7 @@ enum Command {
     Publish {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUri,
+        registry: Option<String>,
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
@@ -115,13 +115,13 @@ enum Command {
     Login {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUri,
+        registry: Option<String>,
     },
     /// Logs you out from a registry
     Logout {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: RegistryUri,
+        registry: Option<String>,
     },
 
     /// Lockfile related commands
@@ -155,6 +155,10 @@ async fn main() -> miette::Result<()> {
 
     let cli = Cli::parse();
 
+    let cwd = std::env::current_dir().unwrap();
+
+    let config = Config::new(Some(&cwd))?;
+
     let manifest = if Manifest::exists().await? {
         Some(Manifest::read().await?)
     } else {
@@ -162,8 +166,6 @@ async fn main() -> miette::Result<()> {
     };
 
     let package = {
-        let cwd = std::env::current_dir().unwrap();
-
         let name = cwd
             .file_name()
             .ok_or_else(|| miette!("failed to locate current directory"))?
@@ -192,20 +194,27 @@ async fn main() -> miette::Result<()> {
                     package.map(|p| format!("`{p}`")).unwrap_or_default()
                 ))
         }
-        Command::Login { registry } => command::login(registry.to_owned())
-            .await
-            .wrap_err(miette!("failed to login to `{registry}`")),
-        Command::Logout { registry } => command::logout(registry.to_owned())
-            .await
-            .wrap_err(miette!("failed to logout from `{registry}`")),
+        Command::Login { registry } => {
+            let registry = config.registry_or_default(&registry)?;
+            command::login(&registry)
+                .await
+                .wrap_err(miette!("failed to login to `{registry}`"))
+        }
+        Command::Logout { registry } => {
+            let registry = config.registry_or_default(&registry)?;
+            command::logout(&registry)
+                .await
+                .wrap_err(miette!("failed to logout from `{registry}`"))
+        }
         Command::Add {
             registry,
             dependency,
-        } => command::add(registry.to_owned(), &dependency)
-            .await
-            .wrap_err(miette!(
+        } => {
+            let registry = config.registry_or_default(&registry)?;
+            command::add(&registry, &dependency).await.wrap_err(miette!(
                 "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-            )),
+            ))
+        }
         Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
         )),
@@ -224,21 +233,23 @@ async fn main() -> miette::Result<()> {
             allow_dirty,
             dry_run,
             set_version,
-        } => command::publish(
-            registry.to_owned(),
-            repository.to_owned(),
-            allow_dirty,
-            dry_run,
-            set_version,
-        )
-        .await
-        .wrap_err(miette!(
-            "failed to publish `{package}` to `{registry}:{repository}`",
-        )),
-        Command::Lint => command::lint().await.wrap_err(miette!(
-            "failed to lint protocol buffers in `{}`",
-            PackageStore::PROTO_PATH
-        )),
+        } => {
+            let registry = config.registry_or_default(&registry)?;
+            command::publish(
+                &registry,
+                repository.to_owned(),
+                allow_dirty,
+                dry_run,
+                set_version,
+            )
+            .await
+            .wrap_err(miette!(
+                "failed to publish `{package}` to `{registry}:{repository}`",
+            ))
+        }
+        Command::Lint => command::lint()
+            .await
+            .wrap_err(miette!("failed to lint protocol buffers",)),
         Command::Install => command::install()
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
