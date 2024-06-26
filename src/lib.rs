@@ -40,6 +40,8 @@ pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;
+/// Configuration file (.buffrs/config.toml) handling
+pub mod config;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";

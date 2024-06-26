@@ -23,6 +23,7 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
+    config::Config,
     manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
 };
@@ -31,41 +32,41 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageStore {
     root: PathBuf,
+    config: Config,
 }
 
 impl PackageStore {
-    /// Path to the dependency store
-    pub const PROTO_VENDOR_PATH: &'static str = "vendor";
-
-    fn new(root: PathBuf) -> Self {
-        Self { root }
+    fn new(root: PathBuf, config: &Config) -> Self {
+        Self {
+            root,
+            config: config.clone(),
+        }
     }
 
     /// Open current directory.
-    pub async fn current() -> miette::Result<Self> {
-        Self::open(&current_dir().into_diagnostic()?).await
+    pub async fn current(config: &Config) -> miette::Result<Self> {
+        Self::open(&current_dir().into_diagnostic()?, config).await
     }
 
     /// Path to the `proto` directory.
     pub fn proto_path(&self) -> PathBuf {
-        self.root.clone()
+        self.root.join(&self.config.proto_path())
     }
 
     /// Path to the vendor directory.
     pub fn proto_vendor_path(&self) -> PathBuf {
-        self.root.join(Self::PROTO_VENDOR_PATH)
+        self.root.join(&self.config.proto_vendor_path())
     }
 
     /// Path to where the package contents are populated.
     fn populated_path(&self, manifest: &PackageManifest) -> PathBuf {
-        // Convert dots in the package name to path separators
-        let name = manifest.name.to_string().replace(".", "/");
-        self.proto_vendor_path().join(name.to_string())
+        let package_path = self.config.get_relative_package_dir(&manifest.name);
+        self.proto_vendor_path().join(package_path)
     }
 
     /// Creates the expected directory structure for `buffrs`
-    pub async fn open(path: impl AsRef<Path>) -> miette::Result<Self> {
-        let store = PackageStore::new(path.as_ref().to_path_buf());
+    pub async fn open(path: impl AsRef<Path>, config: &Config) -> miette::Result<Self> {
+        let store = PackageStore::new(path.as_ref().to_path_buf(), config);
         let create = |dir: PathBuf| async move {
             fs::create_dir_all(&dir)
                 .await
@@ -112,7 +113,7 @@ impl PackageStore {
 
     /// Uninstalls a package from the local file system
     pub async fn uninstall(&self, package: &PackageName) -> miette::Result<()> {
-        let package_dir = package.to_string().replace(".", "/");
+        let package_dir = self.config.get_relative_package_dir(package);
         let pkg_dir = self.proto_vendor_path().join(package_dir);
 
         fs::remove_dir_all(&pkg_dir)
@@ -183,10 +184,8 @@ impl PackageStore {
 
     /// Directory for the vendored installation of a package
     pub fn locate(&self, package: &PackageName) -> PathBuf {
-        // Convert dots in the package name to path separators
-        let package = package.to_string().replace(".", "/");
-
-        self.proto_vendor_path().join(package)
+        let package_path = self.config.get_relative_package_dir(&package);
+        self.proto_vendor_path().join(package_path)
     }
 
     /// Collect .proto files in a given path
@@ -218,8 +217,8 @@ impl PackageStore {
     /// Sync this stores proto files to the vendor directory
     pub async fn populate(&self, manifest: &PackageManifest) -> miette::Result<()> {
         let source_path = self.proto_path();
-        let name = manifest.name.replace(".", "/");
-        let target_dir = self.proto_vendor_path().join(name.to_string());
+        let name = self.config.get_relative_package_dir(&manifest.name);
+        let target_dir = self.proto_vendor_path().join(name);
 
         if tokio::fs::try_exists(&target_dir)
             .await
@@ -267,11 +266,11 @@ impl PackageStore {
 #[test]
 fn can_get_proto_path() {
     assert_eq!(
-        PackageStore::new("/tmp".into()).proto_path(),
+        PackageStore::new("/tmp".into(), &Config::new(None).unwrap()).proto_path(),
         PathBuf::from("/tmp/proto")
     );
     assert_eq!(
-        PackageStore::new("/tmp".into()).proto_vendor_path(),
+        PackageStore::new("/tmp".into(), &Config::new(None).unwrap()).proto_vendor_path(),
         PathBuf::from("/tmp/proto/vendor")
     );
 }

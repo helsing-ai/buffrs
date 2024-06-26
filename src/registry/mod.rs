@@ -22,14 +22,13 @@ mod artifactory;
 #[cfg(test)]
 mod cache;
 
+use crate::manifest::Dependency;
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
-
-use crate::manifest::Dependency;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -65,20 +64,9 @@ impl FromStr for RegistryUri {
     type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = match Url::from_str(value) {
-            Ok(url) => url,
-            Err(err) => {
-                // try looking up the URL as a name in a .buffrs/config.toml file
-                match map_registry_name(value) {
-                    Some(registry) => registry.into(),
-                    None => {
-                        return Err(err)
-                            .into_diagnostic()
-                            .wrap_err(miette!("not a valid URL: {value}"))
-                    }
-                }
-            }
-        };
+        let url = Url::from_str(value)
+            .into_diagnostic()
+            .wrap_err(miette!("not a valid URL: {value}"))?;
 
         sanity_check_url(&url)?;
 
@@ -102,33 +90,6 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
         Ok(())
     } else {
         Err(miette!("the URI must contain a host component: {url}"))
-    }
-}
-
-fn map_registry_name(value: &str) -> Option<RegistryUri> {
-    // try to locate registry from .buffrs/config.toml in the current directory or parent directories
-    let mut current_dir = std::env::current_dir().into_diagnostic().ok()?;
-    loop {
-        let config_path = current_dir.join(".buffrs/config.toml");
-        if config_path.exists() {
-            let config = std::fs::read_to_string(config_path)
-                .into_diagnostic()
-                .ok()?;
-            let config: toml::Value = toml::from_str(&config).into_diagnostic().ok()?;
-            let registry = config
-                .get("registries")
-                .and_then(|registries| registries.get(value))
-                .and_then(|registry| registry.as_str())
-                .and_then(|registry| RegistryUri::from_str(registry).ok());
-
-            if let Some(registry) = registry {
-                return Some(registry);
-            }
-        }
-
-        if !current_dir.pop() {
-            break None;
-        }
     }
 }
 

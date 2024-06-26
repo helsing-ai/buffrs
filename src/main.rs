@@ -13,15 +13,13 @@
 // limitations under the License.
 
 use buffrs::command;
+use buffrs::config::Config;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
-use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
-use miette::IntoDiagnostic;
 use miette::{miette, WrapErr};
 use semver::Version;
-use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -55,7 +53,7 @@ enum Command {
     Add {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: Option<RegistryUri>,
+        registry: Option<String>,
         /// Dependency to add (Format <repository>/<package>@<version>
         dependency: String,
     },
@@ -87,7 +85,7 @@ enum Command {
     Publish {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: Option<RegistryUri>,
+        registry: Option<String>,
         /// Destination repository for the release
         #[clap(long)]
         repository: String,
@@ -117,13 +115,13 @@ enum Command {
     Login {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: Option<RegistryUri>,
+        registry: Option<String>,
     },
     /// Logs you out from a registry
     Logout {
         /// Artifactory url (e.g. https://<domain>/artifactory)
         #[clap(long)]
-        registry: Option<RegistryUri>,
+        registry: Option<String>,
     },
 
     /// Lockfile related commands
@@ -157,6 +155,10 @@ async fn main() -> miette::Result<()> {
 
     let cli = Cli::parse();
 
+    let cwd = std::env::current_dir().unwrap();
+
+    let config = Config::new(Some(&cwd))?;
+
     let manifest = if Manifest::exists().await? {
         Some(Manifest::read().await?)
     } else {
@@ -164,8 +166,6 @@ async fn main() -> miette::Result<()> {
     };
 
     let package = {
-        let cwd = std::env::current_dir().unwrap();
-
         let name = cwd
             .file_name()
             .ok_or_else(|| miette!("failed to locate current directory"))?
@@ -187,7 +187,7 @@ async fn main() -> miette::Result<()> {
                 None
             };
 
-            command::init(kind, package.to_owned())
+            command::init(kind, package.to_owned(), &config)
                 .await
                 .wrap_err(miette!(
                     "failed to initialize {}",
@@ -195,20 +195,14 @@ async fn main() -> miette::Result<()> {
                 ))
         }
         Command::Login { registry } => {
-            let registry = registry
-                .or_else(get_default_registry)
-                .ok_or_else(|| miette!("no registry provided and no default registry found"))?;
-
-            command::login(registry.to_owned())
+            let registry = config.registry_or_default(&registry)?;
+            command::login(&registry)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
         Command::Logout { registry } => {
-            let registry = registry
-                .or_else(get_default_registry)
-                .ok_or_else(|| miette!("no registry provided and no default registry found"))?;
-
-            command::logout(registry.to_owned())
+            let registry = config.registry_or_default(&registry)?;
+            command::logout(&registry)
                 .await
                 .wrap_err(miette!("failed to logout from `{registry}`"))
         }
@@ -216,24 +210,23 @@ async fn main() -> miette::Result<()> {
             registry,
             dependency,
         } => {
-            let registry = registry
-                .or_else(get_default_registry)
-                .ok_or_else(|| miette!("no registry provided and no default registry found"))?;
-
-            command::add(registry.to_owned(), &dependency)
+            let registry = config.registry_or_default(&registry)?;
+            command::add(&registry, &dependency).await.wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            ))
+        }
+        Command::Remove { package } => {
+            command::remove(package.to_owned(), &config)
                 .await
                 .wrap_err(miette!(
-                    "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+                    "failed to remove `{package}` from `{MANIFEST_FILE}`"
                 ))
         }
-        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
-            "failed to remove `{package}` from `{MANIFEST_FILE}`"
-        )),
         Command::Package {
             output_directory,
             dry_run,
             set_version,
-        } => command::package(output_directory, dry_run, set_version)
+        } => command::package(output_directory, dry_run, set_version, &config)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -245,32 +238,30 @@ async fn main() -> miette::Result<()> {
             dry_run,
             set_version,
         } => {
-            let registry = registry
-                .or_else(get_default_registry)
-                .ok_or_else(|| miette!("no registry provided and no default registry found"))?;
-
+            let registry = config.registry_or_default(&registry)?;
             command::publish(
-                registry.to_owned(),
+                &registry,
                 repository.to_owned(),
                 allow_dirty,
                 dry_run,
                 set_version,
+                &config,
             )
             .await
             .wrap_err(miette!(
                 "failed to publish `{package}` to `{registry}:{repository}`",
             ))
         }
-        Command::Lint => command::lint()
+        Command::Lint => command::lint(&config)
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
-        Command::Install => command::install()
+        Command::Install => command::install(&config)
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
-        Command::Uninstall => command::uninstall()
+        Command::Uninstall => command::uninstall(&config)
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
-        Command::List => command::list().await.wrap_err(miette!(
+        Command::List => command::list(&config).await.wrap_err(miette!(
             "failed to list installed protobuf files for `{package}`"
         )),
         Command::Lock { command } => match command {
@@ -279,37 +270,4 @@ async fn main() -> miette::Result<()> {
             )),
         },
     }
-}
-
-/// Get the default registry from the .buffrs/config.toml file in the current directory or parent directories
-///
-/// Looks up
-/// ```toml
-/// [registry]
-/// default = "https://<domain>/artifactory"
-/// ```
-fn get_default_registry() -> Option<RegistryUri> {
-    // try to locate registry from .buffrs/config.toml in the current directory or parent directories
-    let mut current_dir = std::env::current_dir().into_diagnostic().ok()?;
-    loop {
-        let config_path = current_dir.join(".buffrs/config.toml");
-
-        if config_path.exists() {
-            let config = std::fs::read_to_string(config_path)
-                .into_diagnostic()
-                .ok()?;
-            let config: toml::Value = toml::from_str(&config).into_diagnostic().ok()?;
-            let registry = config
-                .get("registry")
-                .and_then(|registry| registry.get("default"))
-                .and_then(|registry| registry.as_str())
-                .and_then(|registry| RegistryUri::from_str(registry).ok());
-
-            return registry;
-        }
-        if !current_dir.pop() {
-            break;
-        }
-    }
-    None
 }
