@@ -65,7 +65,7 @@ impl PackageName {
         let is_ascii_lowercase_alphanumeric =
             |c: char| c.is_ascii_alphanumeric() && !c.is_ascii_uppercase();
         match c {
-            '-' => true,
+            '-' | '.' => true,
             c if is_ascii_lowercase_alphanumeric(c) => true,
             _ => false,
         }
