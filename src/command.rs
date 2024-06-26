@@ -301,7 +301,7 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install(config: &Config) -> miette::Result<()> {
+pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current(config).await?;
@@ -310,10 +310,12 @@ pub async fn install(config: &Config) -> miette::Result<()> {
 
     store.clear().await?;
 
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
+    if !only_dependencies {
+        if let Some(ref pkg) = manifest.package {
+            store.populate(pkg).await?;
 
-        tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
+            tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
+        }
     }
 
     let dependency_graph =
