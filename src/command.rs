@@ -14,7 +14,6 @@
 
 use crate::{
     cache::Cache,
-    config::Config,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
@@ -36,11 +35,7 @@ const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
 /// Initializes the project
-pub async fn init(
-    kind: Option<PackageType>,
-    name: Option<PackageName>,
-    config: &Config,
-) -> miette::Result<()> {
+pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miette::Result<()> {
     if Manifest::exists().await? {
         bail!("a manifest file was found, project is already initialized");
     }
@@ -75,12 +70,9 @@ pub async fn init(
 
     manifest.write().await?;
 
-    PackageStore::open(
-        std::env::current_dir().unwrap_or_else(|_| ".".into()),
-        config,
-    )
-    .await
-    .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+    PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
+        .await
+        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
 
     Ok(())
 }
@@ -153,9 +145,9 @@ pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()>
 }
 
 /// Removes a dependency from this project
-pub async fn remove(package: PackageName, config: &Config) -> miette::Result<()> {
+pub async fn remove(package: PackageName) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
-    let store = PackageStore::current(config).await?;
+    let store = PackageStore::current().await?;
 
     let dependency = manifest
         .dependencies
@@ -175,10 +167,9 @@ pub async fn package(
     directory: impl AsRef<Path>,
     dry_run: bool,
     version: Option<Version>,
-    config: &Config,
 ) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
-    let store = PackageStore::current(config).await?;
+    let store = PackageStore::current().await?;
 
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
@@ -219,7 +210,6 @@ pub async fn publish(
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
-    config: &Config,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     async fn git_statuses() -> miette::Result<Vec<String>> {
@@ -275,7 +265,7 @@ pub async fn publish(
 
     let mut manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
-    let store = PackageStore::current(config).await?;
+    let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
     if let Some(version) = version {
@@ -301,10 +291,10 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result<()> {
+pub async fn install(only_dependencies: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let lockfile = Lockfile::read_or_default().await?;
-    let store = PackageStore::current(config).await?;
+    let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
     let cache = Cache::open().await?;
 
@@ -388,13 +378,13 @@ pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result
 }
 
 /// Uninstalls dependencies
-pub async fn uninstall(config: &Config) -> miette::Result<()> {
-    PackageStore::current(config).await?.clear().await
+pub async fn uninstall() -> miette::Result<()> {
+    PackageStore::current().await?.clear().await
 }
 
 /// Lists all protobuf files managed by Buffrs to stdout
-pub async fn list(config: &Config) -> miette::Result<()> {
-    let store = PackageStore::current(config).await?;
+pub async fn list() -> miette::Result<()> {
+    let store = PackageStore::current().await?;
     let manifest = Manifest::read().await?;
 
     if let Some(ref pkg) = manifest.package {
@@ -439,9 +429,9 @@ pub async fn list(config: &Config) -> miette::Result<()> {
 
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
-pub async fn lint(config: &Config) -> miette::Result<()> {
+pub async fn lint() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-    let store = PackageStore::current(config).await?;
+    let store = PackageStore::current().await?;
 
     let pkg = manifest.package.ok_or(miette!(
         "a [package] section must be declared run the linter"

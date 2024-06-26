@@ -192,7 +192,7 @@ async fn main() -> miette::Result<()> {
                 None
             };
 
-            command::init(kind, package.to_owned(), &config)
+            command::init(kind, package.to_owned())
                 .await
                 .wrap_err(miette!(
                     "failed to initialize {}",
@@ -220,18 +220,14 @@ async fn main() -> miette::Result<()> {
                 "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
             ))
         }
-        Command::Remove { package } => {
-            command::remove(package.to_owned(), &config)
-                .await
-                .wrap_err(miette!(
-                    "failed to remove `{package}` from `{MANIFEST_FILE}`"
-                ))
-        }
+        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
+            "failed to remove `{package}` from `{MANIFEST_FILE}`"
+        )),
         Command::Package {
             output_directory,
             dry_run,
             set_version,
-        } => command::package(output_directory, dry_run, set_version, &config)
+        } => command::package(output_directory, dry_run, set_version)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -250,23 +246,22 @@ async fn main() -> miette::Result<()> {
                 allow_dirty,
                 dry_run,
                 set_version,
-                &config,
             )
             .await
             .wrap_err(miette!(
                 "failed to publish `{package}` to `{registry}:{repository}`",
             ))
         }
-        Command::Lint => command::lint(&config)
+        Command::Lint => command::lint()
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
-        Command::Install { only_dependencies } => command::install(only_dependencies, &config)
+        Command::Install { only_dependencies } => command::install(only_dependencies)
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
-        Command::Uninstall => command::uninstall(&config)
+        Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
-        Command::List => command::list(&config).await.wrap_err(miette!(
+        Command::List => command::list().await.wrap_err(miette!(
             "failed to list installed protobuf files for `{package}`"
         )),
         Command::Lock { command } => match command {

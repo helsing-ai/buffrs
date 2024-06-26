@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{package::PackageName, registry::RegistryUri};
+use crate::registry::RegistryUri;
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use std::{
     collections::HashMap,
-    ffi::OsString,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -26,11 +25,6 @@ use std::{
 /// # Example
 ///
 /// ```toml
-/// [store]
-/// proto_path = "proto"
-/// proto_vendor_path = "proto/vendor"
-/// hierarchical_packages = true
-///
 /// [registries]
 /// some_org = "https://artifactory.example.com/artifactory/some-org"
 ///
@@ -43,26 +37,14 @@ pub struct Config {
     /// Path to the configuration file
     config_path: Option<PathBuf>,
 
-    // Interpret dots in protobuf packages as folders
-    hierarchical_packages: bool,
-
     /// Default registry to use if none is specified
     default_registry: Option<String>,
 
     /// List of registries
     registries: HashMap<String, RegistryUri>,
-
-    /// Path to the package store (default: "proto")
-    proto_path: OsString,
-
-    /// Path to the vendor directory (default: "proto/vendor")
-    proto_vendor_path: OsString,
 }
 
 impl Config {
-    const DEFAULT_PROTO_PATH: &'static str = "proto";
-    const DEFAULT_PROTO_VENDOR_PATH: &'static str = "proto/vendor";
-
     /// Create a new configuration with default values
     /// # Arguments
     /// * `cwd` - Starting directory to search for the configuration file
@@ -72,38 +54,9 @@ impl Config {
             Some(config_path) => Self::new_from_config_file(&config_path),
             None => Ok(Self {
                 config_path: None,
-                hierarchical_packages: false,
                 default_registry: None,
                 registries: HashMap::new(),
-                proto_path: Self::DEFAULT_PROTO_PATH.into(),
-                proto_vendor_path: Self::DEFAULT_PROTO_VENDOR_PATH.into(),
             }),
-        }
-    }
-
-    /// Get the path to the package store
-    /// # Returns
-    /// The path to the package store
-    pub fn proto_path(&self) -> PathBuf {
-        PathBuf::from(&self.proto_path)
-    }
-
-    /// Get the path to the vendor directory
-    /// # Returns
-    /// The path to the vendor directory
-    pub fn proto_vendor_path(&self) -> PathBuf {
-        PathBuf::from(&self.proto_vendor_path)
-    }
-
-    /// Get the relative package directory
-    ///
-    /// # Arguments
-    /// * `package` - The package name
-    pub fn get_relative_package_dir(&self, package: &PackageName) -> PathBuf {
-        if self.hierarchical_packages {
-            package.to_string().replace('.', "/").into()
-        } else {
-            PathBuf::from(package.to_string())
         }
     }
 
@@ -197,12 +150,6 @@ impl Config {
             config_path.display()
         ))?;
 
-        let hierarchical_packages = config
-            .get("store")
-            .and_then(|store| store.get("hierarchical_packages"))
-            .and_then(|hierarchical_packages| hierarchical_packages.as_bool())
-            .unwrap_or(false);
-
         // Load registries from [registries] section
         let registries = config
             .get("registries")
@@ -242,29 +189,10 @@ impl Config {
             );
         }
 
-        // Load proto path from [store.proto_path]
-        let proto_path = config
-            .get("store")
-            .and_then(|store| store.get("proto_path"))
-            .and_then(|proto_path| proto_path.as_str())
-            .map(|proto_path| proto_path.into())
-            .unwrap_or_else(|| Self::DEFAULT_PROTO_PATH.into());
-
-        // Load proto vendor path from [store.proto_vendor_path]
-        let proto_vendor_path = config
-            .get("store")
-            .and_then(|store| store.get("proto_vendor_path"))
-            .and_then(|proto_vendor_path| proto_vendor_path.as_str())
-            .map(|proto_vendor_path| proto_vendor_path.into())
-            .unwrap_or_else(|| Self::DEFAULT_PROTO_VENDOR_PATH.into());
-
         Ok(Self {
             config_path: Some(config_path.to_owned()),
-            hierarchical_packages,
             default_registry,
             registries,
-            proto_path,
-            proto_vendor_path,
         })
     }
 }
