@@ -25,7 +25,11 @@ use crate::{
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
-use std::{env, path::Path, str::FromStr};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -68,9 +72,43 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
     let manifest = Manifest::new(package, vec![]);
 
-    manifest.write().await?;
+    manifest.write(None).await?;
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
+        .await
+        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+
+    Ok(())
+}
+
+/// Initializes a project with the given name in the current directory
+pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result<()> {
+    let mut package_dir: PathBuf = ".".into();
+    package_dir.push::<String>(name.clone().into());
+    // create_dir fails if the folder already exists
+    fs::create_dir(&package_dir)
+        .await
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "failed to create {} directory",
+            package_dir.display()
+        ))?;
+
+    let package = kind
+        .map(|kind| -> miette::Result<PackageManifest> {
+            Ok(PackageManifest {
+                kind,
+                name,
+                version: INITIAL_VERSION,
+                description: None,
+            })
+        })
+        .transpose()?;
+
+    let manifest = Manifest::new(package, vec![]);
+    manifest.write(Some(package_dir.clone())).await?;
+
+    PackageStore::open(&package_dir)
         .await
         .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
 
@@ -139,7 +177,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
-        .write()
+        .write(None)
         .await
         .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
 }
@@ -159,7 +197,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     store.uninstall(&dependency.package).await.ok();
 
-    manifest.write().await
+    manifest.write(None).await
 }
 
 /// Packages the api and writes it to the filesystem

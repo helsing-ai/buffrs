@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use tokio::fs;
@@ -313,16 +313,18 @@ impl Manifest {
         Ok(Some(raw.into()))
     }
 
-    /// Persists the manifest into the current directory
-    pub async fn write(&self) -> miette::Result<()> {
+    /// Persists the manifest into the provided directory, which must exist (or current directory if None)
+    pub async fn write(&self, dir_path: Option<PathBuf>) -> miette::Result<()> {
         // hint: create a canary manifest from the current one
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
             self.dependencies.clone(),
         ));
 
+        let mut manifest_file_path = dir_path.unwrap_or_else(|| ".".into());
+        manifest_file_path.push(MANIFEST_FILE);
         fs::write(
-            MANIFEST_FILE,
+            manifest_file_path,
             toml::to_string(&raw)
                 .into_diagnostic()
                 .wrap_err(SerializationError(ManagedFile::Manifest))?
