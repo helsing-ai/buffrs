@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
 };
 use tokio::fs;
@@ -315,12 +315,11 @@ impl Manifest {
 
     /// Persists the manifest into the current directory
     pub async fn write(&self) -> miette::Result<()> {
-        let current_dir = PathBuf::from(".");
-        return self.write_at(&current_dir).await;
+        self.write_at(Path::new(".")).await
     }
 
     /// Persists the manifest into the provided directory, which must exist
-    pub async fn write_at(&self, dir_path: &PathBuf) -> miette::Result<()> {
+    pub async fn write_at(&self, dir_path: &Path) -> miette::Result<()> {
         // hint: create a canary manifest from the current one
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
