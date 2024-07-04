@@ -42,6 +42,7 @@ Usage: buffrs <COMMAND>
 
 Commands:
   init       Initializes a buffrs setup
+  new        Creates a new buffrs package in the current directory
   lint       Check rule violations for this package
   add        Adds dependencies to a manifest file
   remove     Removes dependencies from a manifest file
