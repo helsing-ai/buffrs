@@ -72,7 +72,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
     let manifest = Manifest::new(package, vec![]);
 
-    manifest.write(None).await?;
+    manifest.write().await?;
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .await
@@ -83,8 +83,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
 /// Initializes a project with the given name in the current directory
 pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result<()> {
-    let mut package_dir: PathBuf = ".".into();
-    package_dir.push::<String>(name.clone().into());
+    let package_dir = PathBuf::from(name.to_string());
     // create_dir fails if the folder already exists
     fs::create_dir(&package_dir)
         .await
@@ -106,7 +105,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
         .transpose()?;
 
     let manifest = Manifest::new(package, vec![]);
-    manifest.write(Some(package_dir.clone())).await?;
+    manifest.write_at(&package_dir).await?;
 
     PackageStore::open(&package_dir)
         .await
@@ -177,7 +176,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
-        .write(None)
+        .write()
         .await
         .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
 }
@@ -197,7 +196,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     store.uninstall(&dependency.package).await.ok();
 
-    manifest.write(None).await
+    manifest.write().await
 }
 
 /// Packages the api and writes it to the filesystem
