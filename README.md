@@ -50,9 +50,9 @@ Commands:
   install    Installs dependencies
   uninstall  Uninstalls dependencies
   list       Lists all protobuf files managed by Buffrs to stdout
-  generate   Generate code from installed buffrs packages
   login      Logs you in for a registry
   logout     Logs you out from a registry
+  lock       Lockfile related commands
   help       Print this message or the help of the given subcommand(s)
 
 Options:
