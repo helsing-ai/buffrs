@@ -151,14 +151,6 @@ impl DependencyGraph {
     ) -> miette::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
-                dependency.manifest.version.matches(&local_locked.version),
-                "dependency {} cannot be satisfied - requested {}, but version {} is locked",
-                dependency.package,
-                dependency.manifest.version,
-                local_locked.version,
-            );
-
-            ensure!(
                 is_root || dependency.manifest.registry == local_locked.registry,
                 "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
                     dependency.package,
@@ -166,10 +158,14 @@ impl DependencyGraph {
                     local_locked.registry,
             );
 
-            if let Some(cached) = cache.get(local_locked.into()).await? {
-                local_locked.validate(&cached)?;
-
-                return Ok(cached);
+            // For now we should only check cache if locked package matches manifest,
+            // but theoretically we should be able to still look into cache when freshly installing
+            // a dependency.
+            if dependency.manifest.version.matches(&local_locked.version) {
+                if let Some(cached) = cache.get(local_locked.into()).await? {
+                    local_locked.validate(&cached)?;
+                    return Ok(cached);
+                }
             }
 
             let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
@@ -179,7 +175,9 @@ impl DependencyGraph {
                 })?;
 
             let package = registry
-                .download(dependency.with_version(&local_locked.version))
+                // fetch the version using manifest directly. This works now
+                // because buffrs only supports pinned versions
+                .download(dependency.clone())
                 .await
                 .wrap_err(DownloadError {
                     name: dependency.package,
