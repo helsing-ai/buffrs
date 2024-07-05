@@ -25,7 +25,11 @@ use crate::{
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
-use std::{env, path::Path, str::FromStr};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -71,6 +75,39 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
     manifest.write().await?;
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
+        .await
+        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+
+    Ok(())
+}
+
+/// Initializes a project with the given name in the current directory
+pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result<()> {
+    let package_dir = PathBuf::from(name.to_string());
+    // create_dir fails if the folder already exists
+    fs::create_dir(&package_dir)
+        .await
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "failed to create {} directory",
+            package_dir.display()
+        ))?;
+
+    let package = kind
+        .map(|kind| -> miette::Result<PackageManifest> {
+            Ok(PackageManifest {
+                kind,
+                name,
+                version: INITIAL_VERSION,
+                description: None,
+            })
+        })
+        .transpose()?;
+
+    let manifest = Manifest::new(package, vec![]);
+    manifest.write_at(&package_dir).await?;
+
+    PackageStore::open(&package_dir)
         .await
         .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
 
