@@ -80,7 +80,12 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 struct DependencyLocator {
     repository: String,
     package: PackageName,
-    version: VersionReq,
+    version: DependencyLocatorVersion,
+}
+
+enum DependencyLocatorVersion {
+    Version(VersionReq),
+    Latest,
 }
 
 impl FromStr for DependencyLocator {
@@ -103,18 +108,24 @@ impl FromStr for DependencyLocator {
 
         let repository = repository.into();
 
-        let (package, version) = dependency.split_once('@').ok_or_else(|| {
-            miette!("dependency specification is missing version part: {dependency}")
-        })?;
+        let (package, version) = dependency
+            .split_once('@')
+            .map(|(package, version)| (package, Some(version)))
+            .unwrap_or_else(|| (dependency, None));
 
         let package = package
             .parse::<PackageName>()
             .wrap_err(miette!("invalid package name: {package}"))?;
 
-        let version = version
-            .parse::<VersionReq>()
-            .into_diagnostic()
-            .wrap_err(miette!("not a valid version requirement: {version}"))?;
+        let version = match version {
+            Some("latest") | None => DependencyLocatorVersion::Latest,
+            Some(version_str) => {
+                let parsed_version = VersionReq::parse(version_str)
+                    .into_diagnostic()
+                    .wrap_err(miette!("not a valid version requirement: {version_str}"))?;
+                DependencyLocatorVersion::Version(parsed_version)
+            }
+        };
 
         Ok(Self {
             repository,
@@ -133,6 +144,23 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         package,
         version,
     } = dependency.parse()?;
+
+    let version = match version {
+        DependencyLocatorVersion::Version(version_req) => version_req,
+        DependencyLocatorVersion::Latest => {
+            // query artifactory to retrieve the actual latest version
+            let credentials = Credentials::load().await?;
+            let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+
+            let latest_version = artifactory
+                .get_latest_version(repository.clone(), package.clone())
+                .await?;
+            // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
+            VersionReq::parse(&latest_version.to_string())
+                .into_diagnostic()
+                .map_err(miette::Report::from)?
+        }
+    };
 
     manifest
         .dependencies
@@ -511,6 +539,8 @@ mod tests {
         assert!("repo/pkg@=1.0.0-with-prerelease"
             .parse::<DependencyLocator>()
             .is_ok());
+        assert!("repo/pkg@latest".parse::<DependencyLocator>().is_ok());
+        assert!("repo/pkg".parse::<DependencyLocator>().is_ok());
     }
 
     #[test]
@@ -518,7 +548,9 @@ mod tests {
         assert!("/xyz@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo/@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo@1.0.0".parse::<DependencyLocator>().is_err());
-        assert!("repo/pkg".parse::<DependencyLocator>().is_err());
+        assert!("repo/pkg@latestwithtypo"
+            .parse::<DependencyLocator>()
+            .is_err());
         assert!("repo/pkg@=1#meta".parse::<DependencyLocator>().is_err());
         assert!("repo/PKG@=1.0".parse::<DependencyLocator>().is_err());
     }
