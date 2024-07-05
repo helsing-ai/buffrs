@@ -315,14 +315,20 @@ impl Manifest {
 
     /// Persists the manifest into the current directory
     pub async fn write(&self) -> miette::Result<()> {
+        self.write_at(Path::new(".")).await
+    }
+
+    /// Persists the manifest into the provided directory, which must exist
+    pub async fn write_at(&self, dir_path: &Path) -> miette::Result<()> {
         // hint: create a canary manifest from the current one
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
             self.dependencies.clone(),
         ));
 
+        let manifest_file_path = dir_path.join(MANIFEST_FILE);
         fs::write(
-            MANIFEST_FILE,
+            manifest_file_path,
             toml::to_string(&raw)
                 .into_diagnostic()
                 .wrap_err(SerializationError(ManagedFile::Manifest))?

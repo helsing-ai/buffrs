@@ -46,6 +46,21 @@ enum Command {
         package: Option<PackageName>,
     },
 
+    /// Creates a new buffrs package in the current directory
+    New {
+        /// Sets up the package as lib
+        #[clap(long, conflicts_with = "api")]
+        #[arg(group = "pkg")]
+        lib: bool,
+        /// Sets up the package as api
+        #[clap(long, conflicts_with = "lib")]
+        #[arg(group = "pkg")]
+        api: bool,
+        /// The package name
+        #[clap(requires = "pkg")]
+        package: PackageName,
+    },
+
     /// Check rule violations for this package.
     Lint,
 
@@ -177,13 +192,7 @@ async fn main() -> miette::Result<()> {
 
     match cli.command {
         Command::Init { lib, api, package } => {
-            let kind = if lib {
-                Some(PackageType::Lib)
-            } else if api {
-                Some(PackageType::Api)
-            } else {
-                None
-            };
+            let kind = infer_package_type(lib, api);
 
             command::init(kind, package.to_owned())
                 .await
@@ -191,6 +200,13 @@ async fn main() -> miette::Result<()> {
                     "failed to initialize {}",
                     package.map(|p| format!("`{p}`")).unwrap_or_default()
                 ))
+        }
+        Command::New { lib, api, package } => {
+            let kind = infer_package_type(lib, api);
+
+            command::new(kind, package.to_owned())
+                .await
+                .wrap_err(miette!("failed to initialize {}", format!("`{package}`")))
         }
         Command::Login { registry } => command::login(registry.to_owned())
             .await
@@ -253,5 +269,15 @@ async fn main() -> miette::Result<()> {
                 "failed to print locked file requirements of `{package}`"
             )),
         },
+    }
+}
+
+fn infer_package_type(lib: bool, api: bool) -> Option<PackageType> {
+    if lib {
+        Some(PackageType::Lib)
+    } else if api {
+        Some(PackageType::Api)
+    } else {
+        None
     }
 }
