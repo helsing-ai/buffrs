@@ -25,7 +25,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, SerializationError},
-    lock::LockedPackage,
+    lock::{Digest, DigestAlgorithm, LockedPackage},
     manifest::{self, Edition, Manifest, MANIFEST_FILE},
     package::PackageName,
     registry::RegistryUri,
@@ -39,6 +39,8 @@ pub struct Package {
     pub manifest: Manifest,
     /// The `tar.gz` archive containing the protocol buffers
     pub tgz: Bytes,
+    /// The package digest
+    pub digest: Digest,
 }
 
 impl Package {
@@ -110,13 +112,18 @@ impl Package {
             .into_diagnostic()
             .wrap_err(miette!("failed to compress release"))?;
 
-        let tgz = encoder
+        let tgz: Bytes = encoder
             .finish()
             .into_diagnostic()
             .wrap_err(miette!("failed to finalize package"))?
             .into();
 
-        Ok(Self { manifest, tgz })
+        let digest = DigestAlgorithm::SHA256.digest(&tgz);
+        Ok(Self {
+            manifest,
+            tgz,
+            digest,
+        })
     }
 
     /// Unpack a package to a specific path.
@@ -192,7 +199,12 @@ impl Package {
             .parse()
             .into_diagnostic()?;
 
-        Ok(Self { manifest, tgz })
+        let digest = DigestAlgorithm::SHA256.digest(&tgz);
+        Ok(Self {
+            manifest,
+            tgz,
+            digest,
+        })
     }
 
     /// The name of this package

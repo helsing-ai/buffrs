@@ -69,7 +69,7 @@ impl LockedPackage {
             name: package.name().to_owned(),
             registry,
             repository,
-            digest: DigestAlgorithm::SHA256.digest(&package.tgz),
+            digest: package.digest.to_owned(),
             version: package.version().to_owned(),
             dependencies: package
                 .manifest
