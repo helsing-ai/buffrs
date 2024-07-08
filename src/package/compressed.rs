@@ -39,8 +39,6 @@ pub struct Package {
     pub manifest: Manifest,
     /// The `tar.gz` archive containing the protocol buffers
     pub tgz: Bytes,
-    /// The package digest
-    pub digest: Digest,
 }
 
 impl Package {
@@ -118,11 +116,9 @@ impl Package {
             .wrap_err(miette!("failed to finalize package"))?
             .into();
 
-        let digest = DigestAlgorithm::SHA256.digest(&tgz);
         Ok(Self {
             manifest,
             tgz,
-            digest,
         })
     }
 
@@ -199,11 +195,9 @@ impl Package {
             .parse()
             .into_diagnostic()?;
 
-        let digest = DigestAlgorithm::SHA256.digest(&tgz);
         Ok(Self {
             manifest,
             tgz,
-            digest,
         })
     }
 
@@ -231,6 +225,11 @@ impl Package {
             .as_ref()
             .expect("compressed package contains invalid manifest (package section missing)")
             .version
+    }
+
+    /// Digest calculates the digest based on the downloaded package bytes
+    pub fn digest(&self) -> Digest {
+        DigestAlgorithm::SHA256.digest(&self.tgz)
     }
 
     /// Lock this package

@@ -91,7 +91,6 @@ impl LocalRegistry {
 #[cfg(test)]
 mod tests {
     use crate::{
-        lock::DigestAlgorithm,
         manifest::{Dependency, Manifest, PackageManifest},
         package::{Package, PackageType},
         registry::cache::LocalRegistry,
@@ -123,7 +122,6 @@ mod tests {
         registry
             .publish(
                 Package {
-                    digest: DigestAlgorithm::SHA256.digest(&package_bytes),
                     manifest: manifest.clone(),
                     tgz: package_bytes.clone(),
                 },

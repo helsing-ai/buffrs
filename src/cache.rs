@@ -204,8 +204,6 @@ impl Cache {
 
     /// Put a locked package in the cache
     pub async fn put(&self, entry: Entry, bytes: Bytes) -> miette::Result<()> {
-        // let entry: Entry = FileRequirement::from(package).into();
-
         let file = self.path().join(entry.filename());
 
         tokio::fs::write(&file, bytes.as_ref())
@@ -245,12 +243,13 @@ impl From<Package> for Entry {
 
 impl From<&Package> for Entry {
     fn from(value: &Package) -> Self {
+        let digest = value.digest();
         Self(
             format!(
                 "{}.{}.{}.tgz",
                 value.name(),
-                value.digest.algorithm(),
-                hex::encode(value.digest.as_bytes())
+                digest.algorithm(),
+                hex::encode(digest.as_bytes())
             )
             .into(),
         )
