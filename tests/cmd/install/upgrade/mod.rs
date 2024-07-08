@@ -66,7 +66,7 @@ fn fixture() {
             .assert()
             .success();
 
-        // Updgrade dependency from 0.1.0 to 0.2.0
+        // Upgrade dependency from 0.1.0 to 0.2.0
         let manifest = std::fs::read_to_string(cwd.join("Proto.toml")).unwrap();
         let updated_manifest = manifest.replacen("0.1.0", "0.2.0", 1);
         std::fs::write(cwd.join("Proto.toml"), updated_manifest).unwrap();
