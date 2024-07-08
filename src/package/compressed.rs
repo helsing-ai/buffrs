@@ -116,10 +116,7 @@ impl Package {
             .wrap_err(miette!("failed to finalize package"))?
             .into();
 
-        Ok(Self {
-            manifest,
-            tgz,
-        })
+        Ok(Self { manifest, tgz })
     }
 
     /// Unpack a package to a specific path.
@@ -195,10 +192,7 @@ impl Package {
             .parse()
             .into_diagnostic()?;
 
-        Ok(Self {
-            manifest,
-            tgz,
-        })
+        Ok(Self { manifest, tgz })
     }
 
     /// The name of this package
