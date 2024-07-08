@@ -175,8 +175,8 @@ impl DependencyGraph {
                 })?;
 
             let package = registry
-                // fetch the version using manifest directly. This works now
-                // because buffrs only supports pinned versions
+                // TODO(#205): This works now because buffrs only supports pinned versions.
+                // This logic has to change once we implement dynamic version resolution.
                 .download(dependency.clone())
                 .await
                 .wrap_err(DownloadError {
