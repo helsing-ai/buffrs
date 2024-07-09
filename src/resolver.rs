@@ -6,9 +6,9 @@ use semver::VersionReq;
 use thiserror::Error;
 
 use crate::{
-    cache::Cache,
+    cache::{Cache, Entry},
     credentials::Credentials,
-    lock::Lockfile,
+    lock::{FileRequirement, Lockfile},
     manifest::{Dependency, Manifest},
     package::{Package, PackageName},
     registry::{Artifactory, RegistryUri},
@@ -184,7 +184,11 @@ impl DependencyGraph {
                     version: dependency.manifest.version,
                 })?;
 
-            cache.put(local_locked, package.tgz.clone()).await.ok();
+            let file_requirement = FileRequirement::from(local_locked);
+            cache
+                .put(file_requirement.into(), package.tgz.clone())
+                .await
+                .ok();
 
             Ok(package)
         } else {
@@ -194,13 +198,19 @@ impl DependencyGraph {
                     version: dependency.manifest.version.clone(),
                 })?;
 
-            registry
+            let package = registry
                 .download(dependency.clone())
                 .await
                 .wrap_err(DownloadError {
                     name: dependency.package,
                     version: dependency.manifest.version,
-                })
+                })?;
+
+            let key = Entry::from(&package);
+            let content = package.tgz.clone();
+            cache.put(key, content).await.ok();
+
+            Ok(package)
         }
     }
 
