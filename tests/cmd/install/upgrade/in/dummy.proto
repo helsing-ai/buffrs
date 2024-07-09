@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package dummy_api;
+
+message DummyMessage {
+  string id = 1;
+}
+
