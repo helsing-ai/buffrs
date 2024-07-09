@@ -23,7 +23,7 @@ use miette::{miette, Context, IntoDiagnostic};
 use walkdir::WalkDir;
 
 use crate::{
-    lock::{Digest, DigestAlgorithm, FileRequirement, LockedPackage},
+    lock::{Digest, DigestAlgorithm, FileRequirement},
     package::{Package, PackageName},
 };
 
@@ -203,9 +203,7 @@ impl Cache {
     }
 
     /// Put a locked package in the cache
-    pub async fn put(&self, package: &LockedPackage, bytes: Bytes) -> miette::Result<()> {
-        let entry: Entry = FileRequirement::from(package).into();
-
+    pub async fn put(&self, entry: Entry, bytes: Bytes) -> miette::Result<()> {
         let file = self.path().join(entry.filename());
 
         tokio::fs::write(&file, bytes.as_ref())
@@ -213,7 +211,7 @@ impl Cache {
             .into_diagnostic()
             .wrap_err(miette!(
                 "failed to put package {} in the cache",
-                package.name
+                entry.filename().to_str().unwrap()
             ))?;
 
         Ok(())
@@ -234,6 +232,27 @@ impl Entry {
     /// The filename of the cache entry
     pub fn filename(&self) -> &Path {
         self.0.as_path()
+    }
+}
+
+impl From<Package> for Entry {
+    fn from(value: Package) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&Package> for Entry {
+    fn from(value: &Package) -> Self {
+        let digest = value.digest(DigestAlgorithm::SHA256);
+        Self(
+            format!(
+                "{}.{}.{}.tgz",
+                value.name(),
+                digest.algorithm(),
+                hex::encode(digest.as_bytes())
+            )
+            .into(),
+        )
     }
 }
 
