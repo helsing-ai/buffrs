@@ -222,8 +222,8 @@ impl Package {
     }
 
     /// Digest calculates the digest based on the downloaded package bytes
-    pub fn digest(&self) -> Digest {
-        DigestAlgorithm::SHA256.digest(&self.tgz)
+    pub fn digest(&self, algorithm: DigestAlgorithm) -> Digest {
+        algorithm.digest(&self.tgz)
     }
 
     /// Lock this package

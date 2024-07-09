@@ -243,7 +243,7 @@ impl From<Package> for Entry {
 
 impl From<&Package> for Entry {
     fn from(value: &Package) -> Self {
-        let digest = value.digest();
+        let digest = value.digest(DigestAlgorithm::SHA256);
         Self(
             format!(
                 "{}.{}.{}.tgz",
