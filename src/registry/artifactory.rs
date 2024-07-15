@@ -15,7 +15,7 @@
 use super::RegistryUri;
 use crate::{
     credentials::Credentials,
-    manifest::Dependency,
+    manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
 };
 use miette::{ensure, miette, Context, IntoDiagnostic};
@@ -153,19 +153,22 @@ impl Artifactory {
 
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
+            return Err(miette!(
+                "unable to download local dependency ({}) from artifactory",
+                dependency.package
+            ));
+        };
+
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = dependency.manifest.registry.path().to_owned();
+            let path = manifest.registry.path().to_owned();
 
-            let mut url = dependency.manifest.registry.clone();
+            let mut url = manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
-                path,
-                dependency.manifest.repository,
-                dependency.package,
-                dependency.package,
-                version
+                path, manifest.repository, dependency.package, dependency.package, version
             ));
 
             url.into()
@@ -197,6 +200,20 @@ impl Artifactory {
 
     /// Publishes a package to artifactory
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
+        // abort publishing if we have local dependencies
+        if let Some(local) = package
+            .manifest
+            .dependencies
+            .iter()
+            .find(|d| d.manifest.is_local())
+        {
+            return Err(miette!(
+                "unable to public {} to artifactory due to local dependency {}",
+                package.name(),
+                local.package
+            ));
+        }
+
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
