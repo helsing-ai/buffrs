@@ -454,6 +454,7 @@ impl Display for Dependency {
 
 /// Manifest format for dependencies
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
 pub enum DependencyManifest {
     /// A remote dependency from artifactory
     Remote(RemoteDependencyManifest),
