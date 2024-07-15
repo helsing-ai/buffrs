@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
 };
 use tokio::fs;
@@ -408,47 +408,91 @@ impl Dependency {
     ) -> Self {
         Self {
             package,
-            manifest: DependencyManifest {
+            manifest: RemoteDependencyManifest {
                 repository,
                 version,
                 registry,
-            },
+            }
+            .into(),
         }
     }
 
     /// Creates a copy of this dependency with a pinned version
     pub fn with_version(&self, version: &Version) -> Dependency {
         let mut dependency = self.clone();
-        dependency.manifest.version = VersionReq {
-            comparators: vec![semver::Comparator {
-                op: semver::Op::Exact,
-                major: version.major,
-                minor: Some(version.minor),
-                patch: Some(version.patch),
-                pre: version.pre.clone(),
-            }],
-        };
+
+        if let DependencyManifest::Remote(ref mut manifest) = dependency.manifest {
+            manifest.version = VersionReq {
+                comparators: vec![semver::Comparator {
+                    op: semver::Op::Exact,
+                    major: version.major,
+                    minor: Some(version.minor),
+                    patch: Some(version.patch),
+                    pre: version.pre.clone(),
+                }],
+            };
+        }
+
         dependency
     }
 }
 
 impl Display for Dependency {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}/{}@{}",
-            self.manifest.repository, self.package, self.manifest.version
-        )
+        match &self.manifest {
+            DependencyManifest::Remote(manifest) => write!(
+                f,
+                "{}/{}@{}",
+                manifest.repository, self.package, manifest.version
+            ),
+            DependencyManifest::Local(manifest) => {
+                write!(f, "{}@{}", self.package, manifest.path.display())
+            }
+        }
     }
 }
 
 /// Manifest format for dependencies
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DependencyManifest {
+pub enum DependencyManifest {
+    /// A remote dependency from artifactory
+    Remote(RemoteDependencyManifest),
+    /// A local dependency located on the filesystem
+    Local(LocalDependencyManifest),
+}
+
+impl DependencyManifest {
+    pub(crate) fn is_local(&self) -> bool {
+        matches!(self, DependencyManifest::Local(_))
+    }
+}
+
+/// Manifest format for dependencies
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteDependencyManifest {
     /// Version requirement in the buffrs format, currently only supports pinning
     pub version: VersionReq,
     /// Artifactory repository to pull dependency from
     pub repository: String,
     /// Artifactory registry to pull from
     pub registry: RegistryUri,
+}
+
+impl From<RemoteDependencyManifest> for DependencyManifest {
+    fn from(value: RemoteDependencyManifest) -> Self {
+        Self::Remote(value)
+    }
+}
+
+/// Manifest format for local filesystem dependencies
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LocalDependencyManifest {
+    /// Path to local buffrs package
+    pub path: PathBuf,
+}
+
+impl From<LocalDependencyManifest> for DependencyManifest {
+    fn from(value: LocalDependencyManifest) -> Self {
+        Self::Local(value)
+    }
 }
