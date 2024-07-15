@@ -390,7 +390,7 @@ pub async fn install() -> miette::Result<()> {
             "unexpected error: missing dependency in dependency graph"
         ))?;
 
-        store.unpack(&resolved.package()).await.wrap_err(miette!(
+        store.unpack(resolved.package()).await.wrap_err(miette!(
             "failed to unpack package {}",
             &resolved.package().name()
         ))?;
