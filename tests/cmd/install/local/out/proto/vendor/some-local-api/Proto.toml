@@ -1,4 +1,4 @@
-edition = "0.8"
+edition = "0.9"
 
 [package]
 type = "api"
