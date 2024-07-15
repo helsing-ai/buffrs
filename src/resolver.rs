@@ -189,13 +189,14 @@ impl DependencyGraph {
         cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
-        let manifest = Manifest::try_read_from(dependency.manifest.path.join(MANIFEST_FILE))
+        let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
             .await?
             .ok_or_else(|| {
                 miette::miette!(
-                    "no Proto.toml for package {} found at path {}",
+                    "no `{}` for package {} found at path {}",
+                    MANIFEST_FILE,
                     dependency.package,
-                    dependency.manifest.path.display()
+                    dependency.manifest.path.join(MANIFEST_FILE).display()
                 )
             })?;
 
