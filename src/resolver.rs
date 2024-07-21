@@ -53,7 +53,7 @@ impl ResolvedDependency {
         }
     }
 
-    pub(crate) fn depends_on(&self) -> &Vec<PackageName> {
+    pub(crate) fn depends_on(&self) -> &[PackageName] {
         match self {
             Self::Remote { depends_on, .. } => depends_on,
             Self::Local { depends_on, .. } => depends_on,
