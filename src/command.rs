@@ -19,7 +19,7 @@ use crate::{
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver::DependencyGraph,
+    resolver::{DependencyGraph, ResolvedDependency},
 };
 
 use async_recursion::async_recursion;
@@ -390,26 +390,31 @@ pub async fn install() -> miette::Result<()> {
             "unexpected error: missing dependency in dependency graph"
         ))?;
 
-        store.unpack(&resolved.package).await.wrap_err(miette!(
+        store.unpack(resolved.package()).await.wrap_err(miette!(
             "failed to unpack package {}",
-            &resolved.package.name()
+            &resolved.package().name()
         ))?;
 
         tracing::info!(
             "{} installed {}@{}",
             if prefix.is_empty() { "::" } else { &prefix },
             name,
-            resolved.package.version()
+            resolved.package().version()
         );
 
-        locked.push(resolved.package.lock(
-            resolved.registry.clone(),
-            resolved.repository.clone(),
-            resolved.dependants.len(),
-        ));
+        if let ResolvedDependency::Remote {
+            package,
+            registry,
+            repository,
+            dependants,
+            ..
+        } = &resolved
+        {
+            locked.push(package.lock(registry.clone(), repository.clone(), dependants.len()));
+        }
 
-        for (index, dependency) in resolved.depends_on.iter().enumerate() {
-            let tree_char = if index + 1 == resolved.depends_on.len() {
+        for (index, dependency) in resolved.depends_on().iter().enumerate() {
+            let tree_char = if index + 1 == resolved.depends_on().len() {
                 '┗'
             } else {
                 '┣'

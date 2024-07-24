@@ -1,0 +1,7 @@
+[package]
+type = "api"
+name = "my-api"
+version = "0.1.0"
+
+[dependencies]
+some-local-lib = { path = "./some-local-lib" }

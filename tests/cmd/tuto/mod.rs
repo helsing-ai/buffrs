@@ -142,6 +142,7 @@ fn fixture() {
                 .expect("failed to move from path to .git to its parent")
                 .to_str()
                 .expect("failed to convert path git root to string");
+
             dbg!(git_root);
 
             // cargo add buffrs --no-default-features
