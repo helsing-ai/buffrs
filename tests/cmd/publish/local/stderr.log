@@ -1,5 +1,5 @@
 Error:   × failed to publish `my-api` to `https://localhost:54321/fake-uri:my-
   │ repository`
-  ╰─▶ unable to public my-api to artifactory due to local dependency some-
-      local-lib
+  ╰─▶ unable to publish my-api to artifactory due having the following local
+      dependencies: some-local-lib
 
