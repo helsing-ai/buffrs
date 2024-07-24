@@ -200,17 +200,21 @@ impl Artifactory {
 
     /// Publishes a package to artifactory
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
-        // abort publishing if we have local dependencies
-        if let Some(local) = package
+        let local_deps: Vec<&Dependency> = package
             .manifest
             .dependencies
             .iter()
-            .find(|d| d.manifest.is_local())
-        {
+            .filter(|d| d.manifest.is_local())
+            .collect();
+
+        // abort publishing if we have local dependencies
+        if !local_deps.is_empty() {
+            let names: Vec<String> = local_deps.iter().map(|d| d.package.to_string()).collect();
+
             return Err(miette!(
-                "unable to public {} to artifactory due to local dependency {}",
+                "unable to publish {} to artifactory due having the following local dependencies: {}",
                 package.name(),
-                local.package
+                names.join(", ")
             ));
         }
 
