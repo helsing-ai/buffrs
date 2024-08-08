@@ -15,6 +15,7 @@
 use std::fmt::Debug;
 
 use lib_package::LibPackage;
+use package_hierarchy::PackageHierarchy;
 
 use crate::{
     manifest::PackageManifest,
@@ -27,6 +28,7 @@ use crate::{
 
 mod ident_casing;
 mod lib_package;
+mod package_hierarchy;
 mod package_name;
 
 pub use self::{ident_casing::*, package_name::*};
@@ -111,6 +113,7 @@ pub fn all(manifest: &PackageManifest) -> RuleSet {
     let mut ret: Vec<Box<dyn Rule>> = vec![
         Box::new(PackageName::new(manifest.name.clone())),
         Box::new(IdentCasing),
+        Box::new(PackageHierarchy),
     ];
 
     if manifest.kind == PackageType::Lib {
@@ -127,8 +130,7 @@ mod tests {
     use semver::Version;
 
     #[test]
-    fn all_should_not_contain_libpackage_rule_for_api_type_packages(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn all_should_contain_these_rules_for_api_packages() -> Result<(), Box<dyn std::error::Error>> {
         let manifest = PackageManifest {
             kind: PackageType::Api,
             name: crate::package::PackageName::new("package")?,
@@ -136,17 +138,25 @@ mod tests {
             description: Default::default(),
         };
 
-        let all = all(&manifest);
-        assert!(all
+        let all = all(&manifest)
             .iter()
-            .all(|rule| rule.rule_name() != LibPackage.rule_name()));
+            .map(|r| r.rule_name())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            all,
+            &[
+                PackageName::new(manifest.name.clone()).rule_name(),
+                IdentCasing.rule_name(),
+                PackageHierarchy.rule_name(),
+            ],
+        );
 
         Ok(())
     }
 
     #[test]
-    fn all_should_contain_libpackage_rule_for_lib_type_packages(
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn all_should_contain_these_rules_for_lib_packages() -> Result<(), Box<dyn std::error::Error>> {
         let manifest = PackageManifest {
             kind: PackageType::Lib,
             name: crate::package::PackageName::new("package")?,
@@ -154,10 +164,20 @@ mod tests {
             description: Default::default(),
         };
 
-        let all = all(&manifest);
-        assert!(all
+        let all = all(&manifest)
             .iter()
-            .any(|rule| rule.rule_name() == LibPackage.rule_name()));
+            .map(|r| r.rule_name())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            all,
+            &[
+                PackageName::new(manifest.name.clone()).rule_name(),
+                IdentCasing.rule_name(),
+                PackageHierarchy.rule_name(),
+                LibPackage.rule_name(),
+            ],
+        );
 
         Ok(())
     }

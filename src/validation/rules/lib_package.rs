@@ -8,10 +8,6 @@ impl Rule for LibPackage {
         "Make sure that lib packages don't contain service definitions."
     }
 
-    fn rule_level(&self) -> Level {
-        Level::Error
-    }
-
     fn check_package(&mut self, package: &Package) -> Violations {
         let package_name = &package.name;
         package
