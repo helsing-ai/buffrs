@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn all_should_not_contain_libpackage_rule_for_api_type_packages(
-    ) -> Result<(), Box<dyn core::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let manifest = PackageManifest {
             kind: PackageType::Api,
             name: crate::package::PackageName::new("package")?,
@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn all_should_contain_libpackage_rule_for_lib_type_packages(
-    ) -> Result<(), Box<dyn core::error::Error>> {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let manifest = PackageManifest {
             kind: PackageType::Lib,
             name: crate::package::PackageName::new("package")?,
