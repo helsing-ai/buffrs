@@ -9,7 +9,7 @@ impl Rule for LibPackage {
     }
 
     fn rule_level(&self) -> Level {
-        Level::Warning
+        Level::Error
     }
 
     fn check_package(&mut self, package: &Package) -> Violations {
@@ -59,7 +59,7 @@ mod tests {
         let help = "It's best to keep packages containing services separate from packages containing messages and enums.";
         let violation_1 = Violation {
             rule: "LibPackage".into(),
-            level: Level::Warning,
+            level: Level::Error,
             message: violation::Message {
                 message: "service A is a service definition but my package is a lib type package and thus shouldn't contain services.".into(),
                 help: help.into(),
