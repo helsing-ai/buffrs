@@ -14,8 +14,11 @@
 
 use std::fmt::Debug;
 
+use lib_package::LibPackage;
+
 use crate::{
     manifest::PackageManifest,
+    package::PackageType,
     validation::{
         data::*,
         violation::{self, *},
@@ -23,6 +26,7 @@ use crate::{
 };
 
 mod ident_casing;
+mod lib_package;
 mod package_name;
 
 pub use self::{ident_casing::*, package_name::*};
@@ -104,8 +108,57 @@ impl Rule for RuleSet {
 
 /// Get default rules for a given `buffrs` package name.
 pub fn all(manifest: &PackageManifest) -> RuleSet {
-    vec![
+    let mut ret: Vec<Box<dyn Rule>> = vec![
         Box::new(PackageName::new(manifest.name.clone())),
         Box::new(IdentCasing),
-    ]
+    ];
+
+    if manifest.kind == PackageType::Lib {
+        ret.push(Box::new(LibPackage));
+    }
+
+    ret
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::package::PackageType;
+    use semver::Version;
+
+    #[test]
+    fn all_should_not_contain_libpackage_rule_for_api_type_packages(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let manifest = PackageManifest {
+            kind: PackageType::Api,
+            name: crate::package::PackageName::new("package")?,
+            version: Version::new(0, 1, 0),
+            description: Default::default(),
+        };
+
+        let all = all(&manifest);
+        assert!(all
+            .iter()
+            .all(|rule| rule.rule_name() != LibPackage.rule_name()));
+
+        Ok(())
+    }
+
+    #[test]
+    fn all_should_contain_libpackage_rule_for_lib_type_packages(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let manifest = PackageManifest {
+            kind: PackageType::Lib,
+            name: crate::package::PackageName::new("package")?,
+            version: Version::new(0, 1, 0),
+            description: Default::default(),
+        };
+
+        let all = all(&manifest);
+        assert!(all
+            .iter()
+            .any(|rule| rule.rule_name() == LibPackage.rule_name()));
+
+        Ok(())
+    }
 }
