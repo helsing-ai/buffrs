@@ -89,7 +89,7 @@ impl Artifactory {
             .new_request(Method::GET, search_query_url)
             .send()
             .await?;
-        let response: reqwest::Response = response.into();
+        let response: reqwest::Response = response.0;
 
         let headers = response.headers();
         let content_type = headers
@@ -178,7 +178,7 @@ impl Artifactory {
 
         let response = self.new_request(Method::GET, artifact_url).send().await?;
 
-        let response: reqwest::Response = response.into();
+        let response: reqwest::Response = response.0;
 
         let headers = response.headers();
         let content_type = headers
@@ -272,12 +272,6 @@ impl RequestBuilder {
 }
 
 struct ValidatedResponse(reqwest::Response);
-
-impl From<ValidatedResponse> for reqwest::Response {
-    fn from(value: ValidatedResponse) -> Self {
-        value.0
-    }
-}
 
 impl TryFrom<Response> for ValidatedResponse {
     type Error = miette::Report;
