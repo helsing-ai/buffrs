@@ -144,16 +144,16 @@ mod tests {
             PackageHierarchy.check_package(&package),
             &[
                 Violation {
-                rule: "PackageHierarchy".into(),
-                level: Level::Error,
-                message: violation::Message {
-                    message:
-                        "expected file proto/not_subpackage/file.proto to live in proto/subpackage."
-                            .into(),
-                    help: EXPECTED_HELP.into(),
-                },
-                location: Default::default(),
-                info: PackageHierarchy.rule_info().into(),
+                    rule: "PackageHierarchy".into(),
+                    level: Level::Error,
+                    message: violation::Message {
+                        message:
+                            "expected file proto/not_subpackage/file.proto to live in proto/subpackage."
+                                .into(),
+                        help: EXPECTED_HELP.into(),
+                    },
+                    location: Default::default(),
+                    info: PackageHierarchy.rule_info().into(),
                 },
                 Violation {
                     rule: "PackageHierarchy".into(),
