@@ -72,10 +72,22 @@ mod tests {
     static EXPECTED_HELP: &str = "Package names should be mirrored in folder structure, eg mypackage.subpackage should live in proto/subpackage.";
 
     #[test]
-    fn file_name_should_not_matter() {
+    fn file_name_should_not_matter_with_no_subpackages() {
         let package = Package {
             name: "root".into(),
             files: vec!["proto/file_not_called_root.proto".into()],
+            entities: Default::default(),
+        };
+
+        let result = PackageHierarchy.check_package(&package);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn file_name_should_not_matter_with_subpackages() {
+        let package = Package {
+            name: "mypackage.sub1.sub2".into(),
+            files: vec!["proto/sub1/sub2/file.proto".into()],
             entities: Default::default(),
         };
 
