@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
 };
 
-/// Representation of the .buffrs/config.toml configuration file
+/// Representation of the .config/buffrs/config.toml configuration file
 ///
 /// # Example
 ///
@@ -120,12 +120,14 @@ impl Config {
             let mut current_dir = cwd.to_owned();
 
             loop {
-                let config_path = current_dir.join(".buffrs/config.toml");
+                let config_path = current_dir.join(".config/buffrs/config.toml");
                 if config_path.exists() {
                     return Some(config_path);
                 }
 
+                // Move to the parent directory
                 if !current_dir.pop() {
+                    // Stop if there are no more parent directories
                     break;
                 }
             }
