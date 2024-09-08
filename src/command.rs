@@ -19,13 +19,17 @@ use crate::{
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver::DependencyGraph,
+    resolver::{DependencyGraph, ResolvedDependency},
 };
 
 use async_recursion::async_recursion;
 use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
-use std::{env, path::Path, str::FromStr};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
@@ -77,10 +81,48 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
     Ok(())
 }
 
+/// Initializes a project with the given name in the current directory
+pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result<()> {
+    let package_dir = PathBuf::from(name.to_string());
+    // create_dir fails if the folder already exists
+    fs::create_dir(&package_dir)
+        .await
+        .into_diagnostic()
+        .wrap_err(miette!(
+            "failed to create {} directory",
+            package_dir.display()
+        ))?;
+
+    let package = kind
+        .map(|kind| -> miette::Result<PackageManifest> {
+            Ok(PackageManifest {
+                kind,
+                name,
+                version: INITIAL_VERSION,
+                description: None,
+            })
+        })
+        .transpose()?;
+
+    let manifest = Manifest::new(package, vec![]);
+    manifest.write_at(&package_dir).await?;
+
+    PackageStore::open(&package_dir)
+        .await
+        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+
+    Ok(())
+}
+
 struct DependencyLocator {
     repository: String,
     package: PackageName,
-    version: VersionReq,
+    version: DependencyLocatorVersion,
+}
+
+enum DependencyLocatorVersion {
+    Version(VersionReq),
+    Latest,
 }
 
 impl FromStr for DependencyLocator {
@@ -103,18 +145,24 @@ impl FromStr for DependencyLocator {
 
         let repository = repository.into();
 
-        let (package, version) = dependency.split_once('@').ok_or_else(|| {
-            miette!("dependency specification is missing version part: {dependency}")
-        })?;
+        let (package, version) = dependency
+            .split_once('@')
+            .map(|(package, version)| (package, Some(version)))
+            .unwrap_or_else(|| (dependency, None));
 
         let package = package
             .parse::<PackageName>()
             .wrap_err(miette!("invalid package name: {package}"))?;
 
-        let version = version
-            .parse::<VersionReq>()
-            .into_diagnostic()
-            .wrap_err(miette!("not a valid version requirement: {version}"))?;
+        let version = match version {
+            Some("latest") | None => DependencyLocatorVersion::Latest,
+            Some(version_str) => {
+                let parsed_version = VersionReq::parse(version_str)
+                    .into_diagnostic()
+                    .wrap_err(miette!("not a valid version requirement: {version_str}"))?;
+                DependencyLocatorVersion::Version(parsed_version)
+            }
+        };
 
         Ok(Self {
             repository,
@@ -133,6 +181,23 @@ pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()>
         package,
         version,
     } = dependency.parse()?;
+
+    let version = match version {
+        DependencyLocatorVersion::Version(version_req) => version_req,
+        DependencyLocatorVersion::Latest => {
+            // query artifactory to retrieve the actual latest version
+            let credentials = Credentials::load().await?;
+            let artifactory = Artifactory::new(registry, &credentials)?;
+
+            let latest_version = artifactory
+                .get_latest_version(repository.clone(), package.clone())
+                .await?;
+            // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
+            VersionReq::parse(&latest_version.to_string())
+                .into_diagnostic()
+                .map_err(miette::Report::from)?
+        }
+    };
 
     manifest
         .dependencies
@@ -325,26 +390,31 @@ pub async fn install() -> miette::Result<()> {
             "unexpected error: missing dependency in dependency graph"
         ))?;
 
-        store.unpack(&resolved.package).await.wrap_err(miette!(
+        store.unpack(resolved.package()).await.wrap_err(miette!(
             "failed to unpack package {}",
-            &resolved.package.name()
+            &resolved.package().name()
         ))?;
 
         tracing::info!(
             "{} installed {}@{}",
             if prefix.is_empty() { "::" } else { &prefix },
             name,
-            resolved.package.version()
+            resolved.package().version()
         );
 
-        locked.push(resolved.package.lock(
-            resolved.registry.clone(),
-            resolved.repository.clone(),
-            resolved.dependants.len(),
-        ));
+        if let ResolvedDependency::Remote {
+            package,
+            registry,
+            repository,
+            dependants,
+            ..
+        } = &resolved
+        {
+            locked.push(package.lock(registry.clone(), repository.clone(), dependants.len()));
+        }
 
-        for (index, dependency) in resolved.depends_on.iter().enumerate() {
-            let tree_char = if index + 1 == resolved.depends_on.len() {
+        for (index, dependency) in resolved.depends_on().iter().enumerate() {
+            let tree_char = if index + 1 == resolved.depends_on().len() {
                 '┗'
             } else {
                 '┣'
@@ -522,6 +592,8 @@ mod tests {
         assert!("repo/pkg@=1.0.0-with-prerelease"
             .parse::<DependencyLocator>()
             .is_ok());
+        assert!("repo/pkg@latest".parse::<DependencyLocator>().is_ok());
+        assert!("repo/pkg".parse::<DependencyLocator>().is_ok());
     }
 
     #[test]
@@ -529,7 +601,9 @@ mod tests {
         assert!("/xyz@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo/@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo@1.0.0".parse::<DependencyLocator>().is_err());
-        assert!("repo/pkg".parse::<DependencyLocator>().is_err());
+        assert!("repo/pkg@latestwithtypo"
+            .parse::<DependencyLocator>()
+            .is_err());
         assert!("repo/pkg@=1#meta".parse::<DependencyLocator>().is_err());
         assert!("repo/PKG@=1.0".parse::<DependencyLocator>().is_err());
     }
