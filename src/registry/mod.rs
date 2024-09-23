@@ -29,6 +29,7 @@ use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
+use crate::manifest::DependencyManifest;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -102,17 +103,23 @@ struct UnsupportedVersionRequirement(VersionReq);
 struct VersionNotPinned(VersionReq);
 
 fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
-    let version = dependency
-        .manifest
+    let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
+        return Err(miette!(
+            "unable to serialize version of local dependency ({})",
+            dependency.package
+        ));
+    };
+
+    let version = manifest
         .version
         .comparators
         .first()
-        .ok_or_else(|| UnsupportedVersionRequirement(dependency.manifest.version.clone()))
+        .ok_or_else(|| UnsupportedVersionRequirement(manifest.version.clone()))
         .into_diagnostic()?;
 
     ensure!(
         version.op == semver::Op::Exact,
-        VersionNotPinned(dependency.manifest.version.clone(),)
+        VersionNotPinned(manifest.version.clone())
     );
 
     let minor_version = version

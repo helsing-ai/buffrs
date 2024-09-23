@@ -18,7 +18,10 @@ use bytes::Bytes;
 use miette::{miette, Context, IntoDiagnostic};
 use tokio::fs;
 
-use crate::{manifest::Dependency, package::Package};
+use crate::{
+    manifest::{Dependency, DependencyManifest},
+    package::Package,
+};
 
 /// A registry that stores and retries packages from a local file system.
 /// This registry is intended primarily for testing.
@@ -35,11 +38,18 @@ impl LocalRegistry {
 
     /// "Downloads" a package from the local filesystem
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
+            return Err(miette!(
+                "unable to serialize version of local dependency ({})",
+                dependency.package
+            ));
+        };
+
         let version = super::dependency_version_string(&dependency)?;
 
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
-            dependency.manifest.repository, dependency.package, dependency.package, version
+            manifest.repository, dependency.package, dependency.package, version
         )));
 
         tracing::debug!("downloaded dependency {dependency} from {:?}", path);

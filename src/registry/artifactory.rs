@@ -13,9 +13,15 @@
 // limitations under the License.
 
 use super::RegistryUri;
-use crate::{credentials::Credentials, manifest::Dependency, package::Package};
+use crate::{
+    credentials::Credentials,
+    manifest::{Dependency, DependencyManifest},
+    package::{Package, PackageName},
+};
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Body, Method, Response};
+use semver::Version;
+use serde::Deserialize;
 use url::Url;
 
 /// The registry implementation for artifactory
@@ -65,21 +71,104 @@ impl Artifactory {
             .map_err(miette::Report::from)
     }
 
+    /// Retrieves the latest version of a package by querying artifactory. Returns an error if no artifact could be found
+    pub async fn get_latest_version(
+        &self,
+        repository: String,
+        name: PackageName,
+    ) -> miette::Result<Version> {
+        // First retrieve all packages matching the given name
+        let search_query_url: Url = {
+            let mut url = self.registry.clone();
+            url.set_path("artifactory/api/search/artifact");
+            url.set_query(Some(&format!("name={}&repos={}", name, repository)));
+            url.into()
+        };
+
+        let response = self
+            .new_request(Method::GET, search_query_url)
+            .send()
+            .await?;
+        let response: reqwest::Response = response.into();
+
+        let headers = response.headers();
+        let content_type = headers
+            .get(&reqwest::header::CONTENT_TYPE)
+            .ok_or_else(|| miette!("missing content-type header"))?;
+        ensure!(
+            content_type
+                == reqwest::header::HeaderValue::from_static(
+                    "application/vnd.org.jfrog.artifactory.search.ArtifactSearchResult+json"
+                ),
+            "server response has incorrect mime type: {content_type:?}"
+        );
+
+        let response_str = response.text().await.into_diagnostic().wrap_err(miette!(
+            "unexpected error: unable to retrieve response payload"
+        ))?;
+        let parsed_response = serde_json::from_str::<ArtifactSearchResponse>(&response_str)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "unexpected error: response could not be deserialized to ArtifactSearchResponse"
+            ))?;
+
+        tracing::debug!(
+            "List of artifacts found matching the name: {:?}",
+            parsed_response
+        );
+
+        // Then from all package names retrieved from artifactory, extract the highest version number
+        let highest_version = parsed_response
+            .results
+            .iter()
+            .filter_map(|artifact_search_result| {
+                let uri = artifact_search_result.to_owned().uri;
+                let full_artifact_name = uri
+                    .split('/')
+                    .last()
+                    .map(|name_tgz| name_tgz.trim_end_matches(".tgz"));
+                let artifact_version = full_artifact_name
+                    .and_then(|name| name.split('-').last())
+                    .and_then(|version_str| Version::parse(version_str).ok());
+
+                // we double check that the artifact name matches exactly
+                let expected_artifact_name = artifact_version
+                    .clone()
+                    .map(|av| format!("{}-{}", name, av));
+                if full_artifact_name.is_some_and(|actual| {
+                    expected_artifact_name.is_some_and(|expected| expected == actual)
+                }) {
+                    artifact_version
+                } else {
+                    None
+                }
+            })
+            .max();
+
+        tracing::debug!("Highest version for artifact: {:?}", highest_version);
+        highest_version.ok_or_else(|| {
+            miette!("no version could be found on artifactory for this artifact name. Does it exist in this registry and repository?")
+        })
+    }
+
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
+            return Err(miette!(
+                "unable to download local dependency ({}) from artifactory",
+                dependency.package
+            ));
+        };
+
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = dependency.manifest.registry.path().to_owned();
+            let path = manifest.registry.path().to_owned();
 
-            let mut url = dependency.manifest.registry.clone();
+            let mut url = manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
-                path,
-                dependency.manifest.repository,
-                dependency.package,
-                dependency.package,
-                version
+                path, manifest.repository, dependency.package, dependency.package, version
             ));
 
             url.into()
@@ -111,6 +200,24 @@ impl Artifactory {
 
     /// Publishes a package to artifactory
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
+        let local_deps: Vec<&Dependency> = package
+            .manifest
+            .dependencies
+            .iter()
+            .filter(|d| d.manifest.is_local())
+            .collect();
+
+        // abort publishing if we have local dependencies
+        if !local_deps.is_empty() {
+            let names: Vec<String> = local_deps.iter().map(|d| d.package.to_string()).collect();
+
+            return Err(miette!(
+                "unable to publish {} to artifactory due having the following local dependencies: {}",
+                package.name(),
+                names.join(", ")
+            ));
+        }
+
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
             self.registry,
@@ -188,4 +295,14 @@ impl TryFrom<Response> for ValidatedResponse {
 
         value.error_for_status().into_diagnostic().map(Self)
     }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+struct ArtifactSearchResponse {
+    results: Vec<ArtifactSearchResult>,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+struct ArtifactSearchResult {
+    uri: String,
 }

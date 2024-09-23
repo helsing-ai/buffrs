@@ -1,0 +1,2 @@
+[dependencies]
+some-local-api = { path = "./some-local-api" }
