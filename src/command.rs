@@ -520,22 +520,29 @@ pub async fn lint() -> miette::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(registry: &RegistryUri) -> miette::Result<()> {
+///
+/// # Arguments
+///  * `registry` - The registry to log in to
+///  * `token` - An optional token to use, if not provided, the user will be prompted for one
+pub async fn login(registry: &RegistryUri, token: Option<String>) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
 
-    tracing::info!(":: please enter your artifactory token:");
+    let token = match token {
+        Some(token) => token,
+        None => {
+            tracing::info!(":: please enter your artifactory token:");
 
-    let token = {
-        let mut raw = String::new();
-        let mut reader = BufReader::new(io::stdin());
+            let mut raw = String::new();
+            let mut reader = BufReader::new(io::stdin());
 
-        reader
-            .read_line(&mut raw)
-            .await
-            .into_diagnostic()
-            .wrap_err(miette!("failed to read the token from the user"))?;
+            reader
+                .read_line(&mut raw)
+                .await
+                .into_diagnostic()
+                .wrap_err(miette!("failed to read the token from the user"))?;
 
-        raw.trim().into()
+            raw.trim().into()
+        }
     };
 
     credentials.registry_tokens.insert(registry.clone(), token);

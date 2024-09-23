@@ -217,7 +217,7 @@ async fn main() -> miette::Result<()> {
         }
         Command::Login { registry } => {
             let registry = config.registry_or_default(&registry)?;
-            command::login(&registry)
+            command::login(&registry, None)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
