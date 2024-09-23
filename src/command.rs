@@ -187,7 +187,7 @@ pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()>
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(&registry, &credentials)?;
+            let artifactory = Artifactory::new(registry, &credentials)?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())

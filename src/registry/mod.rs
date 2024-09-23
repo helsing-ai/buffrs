@@ -23,13 +23,13 @@ mod artifactory;
 mod cache;
 
 use crate::manifest::Dependency;
+use crate::manifest::DependencyManifest;
 pub use artifactory::Artifactory;
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
-use crate::manifest::DependencyManifest;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
