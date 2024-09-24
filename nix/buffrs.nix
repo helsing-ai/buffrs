@@ -1,7 +1,7 @@
-{ pkgs, crane, rustToolchain, system, advisory-db, buildInputs
+{ pkgs, crane, rustToolchain, advisory-db, buildInputs
 , nativeBuildInputs, buildEnvVars }:
 let
-  craneLib = crane.lib.${system}.overrideToolchain rustToolchain;
+  craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
   src = ../.;
 
   # Common arguments can be set here to avoid repeating them later
