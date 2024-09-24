@@ -1,5 +1,5 @@
-{ pkgs, crane, rustToolchain, advisory-db, buildInputs
-, nativeBuildInputs, buildEnvVars }:
+{ pkgs, crane, rustToolchain, advisory-db, buildInputs, nativeBuildInputs
+, buildEnvVars }:
 let
   craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
   src = ../.;
