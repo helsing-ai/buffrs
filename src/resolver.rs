@@ -348,11 +348,12 @@ impl DependencyGraph {
                 }
             }
 
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
+            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
+                DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
-                })?;
+                },
+            )?;
 
             let package = registry
                 // TODO(#205): This works now because buffrs only supports pinned versions.
@@ -372,11 +373,12 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
+            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
+                DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
-                })?;
+                },
+            )?;
 
             let package = registry
                 .download(dependency.clone().into())

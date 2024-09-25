@@ -405,7 +405,7 @@ pub struct Dependency {
 impl Dependency {
     /// Creates a new dependency
     pub fn new(
-        registry: RegistryUri,
+        registry: &RegistryUri,
         repository: String,
         package: PackageName,
         version: VersionReq,
@@ -415,7 +415,7 @@ impl Dependency {
             manifest: RemoteDependencyManifest {
                 repository,
                 version,
-                registry,
+                registry: registry.to_owned(),
             }
             .into(),
         }

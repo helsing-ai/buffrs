@@ -28,7 +28,6 @@ use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
-
 use crate::manifest::{Dependency, DependencyManifest};
 
 /// A representation of a registry URI
@@ -162,7 +161,7 @@ mod tests {
         let repository = String::from("my-repo");
         let package = PackageName::from_str("package").unwrap();
         let version = VersionReq::from_str(version).unwrap();
-        Dependency::new(registry, repository, package, version)
+        Dependency::new(&registry, repository, package, version)
     }
 
     #[test]

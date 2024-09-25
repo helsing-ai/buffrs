@@ -173,7 +173,7 @@ impl FromStr for DependencyLocator {
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
+pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
 
     let DependencyLocator {
@@ -187,7 +187,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+            let artifactory = Artifactory::new(registry, &credentials)?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())
@@ -270,7 +270,7 @@ pub async fn package(
 
 /// Publishes the api package to the registry
 pub async fn publish(
-    registry: RegistryUri,
+    registry: &RegistryUri,
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
@@ -461,6 +461,17 @@ pub async fn list() -> miette::Result<()> {
 
     let protos = store.collect(&store.proto_vendor_path(), true).await;
 
+    // Canonicalize the protos
+    let protos = protos
+        .into_iter()
+        .map(|proto| {
+            proto
+                .canonicalize()
+                .into_diagnostic()
+                .wrap_err(miette!("failed to canonicalize proto path"))
+        })
+        .collect::<miette::Result<Vec<_>>>()?;
+
     let cwd = {
         let cwd = std::env::current_dir()
             .into_diagnostic()
@@ -507,7 +518,7 @@ pub async fn lint() -> miette::Result<()> {
 }
 
 /// Logs you in for a registry
-pub async fn login(registry: RegistryUri) -> miette::Result<()> {
+pub async fn login(registry: &RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
 
     tracing::info!(":: please enter your artifactory token:");
@@ -538,9 +549,9 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
 }
 
 /// Logs you out from a registry
-pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
+pub async fn logout(registry: &RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
-    credentials.registry_tokens.remove(&registry);
+    credentials.registry_tokens.remove(registry);
     credentials.write().await
 }
 
