@@ -25,7 +25,7 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, SerializationError},
-    lock::LockedPackage,
+    lock::{Digest, DigestAlgorithm, LockedPackage},
     manifest::{self, Edition, Manifest, MANIFEST_FILE},
     package::PackageName,
     registry::RegistryUri,
@@ -110,7 +110,7 @@ impl Package {
             .into_diagnostic()
             .wrap_err(miette!("failed to compress release"))?;
 
-        let tgz = encoder
+        let tgz: Bytes = encoder
             .finish()
             .into_diagnostic()
             .wrap_err(miette!("failed to finalize package"))?
@@ -219,6 +219,11 @@ impl Package {
             .as_ref()
             .expect("compressed package contains invalid manifest (package section missing)")
             .version
+    }
+
+    /// Digest calculates the digest based on the downloaded package bytes
+    pub fn digest(&self, algorithm: DigestAlgorithm) -> Digest {
+        algorithm.digest(&self.tgz)
     }
 
     /// Lock this package
