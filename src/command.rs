@@ -14,9 +14,10 @@
 
 use crate::{
     cache::Cache,
+    config::Config,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
+    manifest::{Dependency, DependencyManifest, Manifest, PackageManifest, MANIFEST_FILE},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, ResolvedDependency},
@@ -134,7 +135,7 @@ impl FromStr for DependencyLocator {
         let (repository, dependency) = dependency
             .trim()
             .split_once('/')
-            .ok_or_else(|| miette!("locator {dependency} is missing a repository delimiter"))?;
+            .ok_or_else(|| miette!("locator \"{dependency}\" is missing a repository delimiter (use <repo>/<package>@<version>)"))?;
 
         ensure!(
             repository.chars().all(lower_kebab),
@@ -173,7 +174,11 @@ impl FromStr for DependencyLocator {
 }
 
 /// Adds a dependency to this project
-pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()> {
+pub async fn add(
+    registry: &RegistryUri,
+    resolved_registry: &RegistryUri,
+    dependency: &str,
+) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
 
     let DependencyLocator {
@@ -187,7 +192,7 @@ pub async fn add(registry: &RegistryUri, dependency: &str) -> miette::Result<()>
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(registry, &credentials)?;
+            let artifactory = Artifactory::new(resolved_registry, &credentials)?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())
@@ -356,8 +361,19 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install(only_dependencies: bool) -> miette::Result<()> {
-    let manifest = Manifest::read().await?;
+pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result<()> {
+    let manifest = {
+        let mut manifest = Manifest::read().await?;
+
+        // resolve all alias URLs in the manifest
+        for dependency in manifest.dependencies.iter_mut() {
+            if let DependencyManifest::Remote(ref mut manifest) = &mut dependency.manifest {
+                manifest.registry = config.resolve_registry_uri(&manifest.registry)?;
+            }
+        }
+
+        manifest
+    };
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;

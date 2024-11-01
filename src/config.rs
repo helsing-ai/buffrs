@@ -20,6 +20,9 @@ use std::{
     str::FromStr,
 };
 
+const DEFAULT_REGISTRY_ALIAS: &str = "globus";
+const DEFAULT_REGISTRY_URI: &str = "https://conan-us.globusmedical.com/artifactory";
+
 /// Representation of the .buffrs/config.toml configuration file
 ///
 /// # Example
@@ -54,8 +57,13 @@ impl Config {
             Some(config_path) => Self::new_from_config_file(&config_path),
             None => Ok(Self {
                 config_path: None,
-                default_registry: None,
-                registries: HashMap::new(),
+                default_registry: Some(DEFAULT_REGISTRY_ALIAS.to_string()),
+                registries: vec![(
+                    DEFAULT_REGISTRY_ALIAS.to_string(),
+                    RegistryUri::from_str(DEFAULT_REGISTRY_URI)?,
+                )]
+                .into_iter()
+                .collect(),
             }),
         }
     }
@@ -67,24 +75,51 @@ impl Config {
     ///
     /// # Returns
     /// The resolved registry URI
-    pub fn registry_or_default(&self, registry: &Option<String>) -> miette::Result<RegistryUri> {
+    pub fn resolve_registry_string(
+        &self,
+        registry: &Option<String>,
+    ) -> miette::Result<RegistryUri> {
+        // First parse
+        let registry = self.parse_registry_arg(registry)?;
+
+        // Then resolve
+        self.resolve_registry_uri(&registry)
+    }
+
+    /// Parse a registry argument
+    ///
+    /// # Arguments
+    /// * `registry` - The registry argument to parse
+    ///
+    /// # Returns
+    /// URI with either alias scheme or actual URI:
+    /// - <alias> -> alias://<alias>
+    /// - <uri> -> <uri>
+    /// - None -> alias://<default>
+    pub fn parse_registry_arg(&self, registry: &Option<String>) -> miette::Result<RegistryUri> {
         match registry {
-            Some(registry) => {
-                match RegistryUri::from_str(registry) {
-                    Ok(uri) => Ok(uri),
-                    Err(_) => self.lookup_registry(registry),
-                }
-            }
+            Some(registry) => RegistryUri::from_str(registry),
             None => match &self.default_registry {
-                Some(default_registry) => self
-                    .registries
-                    .get(default_registry)
-                    .cloned()
-                    .ok_or_else(|| {
-                        miette!("no registry provided (using --registry) and no default registry in .buffrs/config.toml")
-                    }),
+                Some(default_registry) => RegistryUri::from_str(default_registry),
                 None => bail!("no registry provided and no default registry found"),
             },
+        }
+    }
+
+    /// Resolve the registry URI from the configuration
+    ///
+    /// # Arguments
+    /// * `registry` - The registry URI to resolve
+    ///
+    /// # Returns
+    /// The resolved registry URI
+    pub fn resolve_registry_uri(&self, registry: &RegistryUri) -> miette::Result<RegistryUri> {
+        // If the URI is an alias, resolve it to the actual URI
+        if registry.scheme() == "alias" {
+            let alias = registry.domain().unwrap_or_default();
+            self.lookup_registry(alias)
+        } else {
+            Ok(registry.clone())
         }
     }
 

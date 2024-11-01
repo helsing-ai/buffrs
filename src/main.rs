@@ -216,13 +216,13 @@ async fn main() -> miette::Result<()> {
                 .wrap_err(miette!("failed to initialize {}", format!("`{package}`")))
         }
         Command::Login { registry } => {
-            let registry = config.registry_or_default(&registry)?;
+            let registry = config.resolve_registry_string(&registry)?;
             command::login(&registry, None)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
         Command::Logout { registry } => {
-            let registry = config.registry_or_default(&registry)?;
+            let registry = config.resolve_registry_string(&registry)?;
             command::logout(&registry)
                 .await
                 .wrap_err(miette!("failed to logout from `{registry}`"))
@@ -231,8 +231,9 @@ async fn main() -> miette::Result<()> {
             registry,
             dependency,
         } => {
-            let registry = config.registry_or_default(&registry)?;
-            command::add(&registry, &dependency).await.wrap_err(miette!(
+            let registry = config.parse_registry_arg(&registry)?;
+            let resolved_registry = config.resolve_registry_uri(&registry)?;
+            command::add(&registry, &resolved_registry, &dependency).await.wrap_err(miette!(
                 "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
             ))
         }
@@ -255,7 +256,7 @@ async fn main() -> miette::Result<()> {
             dry_run,
             set_version,
         } => {
-            let registry = config.registry_or_default(&registry)?;
+            let registry = config.resolve_registry_string(&registry)?;
             command::publish(
                 &registry,
                 repository.to_owned(),
@@ -271,7 +272,7 @@ async fn main() -> miette::Result<()> {
         Command::Lint => command::lint()
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
-        Command::Install { only_dependencies } => command::install(only_dependencies)
+        Command::Install { only_dependencies } => command::install(only_dependencies, &config)
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()

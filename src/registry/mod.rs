@@ -32,8 +32,27 @@ use thiserror::Error;
 use url::Url;
 
 /// A representation of a registry URI
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RegistryUri(Url);
+
+impl<'de> Deserialize<'de> for RegistryUri {
+    fn deserialize<D>(deserializer: D) -> Result<RegistryUri, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let url = String::deserialize(deserializer)?;
+        RegistryUri::from_str(&url).map_err(serde::de::Error::custom)
+    }
+}
+
+impl Serialize for RegistryUri {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
 
 impl From<RegistryUri> for Url {
     fn from(value: RegistryUri) -> Self {
@@ -57,7 +76,12 @@ impl DerefMut for RegistryUri {
 
 impl Display for RegistryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        // if the URL is an alias, strip the scheme
+        if self.0.scheme() == "alias" {
+            write!(f, "{}", self.0.domain().unwrap_or_default())
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
@@ -65,13 +89,20 @@ impl FromStr for RegistryUri {
     type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::from_str(value)
-            .into_diagnostic()
-            .wrap_err(miette!("not a valid URL: {value}"))?;
+        // if the string doesn't parse as a URL, use the custom "alias" scheme, with the value as the path
+        match Url::from_str(value) {
+            Ok(url) => {
+                sanity_check_url(&url)?;
+                Ok(Self(url))
+            }
+            Err(_) => {
+                let url = Url::parse(&format!("alias://{}", value))
+                    .into_diagnostic()
+                    .wrap_err(miette!("not a valid URL: {value}"))?;
 
-        sanity_check_url(&url)?;
-
-        Ok(Self(url))
+                Ok(Self(url))
+            }
+        }
     }
 }
 
