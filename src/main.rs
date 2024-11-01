@@ -233,9 +233,11 @@ async fn main() -> miette::Result<()> {
         } => {
             let registry = config.parse_registry_arg(&registry)?;
             let resolved_registry = config.resolve_registry_uri(&registry)?;
-            command::add(&registry, &resolved_registry, &dependency).await.wrap_err(miette!(
-                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-            ))
+            command::add(&registry, &resolved_registry, &dependency)
+                .await
+                .wrap_err(miette!(
+                    "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+                ))
         }
         Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"

@@ -196,7 +196,7 @@ mod deserializer {
                             "package" => package = Some(map.next_value()?),
                             "dependencies" => {
                                 dependencies = Some(map.next_value()?);
-                            },
+                            }
                             "edition" => edition = Some(map.next_value()?),
                             _ => return Err(de::Error::unknown_field(&key, FIELDS)),
                         }
@@ -220,7 +220,6 @@ mod deserializer {
                             format!("unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}", env!("CARGO_PKG_VERSION"))
                         )),
                     }
-
                 }
             }
 
