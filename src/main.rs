@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::command;
+use buffrs::command::{self, GenerationFlags, InstallMode};
 use buffrs::config::Config;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
@@ -122,6 +122,10 @@ enum Command {
         /// Only install dependencies
         #[clap(long, default_value = "false")]
         only_dependencies: bool,
+
+        /// Skip generation of buf.yaml file
+        #[clap(long, default_value = "false")]
+        no_buf_yaml: bool,
     },
 
     /// Uninstalls dependencies
@@ -274,9 +278,25 @@ async fn main() -> miette::Result<()> {
         Command::Lint => command::lint()
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
-        Command::Install { only_dependencies } => command::install(only_dependencies, &config)
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        Command::Install {
+            only_dependencies,
+            no_buf_yaml,
+        } => {
+            let mut generation_flags = GenerationFlags::empty();
+            if no_buf_yaml == false {
+                generation_flags |= GenerationFlags::BUF_YAML;
+            }
+
+            let install_mode = if only_dependencies {
+                InstallMode::DependenciesOnly
+            } else {
+                InstallMode::All
+            };
+
+            command::install(install_mode, generation_flags, &config)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+        }
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),

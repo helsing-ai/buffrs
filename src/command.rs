@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::{
+    buf_yaml::BufYamlFile,
     cache::Cache,
     config::Config,
     credentials::Credentials,
@@ -24,7 +25,7 @@ use crate::{
 };
 
 use async_recursion::async_recursion;
-use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
+use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{
     env,
@@ -35,6 +36,7 @@ use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
 };
+use walkdir::WalkDir;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -360,8 +362,35 @@ pub async fn publish(
     artifactory.publish(package, repository).await
 }
 
+/// Install mode for dependencies
+pub enum InstallMode {
+    /// Only install dependencies, not the package itself
+    DependenciesOnly,
+
+    /// Install the package and its dependencies
+    All,
+}
+
+bitflags::bitflags! {
+    /// Flags for generation
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub struct GenerationFlags: u8 {
+        /// Flag for generating buf.yaml files
+        const BUF_YAML = 0b0001;
+    }
+}
+
 /// Installs dependencies
-pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result<()> {
+///
+/// # Arguments
+/// * `mode` - The install mode (dependencies only or all)
+/// * `generation` - Flags for generation of files
+/// * `config` - The configuration
+pub async fn install(
+    mode: InstallMode,
+    generation: GenerationFlags,
+    config: &Config,
+) -> miette::Result<()> {
     let manifest = {
         let mut manifest = Manifest::read().await?;
 
@@ -381,7 +410,7 @@ pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result
 
     store.clear().await?;
 
-    if !only_dependencies {
+    if let InstallMode::All = mode {
         if let Some(ref pkg) = manifest.package {
             store.populate(pkg).await?;
 
@@ -458,6 +487,57 @@ pub async fn install(only_dependencies: bool, config: &Config) -> miette::Result
             String::new(),
         )
         .await?;
+    }
+
+    if let GenerationFlags::BUF_YAML = generation {
+        // Check if a buf.yaml file already exists in cwd
+        let mut buf_yaml = if Path::new("buf.yaml").exists() {
+            BufYamlFile::from_file().wrap_err(miette!("failed to read buf.yaml file"))?
+        } else {
+            BufYamlFile::default()
+        };
+
+        // Add vendor modules to the Buf YAML file
+        let vendor_modules = dependency_graph
+            .get_package_names()
+            .iter()
+            .map(|p| p.to_string())
+            .collect();
+
+        buf_yaml.clear_modules();
+
+        if manifest.package.is_some() {
+            // double-check that the package really contains proto files
+            // under proto/** (but not under proto/vendor/**)
+            let vendor_path = store.proto_vendor_path();
+            let mut has_protos = false;
+            for entry in WalkDir::new(store.proto_path()) {
+                if let Ok(entry) = entry {
+                    if entry.path().is_file() {
+                        let path = entry.path();
+                        if path.starts_with(&vendor_path) {
+                            continue;
+                        }
+
+                        if path.extension().map_or(false, |ext| ext == "proto") {
+                            has_protos = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if has_protos {
+                buf_yaml.add_module();
+            }
+        }
+
+        buf_yaml.set_vendor_modules(vendor_modules);
+
+        // Write the Buf YAML file
+        buf_yaml
+            .to_file()
+            .wrap_err(miette!("failed to write buf.yaml file"))?;
     }
 
     Lockfile::from_iter(locked.into_iter()).write().await

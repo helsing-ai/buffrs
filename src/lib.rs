@@ -43,6 +43,9 @@ pub mod resolver;
 #[cfg(feature = "validation")]
 pub mod validation;
 
+/// buf.yaml generation
+pub mod buf_yaml;
+
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
 

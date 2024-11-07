@@ -400,6 +400,11 @@ impl DependencyGraph {
     pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
         self.entries.get(name)
     }
+
+    /// Returns a list of all package names in the dependency graph
+    pub fn get_package_names(&self) -> Vec<PackageName> {
+        self.entries.keys().cloned().collect()
+    }
 }
 
 impl IntoIterator for DependencyGraph {
