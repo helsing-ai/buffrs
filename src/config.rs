@@ -20,6 +20,9 @@ use std::{
     str::FromStr,
 };
 
+// Location of the configuration file
+const CONFIG_FILE: &str = ".buffrs/config.toml";
+
 /// Representation of the .config/buffrs/config.toml configuration file
 ///
 /// # Example
@@ -120,7 +123,7 @@ impl Config {
             let mut current_dir = cwd.to_owned();
 
             loop {
-                let config_path = current_dir.join(".config/buffrs/config.toml");
+                let config_path = current_dir.join(CONFIG_FILE);
                 if config_path.exists() {
                     return Some(config_path);
                 }
