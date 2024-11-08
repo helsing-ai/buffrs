@@ -511,18 +511,16 @@ pub async fn install(
             // under proto/** (but not under proto/vendor/**)
             let vendor_path = store.proto_vendor_path();
             let mut has_protos = false;
-            for entry in WalkDir::new(store.proto_path()) {
-                if let Ok(entry) = entry {
-                    if entry.path().is_file() {
-                        let path = entry.path();
-                        if path.starts_with(&vendor_path) {
-                            continue;
-                        }
+            for entry in WalkDir::new(store.proto_path()).into_iter().flatten() {
+                if entry.path().is_file() {
+                    let path = entry.path();
+                    if path.starts_with(&vendor_path) {
+                        continue;
+                    }
 
-                        if path.extension().map_or(false, |ext| ext == "proto") {
-                            has_protos = true;
-                            break;
-                        }
+                    if path.extension().map_or(false, |ext| ext == "proto") {
+                        has_protos = true;
+                        break;
                     }
                 }
             }

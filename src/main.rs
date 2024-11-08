@@ -283,7 +283,7 @@ async fn main() -> miette::Result<()> {
             no_buf_yaml,
         } => {
             let mut generation_flags = GenerationFlags::empty();
-            if no_buf_yaml == false {
+            if !no_buf_yaml {
                 generation_flags |= GenerationFlags::BUF_YAML;
             }
 
