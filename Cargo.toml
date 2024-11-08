@@ -1,6 +1,6 @@
 [package]
 name = "buffrs"
-version = "0.9.2-gm"
+version = "0.9.3-gm"
 edition = "2021"
 description = "Modern protobuf package management"
 authors = [

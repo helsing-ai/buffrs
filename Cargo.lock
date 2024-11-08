@@ -254,7 +254,7 @@ dependencies = [
 
 [[package]]
 name = "buffrs"
-version = "0.9.2-gm"
+version = "0.9.3-gm"
 dependencies = [
  "anyhow",
  "assert_cmd",
