@@ -331,10 +331,10 @@ fn infer_package_type(lib: bool, api: bool) -> Option<PackageType> {
 }
 
 /// Retrieve and merge default arguments with user-provided arguments
-/// 
+///
 /// # Arguments
 /// * `config` - The configuration object
-/// 
+///
 /// # Returns
 /// A vector of arguments with default arguments merged in
 fn merge_with_default_args(config: &Config) -> Vec<String> {
