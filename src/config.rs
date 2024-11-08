@@ -20,10 +20,10 @@ use std::{
     str::FromStr,
 };
 
-const DEFAULT_REGISTRY_ALIAS: &str = "globus";
-const DEFAULT_REGISTRY_URI: &str = "https://conan-us.globusmedical.com/artifactory";
+// Location of the configuration file
+const CONFIG_FILE: &str = ".buffrs/config.toml";
 
-/// Representation of the .buffrs/config.toml configuration file
+/// Representation of the .config/buffrs/config.toml configuration file
 ///
 /// # Example
 ///
@@ -33,6 +33,9 @@ const DEFAULT_REGISTRY_URI: &str = "https://conan-us.globusmedical.com/artifacto
 ///
 /// [registry]
 /// default = "some_org"
+///
+/// [commands.install]
+/// default_args = ["--buf-yaml"]
 /// ```
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +48,9 @@ pub struct Config {
 
     /// List of registries
     registries: HashMap<String, RegistryUri>,
+
+    /// Default arguments for commands
+    command_defaults: HashMap<String, Vec<String>>,
 }
 
 impl Config {
@@ -57,13 +63,9 @@ impl Config {
             Some(config_path) => Self::new_from_config_file(&config_path),
             None => Ok(Self {
                 config_path: None,
-                default_registry: Some(DEFAULT_REGISTRY_ALIAS.to_string()),
-                registries: vec![(
-                    DEFAULT_REGISTRY_ALIAS.to_string(),
-                    RegistryUri::from_str(DEFAULT_REGISTRY_URI)?,
-                )]
-                .into_iter()
-                .collect(),
+                default_registry: None,
+                registries: HashMap::new(),
+                command_defaults: HashMap::new(),
             }),
         }
     }
@@ -143,6 +145,20 @@ impl Config {
         })
     }
 
+    /// Get the default arguments for a specific command
+    ///
+    /// # Arguments
+    /// * `command` - The command name to get default arguments for
+    ///
+    /// # Returns
+    /// A vector of default arguments for the specified command
+    pub fn get_default_args(&self, command: &str) -> Vec<String> {
+        self.command_defaults
+            .get(command)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     /// Locate the configuration file in the current directory or any parent directories
     ///
     /// # Arguments
@@ -155,7 +171,7 @@ impl Config {
             let mut current_dir = cwd.to_owned();
 
             loop {
-                let config_path = current_dir.join(".buffrs/config.toml");
+                let config_path = current_dir.join(CONFIG_FILE);
                 if config_path.exists() {
                     return Some(config_path);
                 }
@@ -224,10 +240,38 @@ impl Config {
             );
         }
 
+        // Parse command-specific default arguments from [commands.*] sections
+        let command_defaults = config
+            .get("commands")
+            .and_then(|commands| commands.as_table())
+            .map(|commands| {
+                commands
+                    .iter()
+                    .map(|(command, settings)| {
+                        let default_args = settings
+                            .get("default_args")
+                            .and_then(|args| args.as_array())
+                            .map(|args| {
+                                args.iter()
+                                    .filter_map(|arg| arg.as_str().map(|s| s.to_string()))
+                                    .collect::<Vec<String>>()
+                            })
+                            .unwrap_or_default();
+                        Ok((command.to_string(), default_args))
+                    })
+                    .collect::<miette::Result<HashMap<String, Vec<String>>>>()
+            })
+            .unwrap_or_else(|| Ok(HashMap::new()))
+            .wrap_err(miette!(
+                "failed to load command defaults from config file: {}",
+                config_path.display()
+            ))?;
+
         Ok(Self {
             config_path: Some(config_path.to_owned()),
             default_registry,
             registries,
+            command_defaults,
         })
     }
 }

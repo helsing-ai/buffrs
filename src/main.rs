@@ -12,19 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::command;
+use buffrs::command::{self, GenerationFlags, InstallMode};
 use buffrs::config::Config;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
+use clap::CommandFactory;
 use clap::{Parser, Subcommand};
-use miette::{miette, WrapErr};
+use miette::{miette, IntoDiagnostic, WrapErr};
 use semver::Version;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
 #[command(propagate_version = true)]
 struct Cli {
+    /// Opt out of applying default arguments from config
+    #[clap(long)]
+    ignore_defaults: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -122,6 +127,10 @@ enum Command {
         /// Only install dependencies
         #[clap(long, default_value = "false")]
         only_dependencies: bool,
+
+        /// Generate buf.yaml file matching the installed dependencies
+        #[clap(long, default_value = "false")]
+        buf_yaml: bool,
     },
 
     /// Uninstalls dependencies
@@ -173,11 +182,15 @@ async fn main() -> miette::Result<()> {
         .try_init()
         .unwrap();
 
-    let cli = Cli::parse();
-
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = std::env::current_dir().into_diagnostic()?;
 
     let config = Config::new(Some(&cwd))?;
+
+    // Merge default arguments with user-specified arguments
+    let args = merge_with_default_args(&config);
+
+    // Parse CLI with merged arguments
+    let cli = Cli::parse_from(args);
 
     let manifest = if Manifest::exists().await? {
         Some(Manifest::read().await?)
@@ -274,9 +287,25 @@ async fn main() -> miette::Result<()> {
         Command::Lint => command::lint()
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
-        Command::Install { only_dependencies } => command::install(only_dependencies, &config)
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        Command::Install {
+            only_dependencies,
+            buf_yaml,
+        } => {
+            let mut generation_flags = GenerationFlags::empty();
+            if buf_yaml {
+                generation_flags |= GenerationFlags::BUF_YAML;
+            }
+
+            let install_mode = if only_dependencies {
+                InstallMode::DependenciesOnly
+            } else {
+                InstallMode::All
+            };
+
+            command::install(install_mode, generation_flags, &config)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+        }
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
@@ -299,4 +328,43 @@ fn infer_package_type(lib: bool, api: bool) -> Option<PackageType> {
     } else {
         None
     }
+}
+
+/// Retrieve and merge default arguments with user-provided arguments
+///
+/// # Arguments
+/// * `config` - The configuration object
+///
+/// # Returns
+/// A vector of arguments with default arguments merged in
+fn merge_with_default_args(config: &Config) -> Vec<String> {
+    let mut args: Vec<String> = std::env::args().collect();
+
+    // Check if --ignore-defaults is in the arguments
+    let initial_cli = Cli::try_parse_from(&args);
+    if let Ok(cli) = initial_cli {
+        if cli.ignore_defaults {
+            return args; // Return original arguments if --ignore-defaults is set
+        }
+    }
+
+    // Determine the command name based on the user's input
+    let cli_matches = Cli::command().get_matches_from(args.clone());
+
+    // Find the position of the subcommand in the arguments
+    if let Some((subcommand, _)) = cli_matches.subcommand() {
+        let command_position = args
+            .iter()
+            .position(|arg| arg == subcommand)
+            .unwrap_or_else(|| args.len() - 1);
+
+        // Get default args for this command
+        let default_args = config.get_default_args(subcommand);
+        if !default_args.is_empty() {
+            // Insert default arguments right after the command position
+            args.splice(command_position + 1..command_position + 1, default_args);
+        }
+    }
+
+    args
 }
