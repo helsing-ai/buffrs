@@ -498,11 +498,12 @@ pub async fn install(
         };
 
         // Add vendor modules to the Buf YAML file
-        let vendor_modules = dependency_graph
+        let mut vendor_modules: Vec<String> = dependency_graph
             .get_package_names()
             .iter()
             .map(|p| p.to_string())
             .collect();
+        vendor_modules.sort();
 
         buf_yaml.clear_modules();
 
