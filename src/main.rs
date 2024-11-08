@@ -360,9 +360,20 @@ fn merge_with_default_args(config: &Config) -> Vec<String> {
 
         // Get default args for this command
         let default_args = config.get_default_args(subcommand);
+
         if !default_args.is_empty() {
-            // Insert default arguments right after the command position
-            args.splice(command_position + 1..command_position + 1, default_args);
+            // Filter out any default arguments already provided by the user
+            let user_args: std::collections::HashSet<_> = args.iter().collect();
+            let filtered_defaults: Vec<String> = default_args
+                .into_iter()
+                .filter(|arg| !user_args.contains(arg))
+                .collect();
+
+            // Insert non-duplicate default arguments right after the command position
+            args.splice(
+                command_position + 1..command_position + 1,
+                filtered_defaults,
+            );
         }
     }
 
