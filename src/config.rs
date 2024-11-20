@@ -43,7 +43,7 @@ pub struct Config {
     /// Path to the configuration file
     config_path: Option<PathBuf>,
 
-    /// Default registry to use if none is specified
+    /// Default registry alias to use if none is specified
     default_registry: Option<String>,
 
     /// List of registries

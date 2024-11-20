@@ -23,6 +23,7 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
+    config::Config,
     manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
 };
@@ -151,7 +152,7 @@ impl PackageStore {
     }
 
     /// Packages a release from the local file system state
-    pub async fn release(&self, manifest: &Manifest) -> miette::Result<Package> {
+    pub async fn release(&self, manifest: &Manifest, config: &Config) -> miette::Result<Package> {
         for dependency in manifest.dependencies.iter() {
             let resolved = self.resolve(&dependency.package).await?;
 
@@ -174,7 +175,7 @@ impl PackageStore {
             entries.insert(path.into(), contents.into());
         }
 
-        let package = Package::create(manifest.clone(), entries)?;
+        let package = Package::create(manifest.clone(), entries, config)?;
 
         tracing::info!(":: packaged {}@{}", package.name(), package.version());
 

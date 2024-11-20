@@ -259,7 +259,7 @@ async fn main() -> miette::Result<()> {
             output_directory,
             dry_run,
             set_version,
-        } => command::package(output_directory, dry_run, set_version)
+        } => command::package(output_directory, dry_run, set_version, &config)
             .await
             .wrap_err(miette!(
                 "failed to export `{package}` into the buffrs package format"
@@ -278,6 +278,7 @@ async fn main() -> miette::Result<()> {
                 allow_dirty,
                 dry_run,
                 set_version,
+                &config,
             )
             .await
             .wrap_err(miette!(

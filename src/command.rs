@@ -19,7 +19,7 @@ use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, DependencyManifest, Manifest, PackageManifest, MANIFEST_FILE},
-    package::{PackageName, PackageStore, PackageType},
+    package::{Package, PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, ResolvedDependency},
 };
@@ -176,6 +176,11 @@ impl FromStr for DependencyLocator {
 }
 
 /// Adds a dependency to this project
+///
+/// # Arguments
+/// * `registry` - The unresolved registry URI (e.g. `alias://my-registry` or `https://my-registry.jfrog.io/artifactory`)
+/// * `resolved_registry` - The resolved registry URI (e.g. `https://my-registry.jfrog.io/artifactory`)
+/// * `dependency` - The dependency to add (e.g. `my-repo/my-package@1.0`)
 pub async fn add(
     registry: &RegistryUri,
     resolved_registry: &RegistryUri,
@@ -234,19 +239,18 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
     manifest.write().await
 }
 
-/// Packages the api and writes it to the filesystem
-pub async fn package(
-    directory: impl AsRef<Path>,
-    dry_run: bool,
-    version: Option<Version>,
-) -> miette::Result<()> {
+/// Prepare package for local packaging or remote publishing
+///
+/// # Arguments
+/// * `set_version` - Desired manifest version
+/// * `config` - Configuration data used for registry alias resolution
+async fn prepare_package(set_version: Option<Version>, config: &Config) -> miette::Result<Package> {
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
-    if let Some(version) = version {
+    if let Some(version) = set_version {
         if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
-
+            tracing::info!(":: modified version in manifest to {version}");
             package.version = version;
         }
     }
@@ -255,7 +259,19 @@ pub async fn package(
         store.populate(pkg).await?;
     }
 
-    let package = store.release(&manifest).await?;
+    let package = store.release(&manifest, config).await?;
+    Ok(package)
+}
+
+/// Packages the api and writes it to the filesystem
+pub async fn package(
+    directory: impl AsRef<Path>,
+    dry_run: bool,
+    version: Option<Version>,
+    config: &Config,
+) -> miette::Result<()> {
+    // Prepare the package
+    let package = prepare_package(version, config).await?;
 
     if dry_run {
         return Ok(());
@@ -282,6 +298,7 @@ pub async fn publish(
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
+    config: &Config,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     async fn git_statuses() -> miette::Result<Vec<String>> {
@@ -335,24 +352,9 @@ pub async fn publish(
         }
     }
 
-    let mut manifest = Manifest::read().await?;
+    let package = prepare_package(version, config).await?;
     let credentials = Credentials::load().await?;
-    let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
-
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
-
-            package.version = version;
-        }
-    }
-
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-    }
-
-    let package = store.release(&manifest).await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -419,7 +421,7 @@ pub async fn install(
     }
 
     let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache)
+        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache, &config)
             .await
             .wrap_err(miette!("dependency resolution failed"))?;
 

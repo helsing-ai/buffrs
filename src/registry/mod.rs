@@ -89,7 +89,7 @@ impl FromStr for RegistryUri {
     type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        // if the string doesn't parse as a URL, use the custom "alias" scheme, with the value as the path
+        // If the string doesn't parse as a URL, use the custom "alias" scheme, with the value as the path
         match Url::from_str(value) {
             Ok(url) => {
                 sanity_check_url(&url)?;

@@ -24,6 +24,7 @@ use std::{
 use tokio::fs;
 
 use crate::{
+    config::Config,
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
@@ -343,6 +344,21 @@ impl Manifest {
         .await
         .into_diagnostic()
         .wrap_err(WriteError(MANIFEST_FILE))
+    }
+
+    /// Returns a clone of this manifest with all registry aliases resolved
+    pub fn resolved(&self, config: &Config) -> miette::Result<Self> {
+        let mut manifest = self.clone();
+
+        // Resolve aliases in dependencies prior to packaging
+        for dependency in &mut manifest.dependencies {
+            if let DependencyManifest::Remote(ref mut remote_manifest) = dependency.manifest {
+                remote_manifest.registry =
+                    config.resolve_registry_uri(&remote_manifest.registry)?;
+            }
+        }
+
+        Ok(manifest)
     }
 }
 

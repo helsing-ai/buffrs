@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::{
     cache::{Cache, Entry},
+    config::Config,
     credentials::Credentials,
     lock::{FileRequirement, Lockfile},
     manifest::{
@@ -109,6 +110,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        config: &Config,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -126,6 +128,7 @@ impl DependencyGraph {
                 lockfile,
                 credentials,
                 cache,
+                config,
                 &mut entries,
             )
             .await?;
@@ -141,6 +144,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        config: &Config,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         match dependency.manifest {
@@ -155,6 +159,7 @@ impl DependencyGraph {
                     lockfile,
                     credentials,
                     cache,
+                    config,
                     entries,
                 )
                 .await?;
@@ -170,6 +175,7 @@ impl DependencyGraph {
                     lockfile,
                     credentials,
                     cache,
+                    config,
                     entries,
                 )
                 .await?;
@@ -187,6 +193,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        config: &Config,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
@@ -201,7 +208,7 @@ impl DependencyGraph {
             })?;
 
         let store = PackageStore::open(&dependency.manifest.path).await?;
-        let package = store.release(&manifest).await?;
+        let package = store.release(&manifest, config).await?;
 
         let dependency_name = package.name().clone();
         let sub_dependencies = package.manifest.dependencies.clone();
@@ -231,6 +238,7 @@ impl DependencyGraph {
                 lockfile,
                 credentials,
                 cache,
+                config,
                 entries,
             )
             .await?;
@@ -247,6 +255,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        config: &Config,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -313,6 +322,7 @@ impl DependencyGraph {
                     lockfile,
                     credentials,
                     cache,
+                    config,
                     entries,
                 )
                 .await?;
