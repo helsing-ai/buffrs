@@ -21,9 +21,9 @@ use std::{
 };
 
 // Location of the configuration file
-const CONFIG_FILE: &str = ".buffrs/config.toml";
+const CONFIG_FILE: &str = ".config/buffrs.toml";
 
-/// Representation of the .config/buffrs/config.toml configuration file
+/// Representation of the configuration file
 ///
 /// # Example
 ///
