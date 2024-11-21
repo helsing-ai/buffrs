@@ -24,6 +24,17 @@ use semver::Version;
 use serde::Deserialize;
 use url::Url;
 
+/// The policy for validating artifactory server certificates
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CertValidationPolicy {
+    /// Validate the certificate
+    #[default]
+    Validate,
+
+    /// Do not validate the certificate
+    NoValidation,
+}
+
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
@@ -34,12 +45,24 @@ pub struct Artifactory {
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: &RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
+    ///
+    /// # Arguments
+    /// * `registry` - The registry URI
+    /// * `credentials` - The credentials to use for the registry
+    /// * `cert_validation_policy` - The policy for validating artifactory server certificates
+    pub fn new(
+        registry: &RegistryUri,
+        credentials: &Credentials,
+        cert_validation_policy: CertValidationPolicy,
+    ) -> miette::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
             token: credentials.registry_tokens.get(registry).cloned(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
+                .danger_accept_invalid_certs(
+                    cert_validation_policy == CertValidationPolicy::NoValidation,
+                )
                 .build()
                 .into_diagnostic()?,
         })

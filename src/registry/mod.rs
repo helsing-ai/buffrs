@@ -24,7 +24,7 @@ mod cache;
 
 use crate::manifest::Dependency;
 use crate::manifest::DependencyManifest;
-pub use artifactory::Artifactory;
+pub use artifactory::{Artifactory, CertValidationPolicy};
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};

@@ -15,7 +15,7 @@ use crate::{
         RemoteDependencyManifest, MANIFEST_FILE,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, RegistryUri},
+    registry::{Artifactory, CertValidationPolicy, RegistryUri},
 };
 
 /// Represents a dependency contextualized by the current dependency graph
@@ -111,6 +111,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         config: &Config,
+        cert_validation_policy: CertValidationPolicy,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -129,6 +130,7 @@ impl DependencyGraph {
                 credentials,
                 cache,
                 config,
+                cert_validation_policy,
                 &mut entries,
             )
             .await?;
@@ -137,6 +139,7 @@ impl DependencyGraph {
         Ok(Self { entries })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn process_dependency(
         name: PackageName,
         dependency: Dependency,
@@ -145,6 +148,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         config: &Config,
+        cert_validation_policy: CertValidationPolicy,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         match dependency.manifest {
@@ -160,6 +164,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     config,
+                    cert_validation_policy,
                     entries,
                 )
                 .await?;
@@ -176,6 +181,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     config,
+                    cert_validation_policy,
                     entries,
                 )
                 .await?;
@@ -186,6 +192,7 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
+    #[allow(clippy::too_many_arguments)]
     async fn process_local_dependency(
         name: PackageName,
         dependency: LocalDependency,
@@ -194,6 +201,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         config: &Config,
+        cert_validation_policy: CertValidationPolicy,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
@@ -239,6 +247,7 @@ impl DependencyGraph {
                 credentials,
                 cache,
                 config,
+                cert_validation_policy,
                 entries,
             )
             .await?;
@@ -248,6 +257,7 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
+    #[allow(clippy::too_many_arguments)]
     async fn process_remote_dependency(
         name: PackageName,
         dependency: RemoteDependency,
@@ -256,6 +266,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         config: &Config,
+        cert_validation_policy: CertValidationPolicy,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
@@ -293,8 +304,15 @@ impl DependencyGraph {
                 }
             }
         } else {
-            let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials, cache).await?;
+            let dependency_pkg = Self::resolve(
+                dependency.clone(),
+                is_root,
+                lockfile,
+                credentials,
+                cache,
+                cert_validation_policy,
+            )
+            .await?;
 
             let dependency_name = dependency_pkg.name().clone();
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -323,6 +341,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     config,
+                    cert_validation_policy,
                     entries,
                 )
                 .await?;
@@ -338,6 +357,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        cert_validation_policy: CertValidationPolicy,
     ) -> miette::Result<Package> {
         if let Some(local_locked) = lockfile.get(&dependency.package) {
             ensure!(
@@ -358,12 +378,15 @@ impl DependencyGraph {
                 }
             }
 
-            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
-                DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                },
-            )?;
+            let registry = Artifactory::new(
+                &dependency.manifest.registry,
+                credentials,
+                cert_validation_policy,
+            )
+            .wrap_err(DownloadError {
+                name: dependency.package.clone(),
+                version: dependency.manifest.version.clone(),
+            })?;
 
             let package = registry
                 // TODO(#205): This works now because buffrs only supports pinned versions.
@@ -383,12 +406,15 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry = Artifactory::new(&dependency.manifest.registry, credentials).wrap_err(
-                DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                },
-            )?;
+            let registry = Artifactory::new(
+                &dependency.manifest.registry,
+                credentials,
+                cert_validation_policy,
+            )
+            .wrap_err(DownloadError {
+                name: dependency.package.clone(),
+                version: dependency.manifest.version.clone(),
+            })?;
 
             let package = registry
                 .download(dependency.clone().into())

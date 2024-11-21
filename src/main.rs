@@ -16,6 +16,7 @@ use buffrs::command::{self, GenerationFlags, InstallMode};
 use buffrs::config::Config;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
+use buffrs::registry::CertValidationPolicy;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::CommandFactory;
 use clap::{Parser, Subcommand};
@@ -29,6 +30,13 @@ struct Cli {
     /// Opt out of applying default arguments from config
     #[clap(long)]
     ignore_defaults: bool,
+
+    /// Disable certificate validation
+    ///
+    /// By default, every secure connection buffrs makes will validate the certificate chain.
+    /// This option makes buffrs skip the verification step and proceed without checking.
+    #[clap(long, long = "insecure", short = 'k')]
+    disable_cert_validation: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -210,6 +218,12 @@ async fn main() -> miette::Result<()> {
             .unwrap_or_else(|| name.to_string())
     };
 
+    let cert_validation_policy = if cli.disable_cert_validation {
+        CertValidationPolicy::NoValidation
+    } else {
+        CertValidationPolicy::Validate
+    };
+
     match cli.command {
         Command::Init { lib, api, package } => {
             let kind = infer_package_type(lib, api);
@@ -230,7 +244,7 @@ async fn main() -> miette::Result<()> {
         }
         Command::Login { registry } => {
             let registry = config.resolve_registry_string(&registry)?;
-            command::login(&registry, None)
+            command::login(&registry, None, cert_validation_policy)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
@@ -246,11 +260,16 @@ async fn main() -> miette::Result<()> {
         } => {
             let registry = config.parse_registry_arg(&registry)?;
             let resolved_registry = config.resolve_registry_uri(&registry)?;
-            command::add(&registry, &resolved_registry, &dependency)
-                .await
-                .wrap_err(miette!(
-                    "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-                ))
+            command::add(
+                &registry,
+                &resolved_registry,
+                &dependency,
+                cert_validation_policy,
+            )
+            .await
+            .wrap_err(miette!(
+                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+            ))
         }
         Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
@@ -279,6 +298,7 @@ async fn main() -> miette::Result<()> {
                 dry_run,
                 set_version,
                 &config,
+                cert_validation_policy,
             )
             .await
             .wrap_err(miette!(
@@ -303,9 +323,14 @@ async fn main() -> miette::Result<()> {
                 InstallMode::All
             };
 
-            command::install(install_mode, generation_flags, &config)
-                .await
-                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+            command::install(
+                install_mode,
+                generation_flags,
+                &config,
+                cert_validation_policy,
+            )
+            .await
+            .wrap_err(miette!("failed to install dependencies for `{package}`"))
         }
         Command::Uninstall => command::uninstall()
             .await
