@@ -299,7 +299,37 @@ impl<'a> DependencyGraphBuilder<'a> {
 
         let package = if is_root {
             let store = PackageStore::open(&abs_manifest_dir).await?;
-            store.release(&manifest, self.config, Some(deps)).await?
+            let package = store.release(&manifest, self.config, Some(deps)).await?;
+
+            // Ensure that the package version doesn't clash with an existing entry,
+            // and that it matches the version requirement in the manifest
+            if let Some(version_req) = dependency.manifest.publish.map(|p| p.version) {
+                let found_version = package.version();
+
+                if let Some(entry) = deps.get_mut(package.name()) {
+                    let existing_package = entry.package();
+                    ensure!(
+                        version_req.matches(existing_package.version()),
+                        "a dependency of your project requires {}@{} which collides with {}@{} required by {:?}",
+                        package.name(),
+                        found_version,
+                        existing_package.name(),
+                        existing_package.version(),
+                        name,
+                    );
+                } else {
+                    // Package not yet in the dependency graph, so we verify the version requirement
+                    ensure!(
+                        version_req.matches(found_version),
+                        "a dependency of your project requires {}@{} but the resolved version is {}",
+                        package.name(),
+                        version_req,
+                        found_version,
+                    );
+                }
+            }
+
+            package
         } else {
             // Non-root packages may not be physically present on disk.
             // Take it from the collected entries instead.
