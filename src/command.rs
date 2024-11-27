@@ -262,6 +262,10 @@ async fn prepare_package(set_version: Option<Version>, config: &Config) -> miett
     }
 
     let package = store.release(&manifest, config, None).await?;
+
+    // Ensure package was fully resolved
+    package.manifest.assert_fully_resolved()?;
+    
     Ok(package)
 }
 

@@ -369,6 +369,25 @@ impl Manifest {
 
         Ok(manifest)
     }
+
+    /// Tests if the manifest is fully resolved (only contains remote dependencies)
+    pub fn assert_fully_resolved(&self) -> miette::Result<()> {
+        for dependency in &self.dependencies {
+            if dependency.manifest.is_local() {
+                return Err(miette!(
+                    "dependency {} of {} does not specify version/registry/repository",
+                    dependency.package,
+                    self.package
+                        .as_ref()
+                        .map(|p| p.name.clone())
+                        .map(|n| n.to_string())
+                        .unwrap_or("package".to_string())
+                ));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl From<RawManifest> for Manifest {
