@@ -1,8 +1,12 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-
 use async_recursion::async_recursion;
-use miette::{bail, ensure, Context, Diagnostic};
+use miette::{bail, ensure, Context, Diagnostic, IntoDiagnostic};
 use semver::VersionReq;
+use std::{
+    collections::HashMap,
+    env,
+    ops::{Deref, DerefMut},
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 
 use crate::{
@@ -19,6 +23,7 @@ use crate::{
 };
 
 /// Represents a dependency contextualized by the current dependency graph
+#[derive(Debug, Clone)]
 pub enum ResolvedDependency {
     /// A resolved dependency that is located on a remote registry
     Remote {
@@ -33,7 +38,7 @@ pub enum ResolvedDependency {
         /// Transitive dependencies
         depends_on: Vec<PackageName>,
     },
-    /// A resolved depnedency that is located on the filesystem
+    /// A resolved dependency that is located on the filesystem
     Local {
         /// The materialized package that was created from the buffrs package at the given path
         package: Package,
@@ -63,6 +68,7 @@ impl ResolvedDependency {
 }
 
 /// Represents a requester of the associated dependency
+#[derive(Debug, Clone)]
 pub struct Dependant {
     /// Package that requested the dependency
     pub name: PackageName,
@@ -71,8 +77,19 @@ pub struct Dependant {
 }
 
 /// Represents direct and transitive dependencies of the root package
+#[derive(Debug, Clone, Default)]
 pub struct DependencyGraph {
-    entries: HashMap<PackageName, ResolvedDependency>,
+    pub(crate) entries: HashMap<PackageName, ResolvedDependency>,
+}
+
+/// A builder for constructing a dependency graph
+pub struct DependencyGraphBuilder<'a> {
+    manifest: &'a Manifest,
+    lockfile: &'a Lockfile,
+    credentials: &'a Credentials,
+    cache: &'a Cache,
+    config: &'a Config,
+    cert_validation_policy: CertValidationPolicy,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -90,6 +107,20 @@ impl From<RemoteDependency> for Dependency {
     }
 }
 
+impl Deref for DependencyGraph {
+    type Target = HashMap<PackageName, ResolvedDependency>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.entries
+    }
+}
+
+impl DerefMut for DependencyGraph {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.entries
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct LocalDependency {
     package: PackageName,
@@ -104,85 +135,117 @@ struct DownloadError {
 }
 
 impl DependencyGraph {
-    /// Recursively resolves dependencies from the manifest to build a dependency graph
-    pub async fn from_manifest(
-        manifest: &Manifest,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        config: &Config,
+    /// Locates and returns a reference to a resolved dependency package by its name
+    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
+        self.entries.get(name)
+    }
+
+    /// Returns a list of all package names in the dependency graph
+    pub fn get_package_names(&self) -> Vec<PackageName> {
+        self.entries.keys().cloned().collect()
+    }
+}
+
+impl IntoIterator for DependencyGraph {
+    type Item = ResolvedDependency;
+    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_values()
+    }
+}
+
+impl<'a> DependencyGraphBuilder<'a> {
+    /// Creates a new dependency graph builder
+    ///
+    /// # Parameters
+    /// - `manifest`: Manifest of the root package
+    /// - `lockfile`: Lockfile of the root package
+    /// - `credentials`: Credentials used to authenticate with remote registries
+    /// - `cache`: Cache used to store downloaded packages
+    /// - `config`: Configuration settings
+    /// - `cert_validation_policy`: Policy used to validate certificates
+    ///
+    /// # Returns
+    /// A new dependency graph builder
+    pub fn new(
+        manifest: &'a Manifest,
+        lockfile: &'a Lockfile,
+        credentials: &'a Credentials,
+        cache: &'a Cache,
+        config: &'a Config,
         cert_validation_policy: CertValidationPolicy,
-    ) -> miette::Result<Self> {
-        let name = manifest
+    ) -> Self {
+        Self {
+            manifest,
+            lockfile,
+            credentials,
+            cache,
+            config,
+            cert_validation_policy,
+        }
+    }
+
+    /// Builds the dependency graph
+    pub async fn build(self) -> miette::Result<DependencyGraph> {
+        let name = self
+            .manifest
             .package
             .as_ref()
             .map(|p| p.name.clone())
             .unwrap_or_else(|| PackageName::unchecked("."));
 
-        let mut entries = HashMap::new();
+        let parent_dir = env::current_dir().into_diagnostic()?;
 
-        for dependency in &manifest.dependencies {
-            Self::process_dependency(
+        // Prepare the dependency graph
+        let mut deps = DependencyGraph::default();
+
+        for dependency in &self.manifest.dependencies {
+            self.process_dependency(
                 name.clone(),
                 dependency.clone(),
-                true,
-                lockfile,
-                credentials,
-                cache,
-                config,
-                cert_validation_policy,
-                &mut entries,
+                true, // is_root
+                &parent_dir,
+                &mut deps,
             )
             .await?;
         }
 
-        Ok(Self { entries })
+        Ok(deps)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn process_dependency(
+        &self,
         name: PackageName,
         dependency: Dependency,
         is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        config: &Config,
-        cert_validation_policy: CertValidationPolicy,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
+        parent_dir: &Path,
+        deps: &mut DependencyGraph,
     ) -> miette::Result<()> {
         match dependency.manifest {
             DependencyManifest::Remote(manifest) => {
-                Self::process_remote_dependency(
+                self.process_remote_dependency(
                     name.clone(),
                     RemoteDependency {
                         package: dependency.package,
                         manifest,
                     },
                     is_root,
-                    lockfile,
-                    credentials,
-                    cache,
-                    config,
-                    cert_validation_policy,
-                    entries,
+                    parent_dir,
+                    deps,
                 )
                 .await?;
             }
             DependencyManifest::Local(manifest) => {
-                Self::process_local_dependency(
+                self.process_local_dependency(
                     name.clone(),
                     LocalDependency {
                         package: dependency.package,
                         manifest,
                     },
                     is_root,
-                    lockfile,
-                    credentials,
-                    cache,
-                    config,
-                    cert_validation_policy,
-                    entries,
+                    parent_dir,
+                    deps,
                 )
                 .await?;
             }
@@ -192,31 +255,64 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
-    #[allow(clippy::too_many_arguments)]
     async fn process_local_dependency(
+        &self,
         name: PackageName,
         dependency: LocalDependency,
-        _: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        config: &Config,
-        cert_validation_policy: CertValidationPolicy,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
+        is_root: bool,
+        parent_dir: &Path,
+        deps: &mut DependencyGraph,
     ) -> miette::Result<()> {
-        let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
+        // If the dependency.manifest_path is relative, it's relative to the parent manifest.
+        // We therefore need to resolve it to an absolute path.
+        let abs_manifest_dir = if dependency.manifest.path.is_relative() {
+            // combine the parent manifest path with the relative path
+            std::path::absolute(parent_dir.join(&dependency.manifest.path)).into_diagnostic()?
+        } else {
+            dependency.manifest.path.clone()
+        };
+
+        let manifest = Manifest::try_read_from(&abs_manifest_dir.join(MANIFEST_FILE))
             .await?
             .ok_or_else(|| {
                 miette::miette!(
-                    "no `{}` for package {} found at path {}",
+                    "no `{}` for package {} found at path {} referenced by {} as \"{}\"",
                     MANIFEST_FILE,
                     dependency.package,
-                    dependency.manifest.path.join(MANIFEST_FILE).display()
+                    abs_manifest_dir.join(MANIFEST_FILE).display(),
+                    name,
+                    dependency.manifest.path.display()
                 )
             })?;
 
-        let store = PackageStore::open(&dependency.manifest.path).await?;
-        let package = store.release(&manifest, config).await?;
+        // Process sub-dependencies first
+        for sub_dependency in &manifest.dependencies {
+            self.process_dependency(
+                dependency.package.clone(),
+                sub_dependency.clone(),
+                true, // is_root
+                &abs_manifest_dir,
+                deps,
+            )
+            .await?;
+        }
+
+        let package = if is_root {
+            let store = PackageStore::open(&abs_manifest_dir).await?;
+            store.release(&manifest, self.config, Some(deps)).await?
+        } else {
+            // Non-root packages may not be physically present on disk.
+            // Take it from the collected entries instead.
+            deps.get(&dependency.package)
+                .ok_or_else(|| {
+                    miette::miette!(
+                        "no resolved package found for local dependency {}",
+                        dependency.package
+                    )
+                })?
+                .package()
+                .clone()
+        };
 
         let dependency_name = package.name().clone();
         let sub_dependencies = package.manifest.dependencies.clone();
@@ -225,11 +321,12 @@ impl DependencyGraph {
             .map(|sub_dependency| sub_dependency.package.clone())
             .collect();
 
-        entries.insert(
+        // Add the local package to the dependency graph
+        deps.insert(
             dependency_name.clone(),
             ResolvedDependency::Local {
                 package,
-                path: dependency.manifest.path,
+                path: abs_manifest_dir.clone(),
                 dependants: vec![Dependant {
                     name,
                     version_req: VersionReq::STAR,
@@ -238,17 +335,14 @@ impl DependencyGraph {
             },
         );
 
+        // Process the sub-dependencies of the local package
         for sub_dependency in sub_dependencies {
-            Self::process_dependency(
+            self.process_dependency(
                 dependency_name.clone(),
                 sub_dependency,
                 false,
-                lockfile,
-                credentials,
-                cache,
-                config,
-                cert_validation_policy,
-                entries,
+                &abs_manifest_dir,
+                deps,
             )
             .await?;
         }
@@ -257,21 +351,18 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
-    #[allow(clippy::too_many_arguments)]
     async fn process_remote_dependency(
+        &self,
         name: PackageName,
         dependency: RemoteDependency,
         is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        config: &Config,
-        cert_validation_policy: CertValidationPolicy,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
+        parent_dir: &Path,
+        deps: &mut DependencyGraph,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
 
-        if let Some(entry) = entries.get_mut(&dependency.package) {
+        // Check if the dependency is already resolved
+        if let Some(entry) = deps.get_mut(&dependency.package) {
             match entry {
                 ResolvedDependency::Local {
                     path, dependants, ..
@@ -304,15 +395,8 @@ impl DependencyGraph {
                 }
             }
         } else {
-            let dependency_pkg = Self::resolve(
-                dependency.clone(),
-                is_root,
-                lockfile,
-                credentials,
-                cache,
-                cert_validation_policy,
-            )
-            .await?;
+            // Resolve the dependency
+            let dependency_pkg = self.resolve(dependency.clone(), is_root).await?;
 
             let dependency_name = dependency_pkg.name().clone();
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
@@ -321,7 +405,7 @@ impl DependencyGraph {
                 .map(|sub_dependency| sub_dependency.package.clone())
                 .collect();
 
-            entries.insert(
+            deps.insert(
                 dependency_name.clone(),
                 ResolvedDependency::Remote {
                     package: dependency_pkg,
@@ -333,16 +417,12 @@ impl DependencyGraph {
             );
 
             for sub_dependency in sub_dependencies {
-                Self::process_dependency(
+                self.process_dependency(
                     dependency_name.clone(),
                     sub_dependency,
                     false,
-                    lockfile,
-                    credentials,
-                    cache,
-                    config,
-                    cert_validation_policy,
-                    entries,
+                    parent_dir,
+                    deps,
                 )
                 .await?;
             }
@@ -352,14 +432,11 @@ impl DependencyGraph {
     }
 
     async fn resolve(
+        &self,
         dependency: RemoteDependency,
         is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        cert_validation_policy: CertValidationPolicy,
     ) -> miette::Result<Package> {
-        if let Some(local_locked) = lockfile.get(&dependency.package) {
+        if let Some(local_locked) = self.lockfile.get(&dependency.package) {
             ensure!(
                 is_root || dependency.manifest.registry == local_locked.registry,
                 "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
@@ -372,7 +449,7 @@ impl DependencyGraph {
             // but theoretically we should be able to still look into cache when freshly installing
             // a dependency.
             if dependency.manifest.version.matches(&local_locked.version) {
-                if let Some(cached) = cache.get(local_locked.into()).await? {
+                if let Some(cached) = self.cache.get(local_locked.into()).await? {
                     local_locked.validate(&cached)?;
                     return Ok(cached);
                 }
@@ -380,8 +457,8 @@ impl DependencyGraph {
 
             let registry = Artifactory::new(
                 &dependency.manifest.registry,
-                credentials,
-                cert_validation_policy,
+                self.credentials,
+                self.cert_validation_policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),
@@ -399,17 +476,19 @@ impl DependencyGraph {
                 })?;
 
             let file_requirement = FileRequirement::from(local_locked);
-            cache
+            self.cache
                 .put(file_requirement.into(), package.tgz.clone())
                 .await
                 .ok();
 
             Ok(package)
         } else {
+            // Package not present in lockfile (and thus not in cache)
+            // => download it from the registry
             let registry = Artifactory::new(
                 &dependency.manifest.registry,
-                credentials,
-                cert_validation_policy,
+                self.credentials,
+                self.cert_validation_policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),
@@ -426,28 +505,9 @@ impl DependencyGraph {
 
             let key = Entry::from(&package);
             let content = package.tgz.clone();
-            cache.put(key, content).await.ok();
+            self.cache.put(key, content).await.ok();
 
             Ok(package)
         }
-    }
-
-    /// Locates and returns a reference to a resolved dependency package by its name
-    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
-        self.entries.get(name)
-    }
-
-    /// Returns a list of all package names in the dependency graph
-    pub fn get_package_names(&self) -> Vec<PackageName> {
-        self.entries.keys().cloned().collect()
-    }
-}
-
-impl IntoIterator for DependencyGraph {
-    type Item = ResolvedDependency;
-    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_values()
     }
 }

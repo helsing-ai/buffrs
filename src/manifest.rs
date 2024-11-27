@@ -475,7 +475,7 @@ impl Display for Dependency {
 }
 
 /// Manifest format for dependencies
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum DependencyManifest {
     /// A remote dependency from artifactory
@@ -512,10 +512,64 @@ impl From<RemoteDependencyManifest> for DependencyManifest {
 pub struct LocalDependencyManifest {
     /// Path to local buffrs package
     pub path: PathBuf,
+    /// Optional remote manifest for publishing
+    #[serde(flatten)]
+    pub publish: Option<RemoteDependencyManifest>,
 }
 
 impl From<LocalDependencyManifest> for DependencyManifest {
     fn from(value: LocalDependencyManifest) -> Self {
         Self::Local(value)
+    }
+}
+
+// Custom deserialization logic for `DependencyManifest`
+mod dependency_manifest_deserializer {
+    use super::*;
+    use serde::{de::Error, Deserialize, Deserializer};
+
+    impl<'de> Deserialize<'de> for DependencyManifest {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            #[derive(Deserialize)]
+            struct TempManifest {
+                path: Option<PathBuf>,
+                version: Option<VersionReq>,
+                repository: Option<String>,
+                registry: Option<RegistryUri>,
+            }
+
+            let temp: TempManifest = TempManifest::deserialize(deserializer)?;
+
+            if let Some(path) = temp.path {
+                // Deserialize as a local dependency with optional remote attributes
+                Ok(DependencyManifest::Local(LocalDependencyManifest {
+                    path,
+                    publish: match (temp.version, temp.repository, temp.registry) {
+                        (Some(version), Some(repository), Some(registry)) => {
+                            Some(RemoteDependencyManifest {
+                                version,
+                                repository,
+                                registry,
+                            })
+                        }
+                        _ => None,
+                    },
+                }))
+            } else if let (Some(version), Some(repository), Some(registry)) =
+                (temp.version, temp.repository, temp.registry)
+            {
+                // Deserialize as a remote dependency
+                Ok(DependencyManifest::Remote(RemoteDependencyManifest {
+                    version,
+                    repository,
+                    registry,
+                }))
+            } else {
+                Err(D::Error::custom("Invalid dependency manifest"))
+            }
+        }
     }
 }

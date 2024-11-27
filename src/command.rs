@@ -21,7 +21,7 @@ use crate::{
     manifest::{Dependency, DependencyManifest, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
     registry::{Artifactory, CertValidationPolicy, RegistryUri},
-    resolver::{DependencyGraph, ResolvedDependency},
+    resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
 };
 
 use async_recursion::async_recursion;
@@ -261,7 +261,7 @@ async fn prepare_package(set_version: Option<Version>, config: &Config) -> miett
         store.populate(pkg).await?;
     }
 
-    let package = store.release(&manifest, config).await?;
+    let package = store.release(&manifest, config, None).await?;
     Ok(package)
 }
 
@@ -424,14 +424,15 @@ pub async fn install(
         }
     }
 
-    let dependency_graph = DependencyGraph::from_manifest(
+    let dependency_graph = DependencyGraphBuilder::new(
         &manifest,
         &lockfile,
-        &credentials.into(),
+        &credentials,
         &cache,
         config,
         cert_validation_policy,
     )
+    .build()
     .await
     .wrap_err(miette!("dependency resolution failed"))?;
 

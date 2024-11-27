@@ -26,6 +26,7 @@ use crate::{
     config::Config,
     manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
+    resolver::DependencyGraph,
 };
 
 /// IO abstraction layer over local `buffrs` package store
@@ -151,10 +152,38 @@ impl PackageStore {
         parser.validate()
     }
 
-    /// Packages a release from the local file system state
-    pub async fn release(&self, manifest: &Manifest, config: &Config) -> miette::Result<Package> {
+    /// Packages a release from the local file system state or from a dependency graph.
+    ///
+    /// This method will package the contents of the local file system into a `Package` instance.
+    /// If the `deps` argument is provided, it will fetch the dependencies from the graph
+    /// instead of the local file system.
+    ///
+    /// # Arguments
+    /// - `manifest` - Package manifest to package
+    /// - `config` - Configuration to use (for alias resolution)
+    /// - `deps` - Optional dependency graph to fetch dependencies from
+    ///
+    /// # Returns
+    /// A `Package` instance representing the packaged release
+    pub async fn release(
+        &self,
+        manifest: &Manifest,
+        config: &Config,
+        deps: Option<&DependencyGraph>,
+    ) -> miette::Result<Package> {
         for dependency in manifest.dependencies.iter() {
-            let resolved = self.resolve(&dependency.package).await?;
+            let resolved = if let Some(deps) = deps {
+                deps.get(&dependency.package)
+                    .map(|dep| dep.package().manifest.clone())
+            } else {
+                None
+            };
+
+            let resolved = if let Some(resolved) = resolved {
+                resolved
+            } else {
+                self.resolve(&dependency.package).await?
+            };
 
             let Some(ref resolved_pkg) = resolved.package else {
                 bail!("upstream package is invalid, [package] section is missing in manifest");
