@@ -352,9 +352,18 @@ impl Manifest {
 
         // Resolve aliases in dependencies prior to packaging
         for dependency in &mut manifest.dependencies {
-            if let DependencyManifest::Remote(ref mut remote_manifest) = dependency.manifest {
-                remote_manifest.registry =
-                    config.resolve_registry_uri(&remote_manifest.registry)?;
+            match dependency.manifest {
+                DependencyManifest::Remote(ref mut remote_manifest) => {
+                    remote_manifest.registry =
+                        config.resolve_registry_uri(&remote_manifest.registry)?;
+                }
+                DependencyManifest::Local(ref mut local_manifest) => {
+                    if let Some(ref mut remote_manifest) = local_manifest.publish {
+                        remote_manifest.registry =
+                            config.resolve_registry_uri(&remote_manifest.registry)?;
+                        dependency.manifest = remote_manifest.clone().into();
+                    }
+                }
             }
         }
 
