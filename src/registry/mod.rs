@@ -14,7 +14,6 @@
 
 use std::{
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
@@ -22,10 +21,10 @@ mod artifactory;
 #[cfg(test)]
 mod cache;
 
-use crate::manifest::Dependency;
 use crate::manifest::DependencyManifest;
+use crate::{config, manifest::Dependency};
 pub use artifactory::{Artifactory, CertValidationPolicy};
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{ensure, miette, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -33,7 +32,55 @@ use url::Url;
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RegistryUri(Url);
+pub enum RegistryUri {
+    /// A URL to a registry
+    Url(Url),
+    /// An alias to a registry
+    Alias(String),
+    /// A resolved alias to a registry
+    ResolvedAlias {
+        /// The alias
+        alias: String,
+        /// The resolved URL
+        url: Url,
+    },
+}
+
+impl RegistryUri {
+    /// Get the raw URL of the registry with any alias resolved
+    ///
+    /// # Arguments
+    /// * `config` - The configuration to use to resolve the alias
+    pub fn with_alias_resolved(&self, config: Option<&config::Config>) -> miette::Result<Self> {
+        match self {
+            RegistryUri::Alias(alias) => match config {
+                Some(config) => {
+                    let url = config.lookup_registry(alias)?;
+                    Ok(RegistryUri::ResolvedAlias {
+                        alias: alias.clone(),
+                        url: url.clone(),
+                    })
+                }
+                None => Err(miette!("no configuration provided to resolve alias")),
+            },
+            _ => Ok(self.clone()),
+        }
+    }
+
+    /// Serializer for resolved RegistryUris
+    pub fn serialize_resolved<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            RegistryUri::ResolvedAlias { url, .. } => url.serialize(serializer),
+            RegistryUri::Url(url) => url.serialize(serializer),
+            _ => Err(serde::ser::Error::custom(
+                "cannot serialize unresolved alias",
+            )),
+        }
+    }
+}
 
 impl<'de> Deserialize<'de> for RegistryUri {
     fn deserialize<D>(deserializer: D) -> Result<RegistryUri, D::Error>
@@ -54,33 +101,35 @@ impl Serialize for RegistryUri {
     }
 }
 
-impl From<RegistryUri> for Url {
-    fn from(value: RegistryUri) -> Self {
-        value.0
+impl TryFrom<RegistryUri> for Url {
+    type Error = miette::Report;
+
+    fn try_from(value: RegistryUri) -> Result<Self, Self::Error> {
+        match value {
+            RegistryUri::Url(url) => Ok(url),
+            RegistryUri::ResolvedAlias { url, .. } => Ok(url),
+            _ => Err(miette!(
+                "cannot convert unresolved alias \"{value}\" to URL"
+            )),
+        }
     }
 }
 
-impl Deref for RegistryUri {
-    type Target = Url;
+impl TryFrom<&RegistryUri> for Url {
+    type Error = miette::Report;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for RegistryUri {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+    fn try_from(value: &RegistryUri) -> Result<Self, Self::Error> {
+        // Delegate to the implementation for the owned type
+        TryFrom::<RegistryUri>::try_from(value.clone())
     }
 }
 
 impl Display for RegistryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // if the URL is an alias, strip the scheme
-        if self.0.scheme() == "alias" {
-            write!(f, "{}", self.0.domain().unwrap_or_default())
-        } else {
-            write!(f, "{}", self.0)
+        match self {
+            RegistryUri::Url(url) => write!(f, "{}", url),
+            RegistryUri::Alias(alias) => write!(f, "{}", alias),
+            RegistryUri::ResolvedAlias { alias, url } => write!(f, "{} ({})", alias, url),
         }
     }
 }
@@ -93,20 +142,23 @@ impl FromStr for RegistryUri {
         match Url::from_str(value) {
             Ok(url) => {
                 sanity_check_url(&url)?;
-                Ok(Self(url))
+                Ok(Self::Url(url))
             }
-            Err(_) => {
-                let url = Url::parse(&format!("alias://{}", value))
-                    .into_diagnostic()
-                    .wrap_err(miette!("not a valid URL: {value}"))?;
-
-                Ok(Self(url))
-            }
+            Err(_) => Ok(Self::Alias(value.to_owned())),
         }
     }
 }
 
-fn sanity_check_url(url: &Url) -> miette::Result<()> {
+/// Ensure that the URL is valid for a registry
+///
+/// A valid registry URL must:
+/// - Have a scheme of either "http" or "https"
+/// - End with "/artifactory" if the host is a JFrog Artifactory instance
+/// - Have a host component
+///
+/// # Arguments
+/// * `url` - The URL to check
+pub fn sanity_check_url(url: &Url) -> miette::Result<()> {
     let scheme = url.scheme();
 
     ensure!(

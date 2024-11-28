@@ -19,7 +19,6 @@ use tokio::fs;
 
 use crate::{
     errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
-    registry::RegistryUri,
     ManagedFile,
 };
 
@@ -32,7 +31,7 @@ pub const CREDENTIALS_FILE: &str = "credentials.toml";
 #[derive(Debug, Default, Clone)]
 pub struct Credentials {
     /// A mapping from registry URIs to their corresponding tokens
-    pub registry_tokens: HashMap<RegistryUri, String>,
+    pub registry_tokens: HashMap<url::Url, String>,
 }
 
 impl Credentials {
@@ -108,7 +107,7 @@ struct RawCredentialCollection {
 /// Credentials for a single registry. Serialization type.
 #[derive(Serialize, Deserialize)]
 struct RawRegistryCredentials {
-    uri: RegistryUri,
+    uri: url::Url,
     token: String,
 }
 

@@ -18,7 +18,7 @@ use crate::{
     config::Config,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, DependencyManifest, Manifest, PackageManifest, MANIFEST_FILE},
+    manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
     registry::{Artifactory, CertValidationPolicy, RegistryUri},
     resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
@@ -178,16 +178,16 @@ impl FromStr for DependencyLocator {
 /// Adds a dependency to this project
 ///
 /// # Arguments
-/// * `registry` - The unresolved registry URI (e.g. `alias://my-registry` or `https://my-registry.jfrog.io/artifactory`)
-/// * `resolved_registry` - The resolved registry URI (e.g. `https://my-registry.jfrog.io/artifactory`)
+/// * `registry` - The registry URI
 /// * `dependency` - The dependency to add (e.g. `my-repo/my-package@1.0`)
 pub async fn add(
     registry: &RegistryUri,
-    resolved_registry: &RegistryUri,
     dependency: &str,
+    config: &Config,
     cert_validation_policy: CertValidationPolicy,
 ) -> miette::Result<()> {
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = Manifest::read(config).await?;
+    let registry = registry.with_alias_resolved(Some(config))?;
 
     let DependencyLocator {
         repository,
@@ -200,8 +200,11 @@ pub async fn add(
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory =
-                Artifactory::new(resolved_registry, &credentials, cert_validation_policy)?;
+            let artifactory = Artifactory::new(
+                registry.clone().try_into()?,
+                &credentials,
+                cert_validation_policy,
+            )?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())
@@ -215,7 +218,7 @@ pub async fn add(
 
     manifest
         .dependencies
-        .push(Dependency::new(registry, repository, package, version));
+        .push(Dependency::new(&registry, repository, package, version));
 
     manifest
         .write()
@@ -224,8 +227,8 @@ pub async fn add(
 }
 
 /// Removes a dependency from this project
-pub async fn remove(package: PackageName) -> miette::Result<()> {
-    let mut manifest = Manifest::read().await?;
+pub async fn remove(package: PackageName, config: &Config) -> miette::Result<()> {
+    let mut manifest = Manifest::read(config).await?;
     let store = PackageStore::current().await?;
 
     let dependency = manifest
@@ -247,7 +250,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 /// * `set_version` - Desired manifest version
 /// * `config` - Configuration data used for registry alias resolution
 async fn prepare_package(set_version: Option<Version>, config: &Config) -> miette::Result<Package> {
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = Manifest::read(config).await?;
     let store = PackageStore::current().await?;
 
     if let Some(version) = set_version {
@@ -265,7 +268,7 @@ async fn prepare_package(set_version: Option<Version>, config: &Config) -> miett
 
     // Ensure package was fully resolved
     package.manifest.assert_fully_resolved()?;
-    
+
     Ok(package)
 }
 
@@ -307,6 +310,8 @@ pub async fn publish(
     config: &Config,
     cert_validation_policy: CertValidationPolicy,
 ) -> miette::Result<()> {
+    let registry = registry.with_alias_resolved(Some(config))?;
+
     #[cfg(feature = "git")]
     async fn git_statuses() -> miette::Result<Vec<String>> {
         use std::process::Stdio;
@@ -361,7 +366,7 @@ pub async fn publish(
 
     let package = prepare_package(version, config).await?;
     let credentials = Credentials::load().await?;
-    let artifactory = Artifactory::new(registry, &credentials, cert_validation_policy)?;
+    let artifactory = Artifactory::new(registry.try_into()?, &credentials, cert_validation_policy)?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -401,18 +406,7 @@ pub async fn install(
     config: &Config,
     cert_validation_policy: CertValidationPolicy,
 ) -> miette::Result<()> {
-    let manifest = {
-        let mut manifest = Manifest::read().await?;
-
-        // resolve all alias URLs in the manifest
-        for dependency in manifest.dependencies.iter_mut() {
-            if let DependencyManifest::Remote(ref mut manifest) = &mut dependency.manifest {
-                manifest.registry = config.resolve_registry_uri(&manifest.registry)?;
-            }
-        }
-
-        manifest
-    };
+    let manifest = Manifest::read(config).await?;
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
     let credentials = Credentials::load().await?;
@@ -565,9 +559,9 @@ pub async fn uninstall() -> miette::Result<()> {
 }
 
 /// Lists all protobuf files managed by Buffrs to stdout
-pub async fn list() -> miette::Result<()> {
+pub async fn list(config: &Config) -> miette::Result<()> {
     let store = PackageStore::current().await?;
-    let manifest = Manifest::read().await?;
+    let manifest = Manifest::read(config).await?;
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
@@ -611,8 +605,8 @@ pub async fn list() -> miette::Result<()> {
 
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
-pub async fn lint() -> miette::Result<()> {
-    let manifest = Manifest::read().await?;
+pub async fn lint(config: &Config) -> miette::Result<()> {
+    let manifest = Manifest::read(config).await?;
     let store = PackageStore::current().await?;
 
     let pkg = manifest.package.ok_or(miette!(
@@ -640,8 +634,10 @@ pub async fn login(
     registry: &RegistryUri,
     token: Option<String>,
     cert_validation_policy: CertValidationPolicy,
+    config: &Config,
 ) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
+    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
 
     let token = match token {
         Some(token) => token,
@@ -674,9 +670,10 @@ pub async fn login(
 }
 
 /// Logs you out from a registry
-pub async fn logout(registry: &RegistryUri) -> miette::Result<()> {
+pub async fn logout(registry: &RegistryUri, config: &Config) -> miette::Result<()> {
+    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
     let mut credentials = Credentials::load().await?;
-    credentials.registry_tokens.remove(registry);
+    credentials.registry_tokens.remove(&registry);
     credentials.write().await
 }
 
@@ -689,7 +686,7 @@ pub mod lock {
     pub async fn print_files() -> miette::Result<()> {
         let lock = Lockfile::read().await?;
 
-        let requirements: Vec<FileRequirement> = lock.into();
+        let requirements: Vec<FileRequirement> = lock.try_into()?;
 
         // hint: always ok, as per serde_json doc
         if let Ok(json) = serde_json::to_string_pretty(&requirements) {

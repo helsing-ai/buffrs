@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::registry::RegistryUri;
+use crate::registry::{sanity_check_url, RegistryUri};
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use std::{
     collections::HashMap,
@@ -47,7 +47,7 @@ pub struct Config {
     default_registry: Option<String>,
 
     /// List of registries
-    registries: HashMap<String, RegistryUri>,
+    registries: HashMap<String, url::Url>,
 
     /// Default arguments for commands
     command_defaults: HashMap<String, Vec<String>>,
@@ -70,24 +70,6 @@ impl Config {
         }
     }
 
-    /// Resolve the registry URI from the configuration
-    ///
-    /// # Arguments
-    /// * `registry` - The registry name or URI to resolve
-    ///
-    /// # Returns
-    /// The resolved registry URI
-    pub fn resolve_registry_string(
-        &self,
-        registry: &Option<String>,
-    ) -> miette::Result<RegistryUri> {
-        // First parse
-        let registry = self.parse_registry_arg(registry)?;
-
-        // Then resolve
-        self.resolve_registry_uri(&registry)
-    }
-
     /// Parse a registry argument
     ///
     /// # Arguments
@@ -108,23 +90,6 @@ impl Config {
         }
     }
 
-    /// Resolve the registry URI from the configuration
-    ///
-    /// # Arguments
-    /// * `registry` - The registry URI to resolve
-    ///
-    /// # Returns
-    /// The resolved registry URI
-    pub fn resolve_registry_uri(&self, registry: &RegistryUri) -> miette::Result<RegistryUri> {
-        // If the URI is an alias, resolve it to the actual URI
-        if registry.scheme() == "alias" {
-            let alias = registry.domain().unwrap_or_default();
-            self.lookup_registry(alias)
-        } else {
-            Ok(registry.clone())
-        }
-    }
-
     /// Lookup a registry by name
     ///
     /// # Arguments
@@ -132,7 +97,7 @@ impl Config {
     ///
     /// # Returns
     /// The registry URI
-    pub fn lookup_registry(&self, name: &str) -> miette::Result<RegistryUri> {
+    pub fn lookup_registry(&self, name: &str) -> miette::Result<url::Url> {
         self.registries.get(name).cloned().ok_or_else(|| {
             miette!(
                 "registry '{}' not found in {}",
@@ -214,9 +179,11 @@ impl Config {
                             .ok_or_else(|| miette!("registry URI must be a string"))
                             .wrap_err(miette!("invalid URI for registry '{}'", name))
                             .wrap_err(miette!("in config file: {}", config_path.display()))?;
-                        Ok((name.to_string(), RegistryUri::from_str(uri)?))
+                        let uri = url::Url::from_str(uri).into_diagnostic()?;
+                        sanity_check_url(&uri)?;
+                        Ok((name.to_owned(), uri))
                     })
-                    .collect::<miette::Result<HashMap<String, RegistryUri>>>()
+                    .collect::<miette::Result<HashMap<String, url::Url>>>()
             })
             .unwrap_or_else(|| Ok(HashMap::new()))
             .wrap_err(miette!(

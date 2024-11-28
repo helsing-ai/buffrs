@@ -123,13 +123,19 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
+    pub async fn resolve(
+        &self,
+        package: &PackageName,
+        config: &Config,
+    ) -> miette::Result<Manifest> {
         let manifest = self.locate(package).join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest).await?.ok_or(miette!(
-            "the package store is corrupted: `{}` is not present",
-            manifest.display()
-        ))?;
+        let manifest = Manifest::try_read_from(&manifest, Some(config))
+            .await?
+            .ok_or(miette!(
+                "the package store is corrupted: `{}` is not present",
+                manifest.display()
+            ))?;
 
         Ok(manifest)
     }
@@ -182,7 +188,7 @@ impl PackageStore {
             let resolved = if let Some(resolved) = resolved {
                 resolved
             } else {
-                self.resolve(&dependency.package).await?
+                self.resolve(&dependency.package, config).await?
             };
 
             let Some(ref resolved_pkg) = resolved.package else {
@@ -204,7 +210,7 @@ impl PackageStore {
             entries.insert(path.into(), contents.into());
         }
 
-        let package = Package::create(manifest.clone(), entries, config)?;
+        let package = Package::create(manifest.clone(), entries)?;
 
         tracing::info!(":: packaged {}@{}", package.name(), package.version());
 

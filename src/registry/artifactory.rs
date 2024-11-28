@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
 use crate::{
     credentials::Credentials,
     manifest::{Dependency, DependencyManifest},
@@ -38,7 +37,7 @@ pub enum CertValidationPolicy {
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    registry: RegistryUri,
+    registry: url::Url,
     token: Option<String>,
     client: reqwest::Client,
 }
@@ -51,20 +50,23 @@ impl Artifactory {
     /// * `credentials` - The credentials to use for the registry
     /// * `cert_validation_policy` - The policy for validating artifactory server certificates
     pub fn new(
-        registry: &RegistryUri,
+        registry: url::Url,
         credentials: &Credentials,
         cert_validation_policy: CertValidationPolicy,
     ) -> miette::Result<Self> {
+        let token = credentials.registry_tokens.get(&registry).cloned();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .danger_accept_invalid_certs(
+                cert_validation_policy == CertValidationPolicy::NoValidation,
+            )
+            .build()
+            .into_diagnostic()?;
+
         Ok(Self {
-            registry: registry.clone(),
-            token: credentials.registry_tokens.get(registry).cloned(),
-            client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .danger_accept_invalid_certs(
-                    cert_validation_policy == CertValidationPolicy::NoValidation,
-                )
-                .build()
-                .into_diagnostic()?,
+            registry,
+            token,
+            client,
         })
     }
 
@@ -72,6 +74,7 @@ impl Artifactory {
         let mut request_builder = RequestBuilder::new(self.client.clone(), method, url);
 
         if let Some(token) = &self.token {
+            println!("Using token: {}", token);
             request_builder = request_builder.auth(token.clone());
         }
 
@@ -81,10 +84,10 @@ impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
+            let mut uri: url::Url = self.registry.clone();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
-            uri.into()
+            uri
         };
 
         self.new_request(Method::GET, repositories_url)
@@ -102,10 +105,10 @@ impl Artifactory {
     ) -> miette::Result<Version> {
         // First retrieve all packages matching the given name
         let search_query_url: Url = {
-            let mut url = self.registry.clone();
-            url.set_path("artifactory/api/search/artifact");
-            url.set_query(Some(&format!("name={}&repos={}", name, repository)));
-            url.into()
+            let mut uri: url::Url = self.registry.clone();
+            uri.set_path("artifactory/api/search/artifact");
+            uri.set_query(Some(&format!("name={}&repos={}", name, repository)));
+            uri
         };
 
         let response = self
@@ -177,6 +180,7 @@ impl Artifactory {
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
+            println!("Only remote dependencies can be downloaded from artifactory");
             return Err(miette!(
                 "unable to download local dependency ({}) from artifactory",
                 dependency.package
@@ -185,23 +189,32 @@ impl Artifactory {
 
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
+            let mut url: url::Url = manifest.registry.clone().try_into()?;
+            let path = url.path();
 
-            let path = manifest.registry.path().to_owned();
-
-            let mut url = manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
                 path, manifest.repository, dependency.package, dependency.package, version
             ));
 
-            url.into()
+            url
         };
 
+        println!("Downloading artifact from: {}", artifact_url);
         tracing::debug!("Hitting download URL: {artifact_url}");
 
-        let response = self.new_request(Method::GET, artifact_url).send().await?;
+        if self.token.is_none() {
+            println!("No token found for artifactory, this may result in a 401 error");
+        }
 
-        let response: reqwest::Response = response.0;
+        let response = self.new_request(Method::GET, artifact_url).send().await;
+        if let Err(e) = response {
+            println!("Error downloading artifact: {:?}", e);
+            return Err(e);
+        }
+        let response: reqwest::Response = response?.0;
+
+        println!("Response: {:?}", response);
 
         let headers = response.headers();
         let content_type = headers

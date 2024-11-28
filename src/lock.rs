@@ -44,6 +44,7 @@ pub struct LockedPackage {
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
+    #[serde(serialize_with = "RegistryUri::serialize_resolved")]
     pub registry: RegistryUri,
     /// The identifier of the repository where the package was published
     pub repository: String,
@@ -220,9 +221,14 @@ impl FromIterator<LockedPackage> for Lockfile {
     }
 }
 
-impl From<Lockfile> for Vec<FileRequirement> {
-    fn from(lock: Lockfile) -> Self {
-        lock.packages.values().map(FileRequirement::from).collect()
+impl TryFrom<Lockfile> for Vec<FileRequirement> {
+    type Error = miette::Report;
+
+    fn try_from(lock: Lockfile) -> miette::Result<Self> {
+        lock.packages
+            .values()
+            .map(FileRequirement::try_from)
+            .collect()
     }
 }
 
@@ -249,8 +255,9 @@ impl FileRequirement {
         name: &PackageName,
         version: &Version,
         digest: &Digest,
-    ) -> Self {
-        let mut url = url.clone();
+    ) -> miette::Result<Self> {
+        let mut url: url::Url = url.try_into()?;
+
         let new_path = format!(
             "{}/{}/{}/{}-{}.tgz",
             url.path(),
@@ -262,16 +269,18 @@ impl FileRequirement {
 
         url.set_path(&new_path);
 
-        Self {
+        Ok(Self {
             package: name.to_owned(),
-            url: url.into(),
+            url,
             digest: digest.clone(),
-        }
+        })
     }
 }
 
-impl From<LockedPackage> for FileRequirement {
-    fn from(package: LockedPackage) -> Self {
+impl TryFrom<LockedPackage> for FileRequirement {
+    type Error = miette::Report;
+
+    fn try_from(package: LockedPackage) -> miette::Result<Self> {
         Self::new(
             &package.registry,
             &package.repository,
@@ -282,8 +291,10 @@ impl From<LockedPackage> for FileRequirement {
     }
 }
 
-impl From<&LockedPackage> for FileRequirement {
-    fn from(package: &LockedPackage) -> Self {
+impl TryFrom<&LockedPackage> for FileRequirement {
+    type Error = miette::Report;
+
+    fn try_from(package: &LockedPackage) -> miette::Result<Self> {
         Self::new(
             &package.registry,
             &package.repository,

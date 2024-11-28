@@ -272,18 +272,19 @@ impl<'a> DependencyGraphBuilder<'a> {
             dependency.manifest.path.clone()
         };
 
-        let manifest = Manifest::try_read_from(&abs_manifest_dir.join(MANIFEST_FILE))
-            .await?
-            .ok_or_else(|| {
-                miette::miette!(
-                    "no `{}` for package {} found at path {} referenced by {} as \"{}\"",
-                    MANIFEST_FILE,
-                    dependency.package,
-                    abs_manifest_dir.join(MANIFEST_FILE).display(),
-                    name,
-                    dependency.manifest.path.display()
-                )
-            })?;
+        let manifest =
+            Manifest::try_read_from(&abs_manifest_dir.join(MANIFEST_FILE), Some(self.config))
+                .await?
+                .ok_or_else(|| {
+                    miette::miette!(
+                        "no `{}` for package {} found at path {} referenced by {} as \"{}\"",
+                        MANIFEST_FILE,
+                        dependency.package,
+                        abs_manifest_dir.join(MANIFEST_FILE).display(),
+                        name,
+                        dependency.manifest.path.display()
+                    )
+                })?;
 
         // Process sub-dependencies first
         for sub_dependency in &manifest.dependencies {
@@ -479,14 +480,16 @@ impl<'a> DependencyGraphBuilder<'a> {
             // but theoretically we should be able to still look into cache when freshly installing
             // a dependency.
             if dependency.manifest.version.matches(&local_locked.version) {
-                if let Some(cached) = self.cache.get(local_locked.into()).await? {
+                if let Some(cached) = self.cache.get(local_locked.try_into()?).await? {
                     local_locked.validate(&cached)?;
                     return Ok(cached);
                 }
             }
 
+            println!("Connecting to {}", dependency.manifest.registry);
+
             let registry = Artifactory::new(
-                &dependency.manifest.registry,
+                dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
                 self.cert_validation_policy,
             )
@@ -494,6 +497,11 @@ impl<'a> DependencyGraphBuilder<'a> {
                 name: dependency.package.clone(),
                 version: dependency.manifest.version.clone(),
             })?;
+
+            println!(
+                "Downloading {}@{}",
+                dependency.package, dependency.manifest.version
+            );
 
             let package = registry
                 // TODO(#205): This works now because buffrs only supports pinned versions.
@@ -505,7 +513,7 @@ impl<'a> DependencyGraphBuilder<'a> {
                     version: dependency.manifest.version,
                 })?;
 
-            let file_requirement = FileRequirement::from(local_locked);
+            let file_requirement = FileRequirement::try_from(local_locked)?;
             self.cache
                 .put(file_requirement.into(), package.tgz.clone())
                 .await
@@ -513,10 +521,12 @@ impl<'a> DependencyGraphBuilder<'a> {
 
             Ok(package)
         } else {
+            println!("Connecting to {}", dependency.manifest.registry);
+
             // Package not present in lockfile (and thus not in cache)
             // => download it from the registry
             let registry = Artifactory::new(
-                &dependency.manifest.registry,
+                dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
                 self.cert_validation_policy,
             )
@@ -524,6 +534,11 @@ impl<'a> DependencyGraphBuilder<'a> {
                 name: dependency.package.clone(),
                 version: dependency.manifest.version.clone(),
             })?;
+
+            println!(
+                "Downloading {}@{}",
+                dependency.package, dependency.manifest.version
+            );
 
             let package = registry
                 .download(dependency.clone().into())

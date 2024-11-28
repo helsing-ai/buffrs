@@ -24,7 +24,6 @@ use semver::Version;
 use tokio::fs;
 
 use crate::{
-    config::Config,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
     manifest::{self, Edition, Manifest, MANIFEST_FILE},
@@ -47,11 +46,7 @@ impl Package {
     ///
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
-    pub fn create(
-        mut manifest: Manifest,
-        files: BTreeMap<PathBuf, Bytes>,
-        config: &Config,
-    ) -> miette::Result<Self> {
+    pub fn create(mut manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
         // Create a new conforming manifest if the edition is unknown
         if manifest.edition == Edition::Unknown {
             manifest = Manifest::new(manifest.package.clone(), manifest.dependencies.clone());
@@ -66,16 +61,14 @@ impl Package {
 
         let mut archive = tar::Builder::new(Vec::new());
 
-        // Resolve the registry aliases in the manifest
-        let resolved_manifest = manifest.resolved(config)?;
-
         // Add original and resolved manifests
         Self::add_manifest_to_archive(
             &mut archive,
-            &resolved_manifest,
+            &manifest.for_publishing()?,
             Some(MANIFEST_PREFIX),
             MANIFEST_FILE,
         )?;
+
         Self::add_manifest_to_archive(
             &mut archive,
             &manifest,
@@ -229,11 +222,11 @@ impl Package {
             .into_diagnostic()
             .wrap_err(DeserializationError(ManagedFile::Manifest))?;
 
-        let manifest = String::from_utf8(manifest)
+        let manifest_str = String::from_utf8(manifest)
             .into_diagnostic()
-            .wrap_err(miette!("manifest has invalid character encoding"))?
-            .parse()
-            .into_diagnostic()?;
+            .wrap_err(miette!("manifest has invalid character encoding"))?;
+
+        let manifest = Manifest::try_parse(manifest_str.as_str(), None)?;
 
         Ok(Self { manifest, tgz })
     }

@@ -201,7 +201,7 @@ async fn main() -> miette::Result<()> {
     let cli = Cli::parse_from(args);
 
     let manifest = if Manifest::exists().await? {
-        Some(Manifest::read().await?)
+        Some(Manifest::read(&config).await?)
     } else {
         None
     };
@@ -243,14 +243,14 @@ async fn main() -> miette::Result<()> {
                 .wrap_err(miette!("failed to initialize {}", format!("`{package}`")))
         }
         Command::Login { registry } => {
-            let registry = config.resolve_registry_string(&registry)?;
-            command::login(&registry, None, cert_validation_policy)
+            let registry = config.parse_registry_arg(&registry)?;
+            command::login(&registry, None, cert_validation_policy, &config)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
         Command::Logout { registry } => {
-            let registry = config.resolve_registry_string(&registry)?;
-            command::logout(&registry)
+            let registry = config.parse_registry_arg(&registry)?;
+            command::logout(&registry, &config)
                 .await
                 .wrap_err(miette!("failed to logout from `{registry}`"))
         }
@@ -259,21 +259,19 @@ async fn main() -> miette::Result<()> {
             dependency,
         } => {
             let registry = config.parse_registry_arg(&registry)?;
-            let resolved_registry = config.resolve_registry_uri(&registry)?;
-            command::add(
-                &registry,
-                &resolved_registry,
-                &dependency,
-                cert_validation_policy,
-            )
-            .await
-            .wrap_err(miette!(
-                "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
-            ))
+            command::add(&registry, &dependency, &config, cert_validation_policy)
+                .await
+                .wrap_err(miette!(
+                    "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
+                ))
         }
-        Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
-            "failed to remove `{package}` from `{MANIFEST_FILE}`"
-        )),
+        Command::Remove { package } => {
+            command::remove(package.to_owned(), &config)
+                .await
+                .wrap_err(miette!(
+                    "failed to remove `{package}` from `{MANIFEST_FILE}`"
+                ))
+        }
         Command::Package {
             output_directory,
             dry_run,
@@ -290,7 +288,7 @@ async fn main() -> miette::Result<()> {
             dry_run,
             set_version,
         } => {
-            let registry = config.resolve_registry_string(&registry)?;
+            let registry = config.parse_registry_arg(&registry)?;
             command::publish(
                 &registry,
                 repository.to_owned(),
@@ -305,7 +303,7 @@ async fn main() -> miette::Result<()> {
                 "failed to publish `{package}` to `{registry}:{repository}`",
             ))
         }
-        Command::Lint => command::lint()
+        Command::Lint => command::lint(&config)
             .await
             .wrap_err(miette!("failed to lint protocol buffers",)),
         Command::Install {
@@ -335,7 +333,7 @@ async fn main() -> miette::Result<()> {
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
-        Command::List => command::list().await.wrap_err(miette!(
+        Command::List => command::list(&config).await.wrap_err(miette!(
             "failed to list installed protobuf files for `{package}`"
         )),
         Command::Lock { command } => match command {
