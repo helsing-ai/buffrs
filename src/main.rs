@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::command::{self, GenerationFlags, InstallMode};
+use std::path::PathBuf;
+
+use buffrs::command::{self, GenerationOption, InstallMode};
 use buffrs::config::Config;
 use buffrs::manifest::Manifest;
 use buffrs::package::PackageName;
@@ -139,6 +141,10 @@ enum Command {
         /// Generate buf.yaml file matching the installed dependencies
         #[clap(long, default_value = "false")]
         buf_yaml: bool,
+
+        /// Generate proto.rs file matching the installed dependencies at specified location
+        #[clap(long, value_name = "dir", value_hint = clap::ValueHint::DirPath)]
+        proto_rs: Option<PathBuf>,
     },
 
     /// Uninstalls dependencies
@@ -309,10 +315,14 @@ async fn main() -> miette::Result<()> {
         Command::Install {
             only_dependencies,
             buf_yaml,
+            proto_rs,
         } => {
-            let mut generation_flags = GenerationFlags::empty();
+            let mut generation_options = Vec::new();
             if buf_yaml {
-                generation_flags |= GenerationFlags::BUF_YAML;
+                generation_options.push(GenerationOption::BufYaml);
+            }
+            if let Some(proto_path) = proto_rs {
+                generation_options.push(GenerationOption::ProtoRs(proto_path));
             }
 
             let install_mode = if only_dependencies {
@@ -323,7 +333,7 @@ async fn main() -> miette::Result<()> {
 
             command::install(
                 install_mode,
-                generation_flags,
+                &generation_options,
                 &config,
                 cert_validation_policy,
             )

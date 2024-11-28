@@ -13,13 +13,14 @@
 // limitations under the License.
 
 use crate::{
-    buf_yaml::BufYamlFile,
+    buf_yaml::{self},
     cache::Cache,
     config::Config,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
+    proto_rs,
     registry::{Artifactory, CertValidationPolicy, RegistryUri},
     resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
 };
@@ -36,7 +37,6 @@ use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
 };
-use walkdir::WalkDir;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -385,13 +385,14 @@ pub enum InstallMode {
     All,
 }
 
-bitflags::bitflags! {
-    /// Flags for generation
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct GenerationFlags: u8 {
-        /// Flag for generating buf.yaml files
-        const BUF_YAML = 0b0001;
-    }
+/// Options for optional generation of files
+#[derive(Debug)]
+pub enum GenerationOption {
+    /// Generate a buf.yaml file
+    BufYaml,
+
+    /// Generate a proto.rs file
+    ProtoRs(PathBuf),
 }
 
 /// Installs dependencies
@@ -402,7 +403,7 @@ bitflags::bitflags! {
 /// * `config` - The configuration
 pub async fn install(
     mode: InstallMode,
-    generation: GenerationFlags,
+    generation: &[GenerationOption],
     config: &Config,
     cert_validation_policy: CertValidationPolicy,
 ) -> miette::Result<()> {
@@ -489,7 +490,7 @@ pub async fn install(
         Ok(())
     }
 
-    for dependency in manifest.dependencies {
+    for dependency in &manifest.dependencies {
         traverse_and_install(
             &dependency.package,
             &dependency_graph,
@@ -500,54 +501,15 @@ pub async fn install(
         .await?;
     }
 
-    if let GenerationFlags::BUF_YAML = generation {
-        // Check if a buf.yaml file already exists in cwd
-        let mut buf_yaml = if Path::new("buf.yaml").exists() {
-            BufYamlFile::from_file().wrap_err(miette!("failed to read buf.yaml file"))?
-        } else {
-            BufYamlFile::default()
-        };
-
-        // Add vendor modules to the Buf YAML file
-        let mut vendor_modules: Vec<String> = dependency_graph
-            .get_package_names()
-            .iter()
-            .map(|p| p.to_string())
-            .collect();
-        vendor_modules.sort();
-
-        buf_yaml.clear_modules();
-
-        if manifest.package.is_some() {
-            // double-check that the package really contains proto files
-            // under proto/** (but not under proto/vendor/**)
-            let vendor_path = store.proto_vendor_path();
-            let mut has_protos = false;
-            for entry in WalkDir::new(store.proto_path()).into_iter().flatten() {
-                if entry.path().is_file() {
-                    let path = entry.path();
-                    if path.starts_with(&vendor_path) {
-                        continue;
-                    }
-
-                    if path.extension().map_or(false, |ext| ext == "proto") {
-                        has_protos = true;
-                        break;
-                    }
-                }
+    for option in generation {
+        match option {
+            GenerationOption::BufYaml => {
+                buf_yaml::generate_buf_yaml_file(&dependency_graph, &manifest, &store)?;
             }
-
-            if has_protos {
-                buf_yaml.add_module();
+            GenerationOption::ProtoRs(path) => {
+                proto_rs::generate_proto_rs_file(&store, path).await?;
             }
         }
-
-        buf_yaml.set_vendor_modules(vendor_modules);
-
-        // Write the Buf YAML file
-        buf_yaml
-            .to_file()
-            .wrap_err(miette!("failed to write buf.yaml file"))?;
     }
 
     Lockfile::from_iter(locked.into_iter()).write().await
@@ -596,7 +558,7 @@ pub async fn list(config: &Config) -> miette::Result<()> {
             .strip_prefix(&cwd)
             .into_diagnostic()
             .wrap_err(miette!("failed to transform protobuf path"))?
-        .display();
+            .display();
 
         #[cfg(windows)]
         let rel = rel.to_string().replace("\\", "/");

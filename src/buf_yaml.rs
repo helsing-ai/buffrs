@@ -1,9 +1,10 @@
-use miette::{miette, IntoDiagnostic};
+use miette::{miette, Context, IntoDiagnostic};
 use pretty_yaml::config::FormatOptions;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io::Write};
+use std::{collections::HashMap, fs, io::Write, path::Path};
+use walkdir::WalkDir;
 
-use crate::package::PackageStore;
+use crate::{manifest::Manifest, package::PackageStore, resolver::DependencyGraph};
 
 const BUF_YAML_FILE: &str = "buf.yaml";
 
@@ -89,6 +90,54 @@ impl Default for BufYamlFile {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Generates a buf.yaml file matching the current dependency graph
+pub fn generate_buf_yaml_file(
+    dependency_graph: &DependencyGraph,
+    manifest: &Manifest,
+    store: &PackageStore,
+) -> Result<(), miette::Error> {
+    let mut buf_yaml = if Path::new("buf.yaml").exists() {
+        BufYamlFile::from_file().wrap_err(miette!("failed to read buf.yaml file"))?
+    } else {
+        BufYamlFile::default()
+    };
+    let mut vendor_modules: Vec<String> = dependency_graph
+        .get_package_names()
+        .iter()
+        .map(|p| p.to_string())
+        .collect();
+    vendor_modules.sort();
+    buf_yaml.clear_modules();
+    if manifest.package.is_some() {
+        // double-check that the package really contains proto files
+        // under proto/** (but not under proto/vendor/**)
+        let vendor_path = store.proto_vendor_path();
+        let mut has_protos = false;
+        for entry in WalkDir::new(store.proto_path()).into_iter().flatten() {
+            if entry.path().is_file() {
+                let path = entry.path();
+                if path.starts_with(&vendor_path) {
+                    continue;
+                }
+
+                if path.extension().map_or(false, |ext| ext == "proto") {
+                    has_protos = true;
+                    break;
+                }
+            }
+        }
+
+        if has_protos {
+            buf_yaml.add_module();
+        }
+    }
+    buf_yaml.set_vendor_modules(vendor_modules);
+    buf_yaml
+        .to_file()
+        .wrap_err(miette!("failed to write buf.yaml file"))?;
+    Ok(())
 }
 
 /// Default buf.yaml file

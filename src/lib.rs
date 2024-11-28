@@ -19,6 +19,8 @@ use miette::Diagnostic;
 use std::{env, path::PathBuf};
 use thiserror::Error;
 
+/// buf.yaml generation
+pub mod buf_yaml;
 /// Caching implementation
 pub mod cache;
 /// CLI command implementations
@@ -35,6 +37,8 @@ pub mod lock;
 pub mod manifest;
 /// Packages formats and utilities
 pub mod package;
+/// Generation of Rust include file for proto files
+pub mod proto_rs;
 /// Supported registries
 pub mod registry;
 /// Resolve package dependencies.
@@ -42,9 +46,6 @@ pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;
-
-/// buf.yaml generation
-pub mod buf_yaml;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
