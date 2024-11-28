@@ -595,9 +595,13 @@ pub async fn list(config: &Config) -> miette::Result<()> {
         let rel = proto
             .strip_prefix(&cwd)
             .into_diagnostic()
-            .wrap_err(miette!("failed to transform protobuf path"))?;
+            .wrap_err(miette!("failed to transform protobuf path"))?
+        .display();
 
-        print!("{} ", rel.display())
+        #[cfg(windows)]
+        let rel = rel.to_string().replace("\\", "/");
+
+        print!("{} ", rel)
     }
 
     Ok(())
