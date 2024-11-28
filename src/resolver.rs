@@ -486,8 +486,6 @@ impl<'a> DependencyGraphBuilder<'a> {
                 }
             }
 
-            println!("Connecting to {}", dependency.manifest.registry);
-
             let registry = Artifactory::new(
                 dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
@@ -497,11 +495,6 @@ impl<'a> DependencyGraphBuilder<'a> {
                 name: dependency.package.clone(),
                 version: dependency.manifest.version.clone(),
             })?;
-
-            println!(
-                "Downloading {}@{}",
-                dependency.package, dependency.manifest.version
-            );
 
             let package = registry
                 // TODO(#205): This works now because buffrs only supports pinned versions.
@@ -521,8 +514,6 @@ impl<'a> DependencyGraphBuilder<'a> {
 
             Ok(package)
         } else {
-            println!("Connecting to {}", dependency.manifest.registry);
-
             // Package not present in lockfile (and thus not in cache)
             // => download it from the registry
             let registry = Artifactory::new(
@@ -534,11 +525,6 @@ impl<'a> DependencyGraphBuilder<'a> {
                 name: dependency.package.clone(),
                 version: dependency.manifest.version.clone(),
             })?;
-
-            println!(
-                "Downloading {}@{}",
-                dependency.package, dependency.manifest.version
-            );
 
             let package = registry
                 .download(dependency.clone().into())

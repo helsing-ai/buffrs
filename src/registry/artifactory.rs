@@ -74,7 +74,6 @@ impl Artifactory {
         let mut request_builder = RequestBuilder::new(self.client.clone(), method, url);
 
         if let Some(token) = &self.token {
-            println!("Using token: {}", token);
             request_builder = request_builder.auth(token.clone());
         }
 
@@ -180,7 +179,6 @@ impl Artifactory {
     /// Downloads a package from artifactory
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
-            println!("Only remote dependencies can be downloaded from artifactory");
             return Err(miette!(
                 "unable to download local dependency ({}) from artifactory",
                 dependency.package
@@ -200,22 +198,10 @@ impl Artifactory {
             url
         };
 
-        println!("Downloading artifact from: {}", artifact_url);
         tracing::debug!("Hitting download URL: {artifact_url}");
 
-        if self.token.is_none() {
-            println!("No token found for artifactory, this may result in a 401 error");
-        }
-
-        let response = self.new_request(Method::GET, artifact_url).send().await;
-        if let Err(e) = response {
-            println!("Error downloading artifact: {:?}", e);
-            return Err(e);
-        }
-        let response: reqwest::Response = response?.0;
-
-        println!("Response: {:?}", response);
-
+        let response = self.new_request(Method::GET, artifact_url).send().await?;
+        let response: reqwest::Response = response.0;
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
