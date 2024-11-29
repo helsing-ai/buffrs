@@ -40,7 +40,6 @@ git = []
 [dependencies]
 async-recursion = "1.0.5"
 anyhow = { version = "1.0", optional = true }
-bitflags = { version = "2.6" }
 bytes = "1.0"
 clap = { version = "4.3", features = ["cargo", "derive"] }
 diff-struct = { version = "0.5.3", optional = true }
