@@ -267,7 +267,18 @@ impl<'a> DependencyGraphBuilder<'a> {
         // We therefore need to resolve it to an absolute path.
         let abs_manifest_dir = if dependency.manifest.path.is_relative() {
             // combine the parent manifest path with the relative path
-            std::path::absolute(parent_dir.join(&dependency.manifest.path)).into_diagnostic()?
+            parent_dir
+                .join(&dependency.manifest.path)
+                .canonicalize()
+                .into_diagnostic()
+                .wrap_err(miette::miette!(
+                    "no `{}` for package {} found at path {} referenced by {} as \"{}\"",
+                    MANIFEST_FILE,
+                    dependency.package,
+                    parent_dir.join(&dependency.manifest.path).display(),
+                    name,
+                    dependency.manifest.path.display()
+                ))?
         } else {
             dependency.manifest.path.clone()
         };

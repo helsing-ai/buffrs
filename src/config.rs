@@ -46,7 +46,7 @@ const DEFAULT_ARGS_KEY: &str = "*";
 /// default_args = ["--insecure"]
 ///
 /// [commands.install]
-/// default_args = ["--buf-yaml"]
+/// default_args = ["--generate-buf-yaml"]
 /// ```
 ///
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,7 +341,7 @@ acme = "https://conan.acme.com/artifactory"
 default_args = ["--insecure"]
 
 [commands.install]
-default_args = ["--buf-yaml", "--proto-rs", "src"]
+default_args = ["--generate-buf-yaml", "--generate-tonic-proto-module", "src/proto.rs"]
 "#,
         )
         .unwrap();
@@ -356,9 +356,9 @@ default_args = ["--buf-yaml", "--proto-rs", "src"]
         assert_eq!(
             config.command_defaults.get("install").unwrap(),
             &vec![
-                "--buf-yaml".to_string(),
-                "--proto-rs".to_string(),
-                "src".to_string()
+                "--generate-buf-yaml".to_string(),
+                "--generate-tonic-proto-module".to_string(),
+                "src/proto.rs".to_string()
             ]
         );
         assert_eq!(

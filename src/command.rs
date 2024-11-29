@@ -390,8 +390,13 @@ pub enum GenerationOption {
     /// Generate a buf.yaml file
     BufYaml,
 
-    /// Generate a proto.rs file
-    ProtoRs(PathBuf),
+    /// Generate a module which includes all proto files
+    TonicProtoModule {
+        /// The path to the generated module
+        module_path: PathBuf,
+        /// Optional output directory (expression) for tonic build
+        tonic_out_dir: Option<String>,
+    },
 }
 
 /// Installs dependencies
@@ -505,8 +510,16 @@ pub async fn install(
             GenerationOption::BufYaml => {
                 buf_yaml::generate_buf_yaml_file(&dependency_graph, &manifest, &store)?;
             }
-            GenerationOption::ProtoRs(path) => {
-                proto_rs::generate_proto_rs_file(&store, path).await?;
+            GenerationOption::TonicProtoModule {
+                module_path,
+                tonic_out_dir,
+            } => {
+                proto_rs::generate_tonic_proto_module(
+                    &store,
+                    module_path,
+                    tonic_out_dir.as_deref(),
+                )
+                .await?;
             }
         }
     }
