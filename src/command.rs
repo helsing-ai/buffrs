@@ -13,14 +13,13 @@
 // limitations under the License.
 
 use crate::{
-    buf_yaml::{self},
     cache::Cache,
     config::Config,
     credentials::Credentials,
+    integration::{buf_yaml, path_util::PathUtil, proto_rs},
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
-    proto_rs,
     registry::{Artifactory, CertValidationPolicy, RegistryUri},
     resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
 };
@@ -558,10 +557,7 @@ pub async fn list(config: &Config) -> miette::Result<()> {
             .strip_prefix(&cwd)
             .into_diagnostic()
             .wrap_err(miette!("failed to transform protobuf path"))?
-            .display();
-
-        #[cfg(windows)]
-        let rel = rel.to_string().replace("\\", "/");
+            .to_posix_string();
 
         print!("{} ", rel)
     }

@@ -47,6 +47,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.9.x
+    Canary09,
     /// The canary edition used by buffrs 0.8.x
     Canary08,
     /// The canary edition used by buffrs 0.7.x
@@ -69,6 +71,7 @@ impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
             self::CANARY_EDITION => Self::Canary,
+            "0.9" => Self::Canary09,
             "0.8" => Self::Canary08,
             "0.7" => Self::Canary07,
             _ => Self::Unknown,
@@ -80,6 +83,7 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
+            Edition::Canary09 => "0.9",
             Edition::Canary08 => "0.8",
             Edition::Canary07 => "0.7",
             Edition::Unknown => "unknown",
@@ -213,7 +217,7 @@ mod deserializer {
                     };
 
                     match Edition::from(edition.as_str()) {
-                        Edition::Canary | Edition::Canary08 | Edition::Canary07 => Ok(RawManifest::Canary {
+                        Edition::Canary | Edition::Canary09 | Edition::Canary08 | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
                         }),
@@ -238,10 +242,12 @@ impl From<Manifest> for RawManifest {
             .collect();
 
         match manifest.edition {
-            Edition::Canary | Edition::Canary08 | Edition::Canary07 => RawManifest::Canary {
-                package: manifest.package,
-                dependencies,
-            },
+            Edition::Canary | Edition::Canary09 | Edition::Canary08 | Edition::Canary07 => {
+                RawManifest::Canary {
+                    package: manifest.package,
+                    dependencies,
+                }
+            }
             Edition::Unknown => RawManifest::Unknown {
                 package: manifest.package,
                 dependencies,

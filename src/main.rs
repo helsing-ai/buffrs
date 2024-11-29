@@ -197,14 +197,14 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cwd = std::env::current_dir().into_diagnostic()?;
-
     let config = Config::new(Some(&cwd))?;
 
     // Merge default arguments with user-specified arguments
-    let args = merge_with_default_args(&config);
+    let user_args: Vec<String> = std::env::args().collect();
+    let merged_args = merge_args_with_defaults(&config, &user_args);
 
     // Parse CLI with merged arguments
-    let cli = Cli::parse_from(args);
+    let cli = Cli::parse_from(merged_args);
 
     let manifest = if Manifest::exists().await? {
         Some(Manifest::read(&config).await?)
@@ -368,48 +368,46 @@ fn infer_package_type(lib: bool, api: bool) -> Option<PackageType> {
 ///
 /// # Arguments
 /// * `config` - The configuration object
+/// * `args` - The user-provided arguments
 ///
 /// # Returns
 /// A vector of arguments with default arguments merged in
-fn merge_with_default_args(config: &Config) -> Vec<String> {
-    let mut args: Vec<String> = std::env::args().collect();
-
+pub fn merge_args_with_defaults(config: &Config, args: &[String]) -> Vec<String> {
     // Check if --ignore-defaults is in the arguments
-    let initial_cli = Cli::try_parse_from(&args);
+    let initial_cli = Cli::try_parse_from(args);
     if let Ok(cli) = initial_cli {
         if cli.ignore_defaults {
-            return args; // Return original arguments if --ignore-defaults is set
+            return args.to_vec(); // Return original arguments if --ignore-defaults is set
         }
     }
 
-    // Determine the command name based on the user's input
-    let cli_matches = Cli::command().get_matches_from(args.clone());
+    // Parse the CLI matches to find the subcommand
+    let cli_matches = Cli::command().get_matches_from(args);
+    let mut args = args.to_vec();
 
-    // Find the position of the subcommand in the arguments
-    if let Some((subcommand, _)) = cli_matches.subcommand() {
-        let command_position = args
-            .iter()
-            .position(|arg| arg == subcommand)
-            .unwrap_or_else(|| args.len() - 1);
+    // Fetch sub-command-specific defaults if a subcommand is present
+    if let Some(subcommand) = cli_matches.subcommand_name() {
+        let command_specific_args = config.get_default_args(Some(subcommand));
 
-        // Get default args for this command
-        let default_args = config.get_default_args(subcommand);
-
-        if !default_args.is_empty() {
-            // Filter out any default arguments already provided by the user
+        // Find the position of the subcommand in the arguments
+        if let Some(position) = args.iter().position(|arg| arg == subcommand) {
+            // Insert command-specific defaults after the subcommand
             let user_args: std::collections::HashSet<_> = args.iter().collect();
-            let filtered_defaults: Vec<String> = default_args
+            let filtered_defaults: Vec<String> = command_specific_args
                 .into_iter()
                 .filter(|arg| !user_args.contains(arg))
                 .collect();
-
-            // Insert non-duplicate default arguments right after the command position
-            args.splice(
-                command_position + 1..command_position + 1,
-                filtered_defaults,
-            );
+            args.splice(position + 1..position + 1, filtered_defaults);
         }
     }
+
+    // Always fetch common defaults
+    let mut default_args = config.get_default_args(None);
+
+    // Prepend common defaults before all other arguments, filtering duplicates
+    let user_args: std::collections::HashSet<_> = args.iter().collect();
+    default_args.retain(|arg| !user_args.contains(arg));
+    args.splice(1..1, default_args);
 
     args
 }

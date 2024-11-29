@@ -41,7 +41,7 @@ impl PackageStore {
     /// Path to the dependency store
     pub const PROTO_VENDOR_PATH: &'static str = "proto/vendor";
 
-    fn new(root: PathBuf) -> Self {
+    pub(crate) fn new(root: PathBuf) -> Self {
         Self { root }
     }
 

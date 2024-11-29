@@ -1,35 +1,61 @@
 use miette::{miette, Context, IntoDiagnostic};
 use pretty_yaml::config::FormatOptions;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, io::Write, path::Path};
+use std::{collections::HashMap, fs, io::Write, path::PathBuf};
 use walkdir::WalkDir;
 
 use crate::{manifest::Manifest, package::PackageStore, resolver::DependencyGraph};
+
+use super::path_util::PathUtil;
 
 const BUF_YAML_FILE: &str = "buf.yaml";
 
 /// Representation of a Buf YAML file
 pub struct BufYamlFile {
     config: Config,
+    buf_yaml_path: PathBuf,
+    proto_rel_path: String,
+    vendor_rel_path: String,
 }
 
 impl BufYamlFile {
     /// Create default `BufYamlFile` with default values
-    pub fn new() -> Self {
-        let config: Config = serde_yml::from_str(DEFAULT_YAML).unwrap();
-        Self { config }
+    pub fn new(store: &PackageStore) -> miette::Result<Self> {
+        Self::new_from_str(DEFAULT_YAML, store)
     }
 
     /// Create a new `BufYamlFile` from a string
-    pub fn new_from_str(s: &str) -> miette::Result<Self> {
+    pub fn new_from_str(s: &str, store: &PackageStore) -> miette::Result<Self> {
         let config: Config = serde_yml::from_str(s).into_diagnostic()?;
 
         // Version needs to be v2
         if config.version != "v2" {
-            return Err(miette!("Only v2 is supported for Buf YAML files"));
+            return Err(miette!("Only v2 is supported for buf.yaml files"));
         }
 
-        Ok(Self { config })
+        let proto_path = store.proto_path();
+        let proto_vendor_path = store.proto_vendor_path();
+        let buf_yaml_path = proto_path.join(BUF_YAML_FILE);
+        let proto_rel_path = ".".to_owned();
+        let vendor_rel_path = proto_vendor_path
+            .relative_to(&proto_path)
+            .unwrap_or(proto_vendor_path.clone())
+            .to_posix_string();
+
+        Ok(Self {
+            config,
+            buf_yaml_path,
+            proto_rel_path,
+            vendor_rel_path,
+        })
+    }
+
+    /// Load `BufYamlFile` from buf.yaml file
+    pub fn from_file(store: &PackageStore) -> miette::Result<Self> {
+        let proto_path = store.proto_path();
+        let buf_yaml_path = proto_path.join(BUF_YAML_FILE);
+        let yaml_content = fs::read_to_string(buf_yaml_path).into_diagnostic()?;
+        Self::new_from_str(&yaml_content, store)
     }
 
     /// Serialize the `BufYamlFile` to a string
@@ -41,16 +67,10 @@ impl BufYamlFile {
         pretty_yaml::format_text(&yaml, &options).into_diagnostic()
     }
 
-    /// Load `BufYamlFile` from a YAML file
-    pub fn from_file() -> miette::Result<Self> {
-        let yaml_content = fs::read_to_string(BUF_YAML_FILE).into_diagnostic()?;
-        Self::new_from_str(&yaml_content)
-    }
-
     /// Write `BufYamlFile` to a YAML file
     pub fn to_file(&self) -> miette::Result<()> {
         let yaml_content = self.to_string()?;
-        let mut file = fs::File::create(BUF_YAML_FILE).into_diagnostic()?;
+        let mut file = fs::File::create(&self.buf_yaml_path).into_diagnostic()?;
         file.write_all(yaml_content.as_bytes()).into_diagnostic()?;
         Ok(())
     }
@@ -62,33 +82,22 @@ impl BufYamlFile {
 
     /// Add non-vendor module to the Buf YAML file
     pub fn add_module(&mut self) {
-        let proto_path = PackageStore::PROTO_PATH.to_string();
-        let proto_vendor_path = PackageStore::PROTO_VENDOR_PATH.to_string();
-
         self.config.modules.push(Module {
-            path: proto_path,
-            excludes: vec![proto_vendor_path],
+            path: self.proto_rel_path.clone(),
+            excludes: vec![self.vendor_rel_path.clone()],
             ..Default::default()
         });
     }
 
     /// Add vendor modules to the Buf YAML file
     pub fn set_vendor_modules(&mut self, vendor_modules: Vec<String>) {
-        let proto_vendor_path = PackageStore::PROTO_VENDOR_PATH.to_string();
-
         // Add vendor modules
         for module in vendor_modules {
             self.config.modules.push(Module {
-                path: format!("{}/{}", &proto_vendor_path, module),
+                path: format!("{}/{}", &self.vendor_rel_path, module),
                 ..Default::default()
             });
         }
-    }
-}
-
-impl Default for BufYamlFile {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -97,19 +106,29 @@ pub fn generate_buf_yaml_file(
     dependency_graph: &DependencyGraph,
     manifest: &Manifest,
     store: &PackageStore,
-) -> Result<(), miette::Error> {
-    let mut buf_yaml = if Path::new("buf.yaml").exists() {
-        BufYamlFile::from_file().wrap_err(miette!("failed to read buf.yaml file"))?
+) -> miette::Result<()> {
+    // The file will be created in the "store" directory
+    let store_dir = store.proto_path();
+    let buf_yaml_file = store_dir.join(BUF_YAML_FILE);
+
+    let mut buf_yaml = if buf_yaml_file.exists() {
+        BufYamlFile::from_file(store).wrap_err(miette!(
+            "failed to read buf.yaml file at {}.",
+            store_dir.display()
+        ))?
     } else {
-        BufYamlFile::default()
+        BufYamlFile::new(store)?
     };
+
     let mut vendor_modules: Vec<String> = dependency_graph
         .get_package_names()
         .iter()
         .map(|p| p.to_string())
         .collect();
+
     vendor_modules.sort();
     buf_yaml.clear_modules();
+
     if manifest.package.is_some() {
         // double-check that the package really contains proto files
         // under proto/** (but not under proto/vendor/**)
@@ -241,6 +260,7 @@ fn is_false(b: impl std::borrow::Borrow<bool>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use assert_fs::TempDir;
     use std::io::Write;
 
     use super::*;
@@ -250,7 +270,9 @@ mod tests {
 
     #[test]
     fn test_new_from_str() {
-        let buf_yaml = BufYamlFile::new_from_str(SAMPLE_YAML).unwrap();
+        let tmp_dir = TempDir::new().unwrap();
+        let store = PackageStore::new(tmp_dir.path().to_owned());
+        let buf_yaml = BufYamlFile::new_from_str(SAMPLE_YAML, &store).unwrap();
 
         // serialize to file
         let serialized = buf_yaml.to_string().unwrap();

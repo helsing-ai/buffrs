@@ -19,8 +19,6 @@ use miette::Diagnostic;
 use std::{env, path::PathBuf};
 use thiserror::Error;
 
-/// buf.yaml generation
-pub mod buf_yaml;
 /// Caching implementation
 pub mod cache;
 /// CLI command implementations
@@ -31,14 +29,14 @@ pub mod config;
 pub mod credentials;
 /// Common error types
 pub mod errors;
+/// Integration with external tools
+pub mod integration;
 /// Lockfile implementation
 pub mod lock;
 /// Manifest format and IO
 pub mod manifest;
 /// Packages formats and utilities
 pub mod package;
-/// Generation of Rust include file for proto files
-pub mod proto_rs;
 /// Supported registries
 pub mod registry;
 /// Resolve package dependencies.
