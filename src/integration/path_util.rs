@@ -69,7 +69,10 @@ mod tests {
 
     #[test]
     fn test_to_posix_string() {
+        #[cfg(windows)]
         let path = Path::new("foo\\bar\\baz");
+        #[cfg(not(windows))]
+        let path = Path::new("foo/bar/baz");
         assert_eq!(path.to_posix_string(), "foo/bar/baz");
     }
 

@@ -152,6 +152,7 @@ impl Serialize for Digest {
 
 struct DigestVisitor;
 
+#[allow(clippy::needless_lifetimes)]
 impl<'de> Visitor<'de> for DigestVisitor {
     type Value = Digest;
 
