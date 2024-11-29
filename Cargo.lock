@@ -276,7 +276,6 @@ dependencies = [
  "assert_fs",
  "async-recursion",
  "axum",
- "bitflags 2.6.0",
  "bytes",
  "clap",
  "diff-struct",
