@@ -77,7 +77,10 @@ impl RegistryRef {
                         url: url.clone(),
                     })
                 }
-                None => Err(miette!("no configuration provided to resolve alias")),
+                None => Err(miette!(
+                    "no configuration provided to resolve alias \"{}\"",
+                    alias
+                )),
             },
             _ => Ok(self.clone()),
         }
