@@ -20,7 +20,7 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
-    registry::{Artifactory, CertValidationPolicy, RegistryUri},
+    registry::{Artifactory, CertValidationPolicy, RegistryRef, RegistryUri},
     resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
 };
 
@@ -180,7 +180,7 @@ impl FromStr for DependencyLocator {
 /// * `registry` - The registry URI
 /// * `dependency` - The dependency to add (e.g. `my-repo/my-package@1.0`)
 pub async fn add(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     dependency: &str,
     config: &Config,
     cert_validation_policy: CertValidationPolicy,
@@ -301,7 +301,7 @@ pub async fn package(
 
 /// Publishes the api package to the registry
 pub async fn publish(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
@@ -606,13 +606,13 @@ pub async fn lint(config: &Config) -> miette::Result<()> {
 ///  * `registry` - The registry to log in to
 ///  * `token` - An optional token to use, if not provided, the user will be prompted for one
 pub async fn login(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     token: Option<String>,
     cert_validation_policy: CertValidationPolicy,
     config: &Config,
 ) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
-    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
+    let registry: RegistryUri = registry.with_alias_resolved(Some(config))?.try_into()?;
 
     let token = match token {
         Some(token) => token,
@@ -645,8 +645,8 @@ pub async fn login(
 }
 
 /// Logs you out from a registry
-pub async fn logout(registry: &RegistryUri, config: &Config) -> miette::Result<()> {
-    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
+pub async fn logout(registry: &RegistryRef, config: &Config) -> miette::Result<()> {
+    let registry: RegistryUri = registry.with_alias_resolved(Some(config))?.try_into()?;
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await

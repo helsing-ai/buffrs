@@ -28,7 +28,7 @@ use crate::{
     lock::{Digest, DigestAlgorithm, LockedPackage},
     manifest::{self, Edition, Manifest, MANIFEST_FILE},
     package::PackageName,
-    registry::RegistryUri,
+    registry::RegistryRef,
     ManagedFile,
 };
 
@@ -265,7 +265,7 @@ impl Package {
     /// Lock this package
     pub fn lock(
         &self,
-        registry: RegistryUri,
+        registry: RegistryRef,
         repository: String,
         dependants: usize,
     ) -> LockedPackage {

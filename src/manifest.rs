@@ -27,7 +27,7 @@ use crate::{
     config::{self},
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
-    registry::RegistryUri,
+    registry::RegistryRef,
     ManagedFile,
 };
 
@@ -495,7 +495,7 @@ pub struct Dependency {
 impl Dependency {
     /// Creates a new dependency
     pub fn new(
-        registry: &RegistryUri,
+        registry: &RegistryRef,
         repository: String,
         package: PackageName,
         version: VersionReq,
@@ -570,7 +570,7 @@ pub struct RemoteDependencyManifest {
     /// Artifactory repository to pull dependency from
     pub repository: String,
     /// Artifactory registry to pull from
-    pub registry: RegistryUri,
+    pub registry: RegistryRef,
 }
 
 impl From<RemoteDependencyManifest> for DependencyManifest {
@@ -610,7 +610,7 @@ mod dependency_manifest_deserializer {
                 path: Option<PathBuf>,
                 version: Option<VersionReq>,
                 repository: Option<String>,
-                registry: Option<RegistryUri>,
+                registry: Option<RegistryRef>,
             }
 
             let temp: TempManifest = TempManifest::deserialize(deserializer)?;

@@ -19,7 +19,7 @@ use crate::{
         RemoteDependencyManifest, MANIFEST_FILE,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, CertValidationPolicy, RegistryUri},
+    registry::{Artifactory, CertValidationPolicy, RegistryRef},
 };
 
 /// Represents a dependency contextualized by the current dependency graph
@@ -30,7 +30,7 @@ pub enum ResolvedDependency {
         /// The materialized package as downloaded from the registry
         package: Package,
         /// The registry the package was downloaded from
-        registry: RegistryUri,
+        registry: RegistryRef,
         /// The repository in the registry where the package can be found
         repository: String,
         /// Packages that requested this dependency (and what versions they accept)
