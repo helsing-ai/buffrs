@@ -183,7 +183,7 @@ pub async fn add(
     registry: &RegistryRef,
     dependency: &str,
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let mut manifest = Manifest::read(config).await?;
     let registry = registry.with_alias_resolved(Some(config))?;
@@ -199,11 +199,7 @@ pub async fn add(
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(
-                registry.clone().try_into()?,
-                &credentials,
-                cert_validation_policy,
-            )?;
+            let artifactory = Artifactory::new(registry.clone().try_into()?, &credentials, policy)?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())
@@ -307,7 +303,7 @@ pub async fn publish(
     dry_run: bool,
     version: Option<Version>,
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let registry = registry.with_alias_resolved(Some(config))?;
 
@@ -365,7 +361,7 @@ pub async fn publish(
 
     let package = prepare_package(version, config).await?;
     let credentials = Credentials::load().await?;
-    let artifactory = Artifactory::new(registry.try_into()?, &credentials, cert_validation_policy)?;
+    let artifactory = Artifactory::new(registry.try_into()?, &credentials, policy)?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -409,7 +405,7 @@ pub async fn install(
     mode: InstallMode,
     generation: &[GenerationOption],
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let manifest = Manifest::read(config).await?;
     let lockfile = Lockfile::read_or_default().await?;
@@ -427,17 +423,11 @@ pub async fn install(
         }
     }
 
-    let dependency_graph = DependencyGraphBuilder::new(
-        &manifest,
-        &lockfile,
-        &credentials,
-        &cache,
-        config,
-        cert_validation_policy,
-    )
-    .build()
-    .await
-    .wrap_err(miette!("dependency resolution failed"))?;
+    let dependency_graph =
+        DependencyGraphBuilder::new(&manifest, &lockfile, &credentials, &cache, config, policy)
+            .build()
+            .await
+            .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -608,7 +598,7 @@ pub async fn lint(config: &Config) -> miette::Result<()> {
 pub async fn login(
     registry: &RegistryRef,
     token: Option<String>,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
     config: &Config,
 ) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
@@ -635,7 +625,7 @@ pub async fn login(
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
-        Artifactory::new(registry, &credentials, cert_validation_policy)?
+        Artifactory::new(registry, &credentials, policy)?
             .ping()
             .await
             .wrap_err(miette!("failed to validate token"))?;

@@ -89,7 +89,7 @@ pub struct DependencyGraphBuilder<'a> {
     credentials: &'a Credentials,
     cache: &'a Cache,
     config: &'a Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -164,7 +164,7 @@ impl<'a> DependencyGraphBuilder<'a> {
     /// - `credentials`: Credentials used to authenticate with remote registries
     /// - `cache`: Cache used to store downloaded packages
     /// - `config`: Configuration settings
-    /// - `cert_validation_policy`: Policy used to validate certificates
+    /// - `policy`: Policy used to validate certificates
     ///
     /// # Returns
     /// A new dependency graph builder
@@ -174,7 +174,7 @@ impl<'a> DependencyGraphBuilder<'a> {
         credentials: &'a Credentials,
         cache: &'a Cache,
         config: &'a Config,
-        cert_validation_policy: CertValidationPolicy,
+        policy: CertValidationPolicy,
     ) -> Self {
         Self {
             manifest,
@@ -182,7 +182,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             credentials,
             cache,
             config,
-            cert_validation_policy,
+            policy,
         }
     }
 
@@ -500,7 +500,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             let registry = Artifactory::new(
                 dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
-                self.cert_validation_policy,
+                self.policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),
@@ -530,7 +530,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             let registry = Artifactory::new(
                 dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
-                self.cert_validation_policy,
+                self.policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),

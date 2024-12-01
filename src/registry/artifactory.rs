@@ -49,18 +49,16 @@ impl Artifactory {
     /// # Arguments
     /// * `registry` - The registry URI
     /// * `credentials` - The credentials to use for the registry
-    /// * `cert_validation_policy` - The policy for validating artifactory server certificates
+    /// * `policy` - The policy for validating artifactory server certificates
     pub fn new(
         registry: RegistryUri,
         credentials: &Credentials,
-        cert_validation_policy: CertValidationPolicy,
+        policy: CertValidationPolicy,
     ) -> miette::Result<Self> {
         let token = credentials.registry_tokens.get(&registry).cloned();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .danger_accept_invalid_certs(
-                cert_validation_policy == CertValidationPolicy::NoValidation,
-            )
+            .danger_accept_invalid_certs(policy == CertValidationPolicy::NoValidation)
             .build()
             .into_diagnostic()?;
 
