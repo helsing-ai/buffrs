@@ -22,8 +22,6 @@ use thiserror::Error;
 /// Caching implementation
 pub mod cache;
 /// CLI command implementations
-pub mod cli;
-/// CLI command implementations
 pub mod command;
 /// Configuration file (.buffrs/config.toml) handling
 pub mod config;
