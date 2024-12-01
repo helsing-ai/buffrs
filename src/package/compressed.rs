@@ -41,6 +41,8 @@ pub struct Package {
     pub tgz: Bytes,
 }
 
+pub struct Tarball(Vec<u8>);
+
 impl Package {
     /// Create new [`Package`] from [`Manifest`] and list of files.
     ///
@@ -78,15 +80,17 @@ impl Package {
         }
 
         // Finalize tarball
-        let tar = archive
-            .into_inner()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to assemble tar package"))?;
+        let tar = Tarball(
+            archive
+                .into_inner()
+                .into_diagnostic()
+                .wrap_err(miette!("failed to assemble tar package"))?,
+        );
 
-        // Compress tarball
-        let tgz = Self::compress_tarball(tar)?;
-
-        Ok(Self { manifest, tgz })
+        Ok(Self {
+            manifest,
+            tgz: tar.compress()?,
+        })
     }
 
     /// Helper to add a manifest (original or resolved) to the tarball.
@@ -133,20 +137,6 @@ impl Package {
                 M::file_name()
             ))?;
         Ok(())
-    }
-
-    /// Helper to compress the tarball into a `.tgz` file.
-    fn compress_tarball(tar: Vec<u8>) -> miette::Result<Bytes> {
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        encoder
-            .write_all(&tar)
-            .into_diagnostic()
-            .wrap_err(miette!("failed to compress tarball"))?;
-        let tgz = encoder
-            .finish()
-            .into_diagnostic()
-            .wrap_err(miette!("failed to finalize compressed tarball"))?;
-        Ok(tgz.into())
     }
 
     /// Unpack a package to a specific path.
@@ -272,5 +262,21 @@ impl TryFrom<Bytes> for Package {
 
     fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
         Package::parse(tgz)
+    }
+}
+
+impl Tarball {
+    /// Compress the tarball into a `.tgz` file.
+    pub fn compress(&self) -> miette::Result<Bytes> {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder
+            .write_all(&self.0)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to compress tarball"))?;
+        let tgz = encoder
+            .finish()
+            .into_diagnostic()
+            .wrap_err(miette!("failed to finalize compressed tarball"))?;
+        Ok(tgz.into())
     }
 }
