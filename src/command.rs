@@ -16,7 +16,7 @@ use crate::{
     cache::Cache,
     config::Config,
     credentials::Credentials,
-    integration::{buf_yaml, path_util::PathUtil, proto_rs},
+    integration::{buf_yaml, path_util::PathUtil},
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
@@ -385,14 +385,6 @@ pub enum InstallMode {
 pub enum GenerationOption {
     /// Generate a buf.yaml file
     BufYaml,
-
-    /// Generate a module which includes all proto files
-    TonicProtoModule {
-        /// The path to the generated module
-        module_path: PathBuf,
-        /// Optional output directory (expression) for tonic build
-        tonic_out_dir: Option<String>,
-    },
 }
 
 /// Installs dependencies
@@ -499,17 +491,6 @@ pub async fn install(
         match option {
             GenerationOption::BufYaml => {
                 buf_yaml::generate_buf_yaml_file(&dependency_graph, &manifest, &store)?;
-            }
-            GenerationOption::TonicProtoModule {
-                module_path,
-                tonic_out_dir,
-            } => {
-                proto_rs::generate_tonic_proto_module(
-                    &store,
-                    module_path,
-                    tonic_out_dir.as_deref(),
-                )
-                .await?;
             }
         }
     }

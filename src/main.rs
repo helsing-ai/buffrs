@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::env;
-use std::path::PathBuf;
 
 use buffrs::command::{self, GenerationOption, InstallMode};
 use buffrs::config::Config;
@@ -141,20 +140,6 @@ enum Command {
         /// Generate buf.yaml file matching the installed dependencies
         #[clap(long, default_value = "false")]
         generate_buf_yaml: bool,
-
-        /// Generate a Rust module file with `tonic::include_proto!` statements.
-        ///
-        /// The <file> argument specifies the output file path where the module
-        /// will be created.
-        ///
-        /// An optional <prefix> argument specifies a Rust expression yielding
-        /// the tonic-build output directory.
-        ///
-        /// Examples:
-        ///     buffrs install --generate-tonic-proto-module src/proto.rs
-        ///     buffrs install --generate-tonic-proto-module src/proto.rs 'concat!(env!("OUT_DIR"), "foo")'
-        #[clap(long, value_names = &["file", "prefix"], num_args(1..=2), value_hint = clap::ValueHint::FilePath, verbatim_doc_comment)]
-        generate_tonic_proto_module: Option<Vec<String>>,
     },
 
     /// Uninstalls dependencies
@@ -340,24 +325,11 @@ async fn run(args: &[String]) -> miette::Result<()> {
         Command::Install {
             only_dependencies,
             generate_buf_yaml,
-            generate_tonic_proto_module,
         } => {
             let mut generation_options = Vec::new();
 
             if generate_buf_yaml {
                 generation_options.push(GenerationOption::BufYaml);
-            }
-
-            if let Some([module_path, tonic_out_dir]) = generate_tonic_proto_module.as_deref() {
-                generation_options.push(GenerationOption::TonicProtoModule {
-                    module_path: PathBuf::from(module_path),
-                    tonic_out_dir: Some(tonic_out_dir.to_owned()),
-                });
-            } else if let Some([module_path]) = generate_tonic_proto_module.as_deref() {
-                generation_options.push(GenerationOption::TonicProtoModule {
-                    module_path: PathBuf::from(module_path),
-                    tonic_out_dir: None,
-                });
             }
 
             let install_mode = if only_dependencies {
