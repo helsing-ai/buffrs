@@ -15,7 +15,7 @@ use super::path_util::PathUtil;
 ///
 /// # Example Module
 ///
-/// ```no_run
+/// ```ignore
 /// // Generated using `buffrs install --generate-tonic-proto-module`
 /// pub mod api {
 ///     pub mod examples {
