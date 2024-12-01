@@ -19,7 +19,7 @@ use crate::{
         RemoteDependencyManifest, MANIFEST_FILE,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, CertValidationPolicy, RegistryUri},
+    registry::{Artifactory, CertValidationPolicy, RegistryRef},
 };
 
 /// Represents a dependency contextualized by the current dependency graph
@@ -30,7 +30,7 @@ pub enum ResolvedDependency {
         /// The materialized package as downloaded from the registry
         package: Package,
         /// The registry the package was downloaded from
-        registry: RegistryUri,
+        registry: RegistryRef,
         /// The repository in the registry where the package can be found
         repository: String,
         /// Packages that requested this dependency (and what versions they accept)
@@ -89,7 +89,7 @@ pub struct DependencyGraphBuilder<'a> {
     credentials: &'a Credentials,
     cache: &'a Cache,
     config: &'a Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -164,7 +164,7 @@ impl<'a> DependencyGraphBuilder<'a> {
     /// - `credentials`: Credentials used to authenticate with remote registries
     /// - `cache`: Cache used to store downloaded packages
     /// - `config`: Configuration settings
-    /// - `cert_validation_policy`: Policy used to validate certificates
+    /// - `policy`: Policy used to validate certificates
     ///
     /// # Returns
     /// A new dependency graph builder
@@ -174,7 +174,7 @@ impl<'a> DependencyGraphBuilder<'a> {
         credentials: &'a Credentials,
         cache: &'a Cache,
         config: &'a Config,
-        cert_validation_policy: CertValidationPolicy,
+        policy: CertValidationPolicy,
     ) -> Self {
         Self {
             manifest,
@@ -182,7 +182,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             credentials,
             cache,
             config,
-            cert_validation_policy,
+            policy,
         }
     }
 
@@ -500,7 +500,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             let registry = Artifactory::new(
                 dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
-                self.cert_validation_policy,
+                self.policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),
@@ -530,7 +530,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             let registry = Artifactory::new(
                 dependency.manifest.registry.clone().try_into()?,
                 self.credentials,
-                self.cert_validation_policy,
+                self.policy,
             )
             .wrap_err(DownloadError {
                 name: dependency.package.clone(),

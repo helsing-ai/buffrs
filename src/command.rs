@@ -20,7 +20,7 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageStore, PackageType},
-    registry::{Artifactory, CertValidationPolicy, RegistryUri},
+    registry::{Artifactory, CertValidationPolicy, RegistryRef, RegistryUri},
     resolver::{DependencyGraph, DependencyGraphBuilder, ResolvedDependency},
 };
 
@@ -180,10 +180,10 @@ impl FromStr for DependencyLocator {
 /// * `registry` - The registry URI
 /// * `dependency` - The dependency to add (e.g. `my-repo/my-package@1.0`)
 pub async fn add(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     dependency: &str,
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let mut manifest = Manifest::read(config).await?;
     let registry = registry.with_alias_resolved(Some(config))?;
@@ -199,11 +199,7 @@ pub async fn add(
         DependencyLocatorVersion::Latest => {
             // query artifactory to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(
-                registry.clone().try_into()?,
-                &credentials,
-                cert_validation_policy,
-            )?;
+            let artifactory = Artifactory::new(registry.clone().try_into()?, &credentials, policy)?;
 
             let latest_version = artifactory
                 .get_latest_version(repository.clone(), package.clone())
@@ -301,13 +297,13 @@ pub async fn package(
 
 /// Publishes the api package to the registry
 pub async fn publish(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let registry = registry.with_alias_resolved(Some(config))?;
 
@@ -365,7 +361,7 @@ pub async fn publish(
 
     let package = prepare_package(version, config).await?;
     let credentials = Credentials::load().await?;
-    let artifactory = Artifactory::new(registry.try_into()?, &credentials, cert_validation_policy)?;
+    let artifactory = Artifactory::new(registry.try_into()?, &credentials, policy)?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -409,7 +405,7 @@ pub async fn install(
     mode: InstallMode,
     generation: &[GenerationOption],
     config: &Config,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
 ) -> miette::Result<()> {
     let manifest = Manifest::read(config).await?;
     let lockfile = Lockfile::read_or_default().await?;
@@ -427,17 +423,11 @@ pub async fn install(
         }
     }
 
-    let dependency_graph = DependencyGraphBuilder::new(
-        &manifest,
-        &lockfile,
-        &credentials,
-        &cache,
-        config,
-        cert_validation_policy,
-    )
-    .build()
-    .await
-    .wrap_err(miette!("dependency resolution failed"))?;
+    let dependency_graph =
+        DependencyGraphBuilder::new(&manifest, &lockfile, &credentials, &cache, config, policy)
+            .build()
+            .await
+            .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -606,13 +596,13 @@ pub async fn lint(config: &Config) -> miette::Result<()> {
 ///  * `registry` - The registry to log in to
 ///  * `token` - An optional token to use, if not provided, the user will be prompted for one
 pub async fn login(
-    registry: &RegistryUri,
+    registry: &RegistryRef,
     token: Option<String>,
-    cert_validation_policy: CertValidationPolicy,
+    policy: CertValidationPolicy,
     config: &Config,
 ) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
-    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
+    let registry: RegistryUri = registry.with_alias_resolved(Some(config))?.try_into()?;
 
     let token = match token {
         Some(token) => token,
@@ -635,7 +625,7 @@ pub async fn login(
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
-        Artifactory::new(registry, &credentials, cert_validation_policy)?
+        Artifactory::new(registry, &credentials, policy)?
             .ping()
             .await
             .wrap_err(miette!("failed to validate token"))?;
@@ -645,8 +635,8 @@ pub async fn login(
 }
 
 /// Logs you out from a registry
-pub async fn logout(registry: &RegistryUri, config: &Config) -> miette::Result<()> {
-    let registry: url::Url = registry.with_alias_resolved(Some(config))?.try_into()?;
+pub async fn logout(registry: &RegistryRef, config: &Config) -> miette::Result<()> {
+    let registry: RegistryUri = registry.with_alias_resolved(Some(config))?.try_into()?;
     let mut credentials = Credentials::load().await?;
     credentials.registry_tokens.remove(&registry);
     credentials.write().await

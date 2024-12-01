@@ -16,6 +16,7 @@ use crate::{
     credentials::Credentials,
     manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
+    registry::RegistryUri,
 };
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Body, Method, Response};
@@ -37,7 +38,7 @@ pub enum CertValidationPolicy {
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
 pub struct Artifactory {
-    registry: url::Url,
+    registry: RegistryUri,
     token: Option<String>,
     client: reqwest::Client,
 }
@@ -48,18 +49,16 @@ impl Artifactory {
     /// # Arguments
     /// * `registry` - The registry URI
     /// * `credentials` - The credentials to use for the registry
-    /// * `cert_validation_policy` - The policy for validating artifactory server certificates
+    /// * `policy` - The policy for validating artifactory server certificates
     pub fn new(
-        registry: url::Url,
+        registry: RegistryUri,
         credentials: &Credentials,
-        cert_validation_policy: CertValidationPolicy,
+        policy: CertValidationPolicy,
     ) -> miette::Result<Self> {
         let token = credentials.registry_tokens.get(&registry).cloned();
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .danger_accept_invalid_certs(
-                cert_validation_policy == CertValidationPolicy::NoValidation,
-            )
+            .danger_accept_invalid_certs(policy == CertValidationPolicy::NoValidation)
             .build()
             .into_diagnostic()?;
 
@@ -83,7 +82,7 @@ impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
-            let mut uri: url::Url = self.registry.clone();
+            let mut uri: url::Url = self.registry.to_owned().into();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
             uri
@@ -104,7 +103,7 @@ impl Artifactory {
     ) -> miette::Result<Version> {
         // First retrieve all packages matching the given name
         let search_query_url: Url = {
-            let mut uri: url::Url = self.registry.clone();
+            let mut uri: url::Url = self.registry.to_owned().into();
             uri.set_path("artifactory/api/search/artifact");
             uri.set_query(Some(&format!("name={}&repos={}", name, repository)));
             uri
@@ -187,7 +186,8 @@ impl Artifactory {
 
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
-            let mut url: url::Url = manifest.registry.clone().try_into()?;
+            let url: RegistryUri = self.registry.clone();
+            let mut url: url::Url = url.into();
             let path = url.path();
 
             url.set_path(&format!(

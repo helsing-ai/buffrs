@@ -277,7 +277,8 @@ mod tests {
         // serialize to file
         let serialized = buf_yaml.to_string().unwrap();
 
-        let writer = std::fs::File::create("buf.yaml").unwrap();
+        let yaml_path = tmp_dir.join(BUF_YAML_FILE);
+        let writer = std::fs::File::create(yaml_path).unwrap();
         let mut writer = std::io::BufWriter::new(writer);
         writer.write_all(serialized.as_bytes()).unwrap();
     }

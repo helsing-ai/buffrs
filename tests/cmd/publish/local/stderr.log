@@ -1,4 +1,5 @@
-Error:   × failed to publish `my-api` to `https://localhost:54321/fake-uri:my-
+Error: 
+  × failed to publish `my-api` to `https://localhost:54321/fake-uri:my-
   │ repository`
   ╰─▶ local dependency some-local-lib of my-api does not specify version/
       registry/repository

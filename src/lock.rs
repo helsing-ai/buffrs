@@ -24,7 +24,7 @@ use url::Url;
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{Package, PackageName},
-    registry::RegistryUri,
+    registry::{RegistryRef, RegistryUri},
     ManagedFile,
 };
 
@@ -44,8 +44,8 @@ pub struct LockedPackage {
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
-    #[serde(serialize_with = "RegistryUri::serialize_resolved")]
-    pub registry: RegistryUri,
+    #[serde(serialize_with = "RegistryRef::serialize_resolved")]
+    pub registry: RegistryRef,
     /// The identifier of the repository where the package was published
     pub repository: String,
     /// The exact version of the package
@@ -62,7 +62,7 @@ impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(
         package: &Package,
-        registry: RegistryUri,
+        registry: RegistryRef,
         repository: String,
         dependants: usize,
     ) -> Self {
@@ -250,13 +250,14 @@ impl FileRequirement {
 
     /// Construct new file requirement.
     pub fn new(
-        url: &RegistryUri,
+        url: &RegistryRef,
         repository: &String,
         name: &PackageName,
         version: &Version,
         digest: &Digest,
     ) -> miette::Result<Self> {
-        let mut url: url::Url = url.try_into()?;
+        let url: RegistryUri = url.try_into()?;
+        let mut url: url::Url = url.into();
 
         let new_path = format!(
             "{}/{}/{}/{}-{}.tgz",

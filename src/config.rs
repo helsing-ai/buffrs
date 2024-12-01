@@ -20,7 +20,7 @@ use std::{
 
 use crate::{
     manifest::{Edition, CANARY_EDITION},
-    registry::{sanity_check_url, RegistryUri},
+    registry::{RegistryRef, RegistryUri},
 };
 
 /// Location of the configuration file
@@ -61,7 +61,7 @@ pub struct Config {
     default_registry: Option<String>,
 
     /// List of registries
-    registries: HashMap<String, url::Url>,
+    registries: HashMap<String, RegistryUri>,
 
     /// Default arguments for commands
     command_defaults: HashMap<String, Vec<String>>,
@@ -95,11 +95,11 @@ impl Config {
     /// - <alias> -> alias://<alias>
     /// - <uri> -> <uri>
     /// - None -> alias://<default>
-    pub fn parse_registry_arg(&self, registry: &Option<String>) -> miette::Result<RegistryUri> {
+    pub fn parse_registry_arg(&self, registry: &Option<String>) -> miette::Result<RegistryRef> {
         match registry {
-            Some(registry) => RegistryUri::from_str(registry),
+            Some(registry) => RegistryRef::from_str(registry),
             None => match &self.default_registry {
-                Some(default_registry) => RegistryUri::from_str(default_registry),
+                Some(default_registry) => RegistryRef::from_str(default_registry),
                 None => bail!("no registry provided and no default registry found"),
             },
         }
@@ -112,7 +112,7 @@ impl Config {
     ///
     /// # Returns
     /// The registry URI
-    pub fn lookup_registry(&self, name: &str) -> miette::Result<url::Url> {
+    pub fn lookup_registry(&self, name: &str) -> miette::Result<RegistryUri> {
         self.registries.get(name).cloned().ok_or_else(|| {
             miette!(
                 "registry '{}' not found in {}",
@@ -221,7 +221,7 @@ impl Config {
 
     fn get_default_registry(
         config: &toml::Value,
-        registries: &HashMap<String, url::Url>,
+        registries: &HashMap<String, RegistryUri>,
     ) -> miette::Result<Option<String>> {
         let default_registry = config
             .get("registry")
@@ -238,10 +238,18 @@ impl Config {
         Ok(default_registry)
     }
 
+    /// Load registries from the [registries] section of the config file
+    ///
+    /// # Arguments
+    /// * `config` - The parsed TOML configuration
+    /// * `config_path` - Path to the configuration file (for error messages)
+    ///
+    /// # Returns
+    /// A map of registry names to URIs
     fn get_registries(
         config: &toml::Value,
         config_path: &Path,
-    ) -> miette::Result<HashMap<String, url::Url>> {
+    ) -> miette::Result<HashMap<String, RegistryUri>> {
         let registries = config
             .get("registries")
             .and_then(|registries| registries.as_table())
@@ -253,12 +261,11 @@ impl Config {
                             .as_str()
                             .ok_or_else(|| miette!("registry URI must be a string"))
                             .wrap_err(miette!("invalid URI for registry '{}'", name))
-                            .wrap_err(miette!("in config file: {}", config_path.display()))?;
-                        let uri = url::Url::from_str(uri).into_diagnostic()?;
-                        sanity_check_url(&uri)?;
+                            .wrap_err(miette!("in config file: {}", config_path.display()))?
+                            .parse()?;
                         Ok((name.to_owned(), uri))
                     })
-                    .collect::<miette::Result<HashMap<String, url::Url>>>()
+                    .collect::<miette::Result<HashMap<String, RegistryUri>>>()
             })
             .unwrap_or_else(|| Ok(HashMap::new()))
             .wrap_err(miette!(

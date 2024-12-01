@@ -229,7 +229,7 @@ pub async fn run(args: &[String]) -> miette::Result<()> {
             .unwrap_or_else(|| name.to_string())
     };
 
-    let cert_validation_policy = if cli.disable_cert_validation {
+    let policy = if cli.disable_cert_validation {
         CertValidationPolicy::NoValidation
     } else {
         CertValidationPolicy::Validate
@@ -255,7 +255,7 @@ pub async fn run(args: &[String]) -> miette::Result<()> {
         }
         Command::Login { registry, token } => {
             let registry = config.parse_registry_arg(&registry)?;
-            command::login(&registry, token, cert_validation_policy, &config)
+            command::login(&registry, token, policy, &config)
                 .await
                 .wrap_err(miette!("failed to login to `{registry}`"))
         }
@@ -270,7 +270,7 @@ pub async fn run(args: &[String]) -> miette::Result<()> {
             dependency,
         } => {
             let registry = config.parse_registry_arg(&registry)?;
-            command::add(&registry, &dependency, &config, cert_validation_policy)
+            command::add(&registry, &dependency, &config, policy)
                 .await
                 .wrap_err(miette!(
                     "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
@@ -307,7 +307,7 @@ pub async fn run(args: &[String]) -> miette::Result<()> {
                 dry_run,
                 set_version,
                 &config,
-                cert_validation_policy,
+                policy,
             )
             .await
             .wrap_err(miette!(
@@ -346,14 +346,9 @@ pub async fn run(args: &[String]) -> miette::Result<()> {
                 InstallMode::All
             };
 
-            command::install(
-                install_mode,
-                &generation_options,
-                &config,
-                cert_validation_policy,
-            )
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`"))
+            command::install(install_mode, &generation_options, &config, policy)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
         }
         Command::Uninstall => command::uninstall()
             .await
