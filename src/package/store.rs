@@ -16,8 +16,10 @@ use std::{
     collections::BTreeMap,
     env::current_dir,
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
+use bytes::Bytes;
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use tokio::fs;
 use walkdir::WalkDir;
@@ -171,7 +173,20 @@ impl PackageStore {
         for entry in self.collect(&pkg_path, false).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
-            entries.insert(path.into(), contents.into());
+
+            let metadata = tokio::fs::metadata(&entry).await.ok();
+            let mtime = metadata
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs());
+
+            entries.insert(
+                path.into(),
+                Entry {
+                    contents: contents.into(),
+                    mtime,
+                },
+            );
         }
 
         let package = Package::create(manifest.clone(), entries)?;
@@ -258,6 +273,13 @@ impl PackageStore {
     pub async fn populated_files(&self, manifest: &PackageManifest) -> Vec<PathBuf> {
         self.collect(&self.populated_path(manifest), true).await
     }
+}
+
+pub struct Entry {
+    /// Actual bytes of the file
+    pub contents: Bytes,
+    /// last modified time, as number of seconds since EPOCH, if available
+    pub mtime: Option<u64>,
 }
 
 #[test]

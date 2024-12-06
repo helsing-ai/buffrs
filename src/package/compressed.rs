@@ -32,6 +32,8 @@ use crate::{
     ManagedFile,
 };
 
+use super::store::Entry;
+
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
@@ -46,7 +48,7 @@ impl Package {
     ///
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
-    pub fn create(mut manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+    pub fn create(mut manifest: Manifest, files: BTreeMap<PathBuf, Entry>) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
             manifest = Manifest::new(manifest.package, manifest.dependencies);
         }
@@ -88,8 +90,12 @@ impl Package {
             .into_diagnostic()
             .wrap_err(miette!("failed to add manifest to release"))?;
 
-        for (name, contents) in &files {
+        for (name, entry) in &files {
             let mut header = tar::Header::new_gnu();
+            let Entry { contents, mtime } = entry;
+            if let Some(mtime) = mtime {
+                header.set_mtime(*mtime);
+            }
             header.set_mode(0o444);
             header.set_size(contents.len() as u64);
             archive
