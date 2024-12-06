@@ -16,7 +16,6 @@ use std::{
     collections::BTreeMap,
     env::current_dir,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use bytes::Bytes;
@@ -174,17 +173,11 @@ impl PackageStore {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
 
-            let metadata = tokio::fs::metadata(&entry).await.ok();
-            let mtime = metadata
-                .and_then(|metadata| metadata.modified().ok())
-                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-                .map(|duration| duration.as_secs());
-
             entries.insert(
                 path.into(),
                 Entry {
                     contents: contents.into(),
-                    mtime,
+                    metadata: tokio::fs::metadata(&entry).await.ok(),
                 },
             );
         }
@@ -278,8 +271,8 @@ impl PackageStore {
 pub struct Entry {
     /// Actual bytes of the file
     pub contents: Bytes,
-    /// last modified time, as number of seconds since EPOCH, if available
-    pub mtime: Option<u64>,
+    /// File metadata, like mtime, ...
+    pub metadata: Option<std::fs::Metadata>,
 }
 
 #[test]

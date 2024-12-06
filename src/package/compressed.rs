@@ -16,6 +16,7 @@ use std::{
     collections::BTreeMap,
     io::{self, Cursor, Read, Write},
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use bytes::{Buf, Bytes};
@@ -92,10 +93,19 @@ impl Package {
 
         for (name, entry) in &files {
             let mut header = tar::Header::new_gnu();
-            let Entry { contents, mtime } = entry;
+
+            let Entry { contents, metadata } = entry;
+
+            let mtime = metadata
+                .as_ref()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs());
+
             if let Some(mtime) = mtime {
-                header.set_mtime(*mtime);
+                header.set_mtime(mtime);
             }
+
             header.set_mode(0o444);
             header.set_size(contents.len() as u64);
             archive
