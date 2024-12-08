@@ -1,7 +1,7 @@
-{ pkgs, crane, rustToolchain, system, advisory-db, buildInputs
-, nativeBuildInputs, buildEnvVars }:
+{ pkgs, crane, rustToolchain, advisory-db, buildInputs, nativeBuildInputs
+, buildEnvVars }:
 let
-  craneLib = crane.lib.${system}.overrideToolchain rustToolchain;
+  craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
   src = ../.;
 
   # Common arguments can be set here to avoid repeating them later
@@ -37,5 +37,16 @@ in {
 
     # Audit licenses
     buffrs-deny = craneLib.cargoDeny { inherit src; };
+
+    # Rust unit and integration tests
+    buffers-nextest = craneLib.cargoNextest (commonArgs // {
+      inherit cargoArtifacts;
+      partitions = 1;
+      partitionType = "count";
+      # Ignore tutorial test because it requires git and cargo to work
+      cargoNextestExtraArgs =
+        "--filter-expr 'all() - test(=cmd::tuto::fixture)'";
+      SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    });
   };
 }
