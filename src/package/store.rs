@@ -152,7 +152,11 @@ impl PackageStore {
     }
 
     /// Packages a release from the local file system state
-    pub async fn release(&self, manifest: &Manifest) -> miette::Result<Package> {
+    pub async fn release(
+        &self,
+        manifest: &Manifest,
+        preserve_mtime: bool,
+    ) -> miette::Result<Package> {
         for dependency in manifest.dependencies.iter() {
             let resolved = self.resolve(&dependency.package).await?;
 
@@ -182,7 +186,7 @@ impl PackageStore {
             );
         }
 
-        let package = Package::create(manifest.clone(), entries)?;
+        let package = Package::create(manifest.clone(), entries, preserve_mtime)?;
 
         tracing::info!(":: packaged {}@{}", package.name(), package.version());
 

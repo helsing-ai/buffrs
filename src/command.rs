@@ -232,6 +232,7 @@ pub async fn package(
     directory: impl AsRef<Path>,
     dry_run: bool,
     version: Option<Version>,
+    preserve_mtime: bool,
 ) -> miette::Result<()> {
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
@@ -248,7 +249,7 @@ pub async fn package(
         store.populate(pkg).await?;
     }
 
-    let package = store.release(&manifest).await?;
+    let package = store.release(&manifest, preserve_mtime).await?;
 
     if dry_run {
         return Ok(());
@@ -275,6 +276,7 @@ pub async fn publish(
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
+    preserve_mtime: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
     async fn git_statuses() -> miette::Result<Vec<String>> {
@@ -345,7 +347,7 @@ pub async fn publish(
         store.populate(pkg).await?;
     }
 
-    let package = store.release(&manifest).await?;
+    let package = store.release(&manifest, preserve_mtime).await?;
 
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
@@ -356,7 +358,9 @@ pub async fn publish(
 }
 
 /// Installs dependencies
-pub async fn install() -> miette::Result<()> {
+///
+/// if [preserve_mtime] is true, local dependencies will keep their modification time
+pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
     let lockfile = Lockfile::read_or_default().await?;
     let store = PackageStore::current().await?;
@@ -371,10 +375,15 @@ pub async fn install() -> miette::Result<()> {
         tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
     }
 
-    let dependency_graph =
-        DependencyGraph::from_manifest(&manifest, &lockfile, &credentials.into(), &cache)
-            .await
-            .wrap_err(miette!("dependency resolution failed"))?;
+    let dependency_graph = DependencyGraph::from_manifest(
+        &manifest,
+        &lockfile,
+        &credentials.into(),
+        &cache,
+        preserve_mtime,
+    )
+    .await
+    .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 

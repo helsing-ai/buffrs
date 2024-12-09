@@ -109,6 +109,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        preserve_mtime: bool,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -127,6 +128,7 @@ impl DependencyGraph {
                 credentials,
                 cache,
                 &mut entries,
+                preserve_mtime,
             )
             .await?;
         }
@@ -142,6 +144,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
+        preserve_mtime: bool,
     ) -> miette::Result<()> {
         match dependency.manifest {
             DependencyManifest::Remote(manifest) => {
@@ -156,6 +159,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     entries,
+                    preserve_mtime,
                 )
                 .await?;
             }
@@ -171,6 +175,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     entries,
+                    preserve_mtime,
                 )
                 .await?;
             }
@@ -188,6 +193,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
+        preserve_mtime: bool,
     ) -> miette::Result<()> {
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
             .await?
@@ -201,7 +207,7 @@ impl DependencyGraph {
             })?;
 
         let store = PackageStore::open(&dependency.manifest.path).await?;
-        let package = store.release(&manifest).await?;
+        let package = store.release(&manifest, preserve_mtime).await?;
 
         let dependency_name = package.name().clone();
         let sub_dependencies = package.manifest.dependencies.clone();
@@ -232,6 +238,7 @@ impl DependencyGraph {
                 credentials,
                 cache,
                 entries,
+                preserve_mtime,
             )
             .await?;
         }
@@ -248,6 +255,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
+        preserve_mtime: bool,
     ) -> miette::Result<()> {
         let version_req = dependency.manifest.version.clone();
 
@@ -314,6 +322,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     entries,
+                    preserve_mtime,
                 )
                 .await?;
             }

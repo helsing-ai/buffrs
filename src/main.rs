@@ -94,6 +94,10 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
+        /// Indicate whether access time information is preserved when creating a package.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_mtime: Option<bool>,
     },
 
     /// Packages and uploads this api to the registry
@@ -115,10 +119,19 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
+        /// Indicate whether access time information is preserved when creating a package.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_mtime: Option<bool>,
     },
 
     /// Installs dependencies
-    Install,
+    Install {
+        /// Indicate whether access time information is preserved when installing a local.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_local_mtime: Option<bool>,
+    },
     /// Uninstalls dependencies
     Uninstall,
 
@@ -229,23 +242,31 @@ async fn main() -> miette::Result<()> {
             output_directory,
             dry_run,
             set_version,
-        } => command::package(output_directory, dry_run, set_version)
-            .await
-            .wrap_err(miette!(
-                "failed to export `{package}` into the buffrs package format"
-            )),
+            preserve_mtime,
+        } => command::package(
+            output_directory,
+            dry_run,
+            set_version,
+            preserve_mtime.unwrap_or(true),
+        )
+        .await
+        .wrap_err(miette!(
+            "failed to export `{package}` into the buffrs package format"
+        )),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
             set_version,
+            preserve_mtime,
         } => command::publish(
             registry.to_owned(),
             repository.to_owned(),
             allow_dirty,
             dry_run,
             set_version,
+            preserve_mtime.unwrap_or(true),
         )
         .await
         .wrap_err(miette!(
@@ -255,7 +276,9 @@ async fn main() -> miette::Result<()> {
             "failed to lint protocol buffers in `{}`",
             PackageStore::PROTO_PATH
         )),
-        Command::Install => command::install()
+        Command::Install {
+            preserve_local_mtime,
+        } => command::install(preserve_local_mtime.unwrap_or(true))
             .await
             .wrap_err(miette!("failed to install dependencies for `{package}`")),
         Command::Uninstall => command::uninstall()
