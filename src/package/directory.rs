@@ -17,29 +17,29 @@ use std::{fmt, ops::Deref, str::FromStr};
 use miette::IntoDiagnostic;
 use serde::{Deserialize, Serialize};
 
-/// A `buffrs` package name for parsing and type safety
+/// A `buffrs` package directory for parsing and type safety
 #[derive(Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(try_from = "String", into = "String")]
-pub struct PackageName(String);
+pub struct PackageDirectory(String);
 
-/// Errors that can be generated parsing [`PackageName`], see [`PackageName::new()`].
+/// Errors that can be generated parsing [`PackageDirectory`], see [`PackageDirectory::new()`].
 #[derive(thiserror::Error, Debug, PartialEq)]
-pub enum PackageNameError {
-    /// Empty package name.
-    #[error("package name must be at least one character long, but was empty")]
+pub enum PackageDirectoryError {
+    /// Empty package directory.
+    #[error("package directory must be at least one character long, but was empty")]
     Empty,
     /// Too long.
-    #[error("package names must be at most 128 characters long, but was {0:}")]
+    #[error("package directories must be at most 128 characters long, but was {0:}")]
     TooLong(usize),
     /// Invalid start character.
-    #[error("package name must start with alphabetic character, but was {0:}")]
+    #[error("package directory must start with alphabetic character, but was {0:}")]
     InvalidStart(char),
     /// Invalid character.
-    #[error("package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}")]
+    #[error("package directory must consist of only ASCII lowercase and dashes (-, _), but contains {0:} at position {1:}")]
     InvalidCharacter(char, usize),
 }
 
-impl super::ParseError for PackageNameError {
+impl super::ParseError for PackageDirectoryError {
     #[inline]
     fn empty() -> Self {
         Self::Empty
@@ -61,36 +61,31 @@ impl super::ParseError for PackageNameError {
     }
 }
 
-impl PackageName {
+impl PackageDirectory {
     const MAX_LENGTH: usize = 128;
 
-    /// New package name from string.
-    pub fn new<S: Into<String>>(value: S) -> Result<Self, PackageNameError> {
+    /// New package directory from string.
+    pub fn new<S: Into<String>>(value: S) -> Result<Self, PackageDirectoryError> {
         let value = value.into();
         Self::validate(&value)?;
         Ok(Self(value))
     }
 
-    /// New package name from an unchecked string.
-    pub(crate) fn unchecked<S: Into<String>>(value: S) -> Self {
-        Self(value.into())
-    }
-
-    /// Validate a package name.
-    pub fn validate(name: impl AsRef<str>) -> Result<(), PackageNameError> {
-        super::validate(name.as_ref(), &[b'-'], Self::MAX_LENGTH)
+    /// Validate a package directory.
+    pub fn validate(directory: impl AsRef<str>) -> Result<(), PackageDirectoryError> {
+        super::validate(directory.as_ref(), &[b'-', b'_'], Self::MAX_LENGTH)
     }
 }
 
-impl TryFrom<String> for PackageName {
-    type Error = PackageNameError;
+impl TryFrom<String> for PackageDirectory {
+    type Error = PackageDirectoryError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
 
-impl FromStr for PackageName {
+impl FromStr for PackageDirectory {
     type Err = miette::Report;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
@@ -98,13 +93,13 @@ impl FromStr for PackageName {
     }
 }
 
-impl From<PackageName> for String {
-    fn from(s: PackageName) -> Self {
+impl From<PackageDirectory> for String {
+    fn from(s: PackageDirectory) -> Self {
         s.to_string()
     }
 }
 
-impl Deref for PackageName {
+impl Deref for PackageDirectory {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
@@ -112,7 +107,7 @@ impl Deref for PackageName {
     }
 }
 
-impl fmt::Display for PackageName {
+impl fmt::Display for PackageDirectory {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -124,46 +119,54 @@ mod test {
 
     #[test]
     fn ascii_lowercase() {
-        assert_eq!(PackageName::new("abc"), Ok(PackageName("abc".into())));
+        assert_eq!(
+            PackageDirectory::new("abc"),
+            Ok(PackageDirectory("abc".into()))
+        );
     }
 
     #[test]
     fn short() {
-        assert_eq!(PackageName::new("a"), Ok(PackageName("a".into())));
-        assert_eq!(PackageName::new("ab"), Ok(PackageName("ab".into())));
+        assert_eq!(PackageDirectory::new("a"), Ok(PackageDirectory("a".into())));
+        assert_eq!(
+            PackageDirectory::new("ab"),
+            Ok(PackageDirectory("ab".into()))
+        );
     }
 
     #[test]
     fn long() {
         assert_eq!(
-            PackageName::new("a".repeat(PackageName::MAX_LENGTH)),
-            Ok(PackageName("a".repeat(PackageName::MAX_LENGTH)))
+            PackageDirectory::new("a".repeat(PackageDirectory::MAX_LENGTH)),
+            Ok(PackageDirectory("a".repeat(PackageDirectory::MAX_LENGTH)))
         );
 
         assert_eq!(
-            PackageName::new("a".repeat(PackageName::MAX_LENGTH + 1)),
-            Err(PackageNameError::TooLong(PackageName::MAX_LENGTH + 1))
+            PackageDirectory::new("a".repeat(PackageDirectory::MAX_LENGTH + 1)),
+            Err(PackageDirectoryError::TooLong(
+                PackageDirectory::MAX_LENGTH + 1
+            ))
         );
     }
 
     #[test]
     fn empty() {
-        assert_eq!(PackageName::new(""), Err(PackageNameError::Empty));
+        assert_eq!(PackageDirectory::new(""), Err(PackageDirectoryError::Empty));
     }
 
     #[test]
     fn numeric_start() {
         assert_eq!(
-            PackageName::new("4abc"),
-            Err(PackageNameError::InvalidStart('4'))
+            PackageDirectory::new("4abc"),
+            Err(PackageDirectoryError::InvalidStart('4'))
         );
     }
 
     #[test]
-    fn snake_case() {
+    fn underscore_and_dash() {
         assert_eq!(
-            PackageName::new("with_underscore"),
-            Err(PackageNameError::InvalidCharacter('_', 4))
+            PackageDirectory::new("with_underscore-and-dash"),
+            Ok(PackageDirectory("with_underscore-and-dash".into())),
         );
     }
 }
