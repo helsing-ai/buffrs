@@ -45,7 +45,7 @@ diff-struct = { version = "0.5.3", optional = true }
 flate2 = "1"
 hex = "0.4.3"
 home = "0.5.5"
-human-panic = "1"
+human-panic = "2"
 miette = { version = "5.10.0", features = ["fancy"] }
 protobuf = { version = "3.3.0", optional = true }
 protobuf-parse = { version = "3.3.0", optional = true }
