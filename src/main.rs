@@ -154,6 +154,8 @@ enum LockfileCommand {
     PrintFiles,
 }
 
+// setup_panic! is failing: use of deprecated type alias std::panic::PanicInfo
+#[allow(deprecated)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();

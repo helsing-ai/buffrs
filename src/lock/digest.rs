@@ -152,7 +152,7 @@ impl Serialize for Digest {
 
 struct DigestVisitor;
 
-impl<'de> Visitor<'de> for DigestVisitor {
+impl Visitor<'_> for DigestVisitor {
     type Value = Digest;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
