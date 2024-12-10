@@ -102,6 +102,37 @@ struct DownloadError {
     version: VersionReq,
 }
 
+struct ProcessDependency<'a> {
+    name: PackageName,
+    dependency: Dependency,
+    is_root: bool,
+    lockfile: &'a Lockfile,
+    credentials: &'a Arc<Credentials>,
+    cache: &'a Cache,
+    preserve_mtime: bool,
+}
+
+struct ProcessLocalDependency<'a> {
+    name: PackageName,
+    dependency: LocalDependency,
+    #[allow(dead_code)]
+    is_root: bool,
+    lockfile: &'a Lockfile,
+    credentials: &'a Arc<Credentials>,
+    cache: &'a Cache,
+    preserve_mtime: bool,
+}
+
+struct ProcessRemoteDependency<'a> {
+    name: PackageName,
+    dependency: RemoteDependency,
+    is_root: bool,
+    lockfile: &'a Lockfile,
+    credentials: &'a Arc<Credentials>,
+    cache: &'a Cache,
+    preserve_mtime: bool,
+}
+
 impl DependencyGraph {
     /// Recursively resolves dependencies from the manifest to build a dependency graph
     pub async fn from_manifest(
@@ -109,6 +140,7 @@ impl DependencyGraph {
         lockfile: &Lockfile,
         credentials: &Arc<Credentials>,
         cache: &Cache,
+        preserve_mtime: bool,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -120,13 +152,16 @@ impl DependencyGraph {
 
         for dependency in &manifest.dependencies {
             Self::process_dependency(
-                name.clone(),
-                dependency.clone(),
-                true,
-                lockfile,
-                credentials,
-                cache,
                 &mut entries,
+                ProcessDependency {
+                    name: name.clone(),
+                    dependency: dependency.clone(),
+                    is_root: true,
+                    lockfile,
+                    credentials,
+                    cache,
+                    preserve_mtime,
+                },
             )
             .await?;
         }
@@ -135,42 +170,52 @@ impl DependencyGraph {
     }
 
     async fn process_dependency(
-        name: PackageName,
-        dependency: Dependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
         entries: &mut HashMap<PackageName, ResolvedDependency>,
+        params: ProcessDependency<'_>,
     ) -> miette::Result<()> {
+        let ProcessDependency {
+            name,
+            dependency,
+            is_root,
+            lockfile,
+            credentials,
+            cache,
+            preserve_mtime,
+        } = params;
         match dependency.manifest {
             DependencyManifest::Remote(manifest) => {
                 Self::process_remote_dependency(
-                    name.clone(),
-                    RemoteDependency {
-                        package: dependency.package,
-                        manifest,
-                    },
-                    is_root,
-                    lockfile,
-                    credentials,
-                    cache,
                     entries,
+                    ProcessRemoteDependency {
+                        name: name.clone(),
+                        dependency: RemoteDependency {
+                            package: dependency.package,
+                            manifest,
+                        },
+                        is_root,
+                        lockfile,
+                        credentials,
+                        cache,
+                        preserve_mtime,
+                    },
                 )
                 .await?;
             }
             DependencyManifest::Local(manifest) => {
                 Self::process_local_dependency(
-                    name.clone(),
-                    LocalDependency {
-                        package: dependency.package,
-                        manifest,
-                    },
-                    is_root,
-                    lockfile,
-                    credentials,
-                    cache,
                     entries,
+                    ProcessLocalDependency {
+                        name: name.clone(),
+                        dependency: LocalDependency {
+                            package: dependency.package,
+                            manifest,
+                        },
+                        is_root,
+                        lockfile,
+                        credentials,
+                        cache,
+                        preserve_mtime,
+                    },
                 )
                 .await?;
             }
@@ -180,15 +225,19 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
-    async fn process_local_dependency(
-        name: PackageName,
-        dependency: LocalDependency,
-        _: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
+    async fn process_local_dependency<'a>(
+        entries: &'a mut HashMap<PackageName, ResolvedDependency>,
+        params: ProcessLocalDependency<'a>,
     ) -> miette::Result<()> {
+        let ProcessLocalDependency {
+            name,
+            dependency,
+            is_root: _,
+            lockfile,
+            credentials,
+            cache,
+            preserve_mtime,
+        } = params;
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
             .await?
             .ok_or_else(|| {
@@ -201,7 +250,7 @@ impl DependencyGraph {
             })?;
 
         let store = PackageStore::open(&dependency.manifest.path).await?;
-        let package = store.release(&manifest).await?;
+        let package = store.release(&manifest, preserve_mtime).await?;
 
         let dependency_name = package.name().clone();
         let sub_dependencies = package.manifest.dependencies.clone();
@@ -225,13 +274,16 @@ impl DependencyGraph {
 
         for sub_dependency in sub_dependencies {
             Self::process_dependency(
-                dependency_name.clone(),
-                sub_dependency,
-                false,
-                lockfile,
-                credentials,
-                cache,
                 entries,
+                ProcessDependency {
+                    name: dependency_name.clone(),
+                    dependency: sub_dependency,
+                    is_root: false,
+                    lockfile,
+                    credentials,
+                    cache,
+                    preserve_mtime,
+                },
             )
             .await?;
         }
@@ -240,15 +292,19 @@ impl DependencyGraph {
     }
 
     #[async_recursion]
-    async fn process_remote_dependency(
-        name: PackageName,
-        dependency: RemoteDependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
+    async fn process_remote_dependency<'a>(
+        entries: &'a mut HashMap<PackageName, ResolvedDependency>,
+        params: ProcessRemoteDependency<'a>,
     ) -> miette::Result<()> {
+        let ProcessRemoteDependency {
+            name,
+            dependency,
+            is_root,
+            lockfile,
+            credentials,
+            cache,
+            preserve_mtime,
+        } = params;
         let version_req = dependency.manifest.version.clone();
 
         if let Some(entry) = entries.get_mut(&dependency.package) {
@@ -307,13 +363,16 @@ impl DependencyGraph {
 
             for sub_dependency in sub_dependencies {
                 Self::process_dependency(
-                    dependency_name.clone(),
-                    sub_dependency,
-                    false,
-                    lockfile,
-                    credentials,
-                    cache,
                     entries,
+                    ProcessDependency {
+                        name: dependency_name.clone(),
+                        dependency: sub_dependency,
+                        is_root: false,
+                        lockfile,
+                        credentials,
+                        cache,
+                        preserve_mtime,
+                    },
                 )
                 .await?;
             }
