@@ -225,7 +225,7 @@ impl FromStr for RegistryUri {
 ///
 /// # Arguments
 /// * `url` - The URL to check
-pub fn sanity_check_url(url: &Url) -> miette::Result<()> {
+fn sanity_check_url(url: &Url) -> miette::Result<()> {
     let scheme = url.scheme();
 
     ensure!(
