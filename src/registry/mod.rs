@@ -21,14 +21,38 @@ mod artifactory;
 #[cfg(test)]
 mod cache;
 
-use crate::manifest::DependencyManifest;
 use crate::{config, manifest::Dependency};
+use crate::{errors::RegistryNameError, manifest::DependencyManifest};
 pub use artifactory::{Artifactory, CertValidationPolicy};
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
+
+/// Representation of a registry name
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct RegistryAlias(String);
+
+impl FromStr for RegistryAlias {
+    type Err = RegistryNameError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            Ok(RegistryAlias(s.to_string()))
+        } else {
+            Err(RegistryNameError)
+        }
+    }
+}
+
+impl Display for RegistryAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -52,11 +76,11 @@ pub enum RegistryRef {
     /// A URL to a registry
     Url(RegistryUri),
     /// An alias to a registry
-    Alias(String),
+    Alias(RegistryAlias),
     /// A resolved alias to a registry
     ResolvedAlias {
         /// The alias
-        alias: String,
+        alias: RegistryAlias,
         /// The resolved URL
         url: RegistryUri,
     },
@@ -79,7 +103,7 @@ impl RegistryRef {
                 }
                 None => Err(miette!(
                     "no configuration provided to resolve alias \"{}\"",
-                    alias
+                    alias.0
                 )),
             },
             _ => Ok(self.clone()),
@@ -167,7 +191,7 @@ impl FromStr for RegistryRef {
         match RegistryUri::from_str(value) {
             Ok(uri) => Ok(Self::Url(uri)),
             // If the value is not a valid URL, treat it as an alias
-            Err(_) => Ok(Self::Alias(value.to_owned())),
+            Err(_) => Ok(Self::Alias(value.parse()?)),
         }
     }
 }

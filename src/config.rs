@@ -11,23 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    str::FromStr,
 };
+
+use miette::{bail, miette, Context, IntoDiagnostic};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 use crate::{
     manifest::{Edition, CANARY_EDITION},
-    registry::{RegistryRef, RegistryUri},
+    registry::{RegistryAlias, RegistryRef, RegistryUri},
 };
 
 /// Location of the configuration file
 const CONFIG_FILE: &str = ".buffrs/config.toml";
-
-/// Key for common default arguments
-const DEFAULT_ARGS_KEY: &str = "*";
 
 /// Representation of the configuration file
 ///
@@ -49,22 +47,54 @@ const DEFAULT_ARGS_KEY: &str = "*";
 /// default_args = ["--generate-buf-yaml"]
 /// ```
 ///
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
     /// Edition of this configuration file (in sync with the Proto.toml edition)
+    #[serde(deserialize_with = "validate_edition")]
     edition: Edition,
 
     /// Path to the configuration file
+    #[serde(skip)]
     config_path: Option<PathBuf>,
 
     /// Default registry alias to use if none is specified
-    default_registry: Option<String>,
+    #[serde(default)]
+    pub registry: RegistryConfig,
 
     /// List of registries
-    registries: HashMap<String, RegistryUri>,
+    #[serde(default)]
+    registries: HashMap<RegistryAlias, RegistryUri>,
 
     /// Default arguments for commands
-    command_defaults: HashMap<String, Vec<String>>,
+    #[serde(rename = "commands", default)]
+    command_defaults: Commands,
+}
+
+/// Registry configuration
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct RegistryConfig {
+    /// Default registry alias to use if none is specified
+    pub default: Option<String>,
+}
+
+/// Commands configuration, including global and per-command default arguments
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Commands {
+    /// Default arguments for all commands
+    #[serde(rename = "default_args", default)]
+    pub common: Option<Vec<String>>,
+
+    /// Specific command configurations
+    #[serde(flatten)]
+    pub specific: HashMap<String, CommandConfig>,
+}
+
+/// Per-command configuration
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandConfig {
+    /// Default arguments for this command
+    #[serde(rename = "default_args", default)]
+    pub default_args: Option<Vec<String>>,
 }
 
 impl Config {
@@ -78,9 +108,9 @@ impl Config {
             None => Ok(Self {
                 edition: Edition::latest(),
                 config_path: None,
-                default_registry: None,
+                registry: RegistryConfig::default(),
                 registries: HashMap::new(),
-                command_defaults: HashMap::new(),
+                command_defaults: Commands::default(),
             }),
         }
     }
@@ -98,7 +128,7 @@ impl Config {
     pub fn parse_registry_arg(&self, registry: &Option<String>) -> miette::Result<RegistryRef> {
         match registry {
             Some(registry) => registry.parse(),
-            None => match &self.default_registry {
+            None => match &self.registry.default {
                 Some(default_registry) => default_registry.parse(),
                 None => bail!("no registry provided and no default registry found"),
             },
@@ -112,7 +142,7 @@ impl Config {
     ///
     /// # Returns
     /// The registry URI
-    pub fn lookup_registry(&self, name: &str) -> miette::Result<RegistryUri> {
+    pub(crate) fn lookup_registry(&self, name: &RegistryAlias) -> miette::Result<RegistryUri> {
         self.registries.get(name).cloned().ok_or_else(|| {
             miette!(
                 "registry '{}' not found in {}",
@@ -134,7 +164,7 @@ impl Config {
     /// A vector of default arguments for the specified command
     pub fn get_default_args(&self, command: Option<&str>) -> Vec<String> {
         self.command_defaults
-            .get(command.unwrap_or(DEFAULT_ARGS_KEY))
+            .get(command)
             .cloned()
             .unwrap_or_default()
     }
@@ -170,10 +200,23 @@ impl Config {
     /// # Arguments
     /// * `config_path` - Path to the configuration file
     fn new_from_config_file(config_path: &Path) -> miette::Result<Self> {
-        let config = Self::parse_config(config_path)?;
+        let config_str = std::fs::read_to_string(config_path)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "failed to read config file: {}",
+                config_path.display()
+            ))?;
 
-        // Load edition from root of the config file
-        let edition = config
+        let raw_config: toml::Value =
+            toml::from_str(&config_str)
+                .into_diagnostic()
+                .wrap_err(miette!(
+                    "failed to parse config file: {}",
+                    config_path.display()
+                ))?;
+
+        // Validate and parse the edition
+        let edition = raw_config
             .get("edition")
             .and_then(|edition| edition.as_str())
             .ok_or_else(|| miette!("missing or invalid 'edition' field in config file"))?
@@ -181,144 +224,60 @@ impl Config {
 
         match edition {
             Edition::Canary => (),
-            _ => bail!("unsupported config file edition, supported editions: {CANARY_EDITION}"),
+            _ => bail!(
+                "unsupported config file edition '{}', supported editions: {}",
+                Into::<&str>::into(edition),
+                CANARY_EDITION
+            ),
         }
 
-        // Load registries from [registries] section
-        let registries = Self::get_registries(&config, config_path)?;
-
-        // Locate default registry from [registry.default]
-        let default_registry = Self::get_default_registry(&config, &registries)?;
-
-        // Parse command-specific default arguments from [commands.*] sections
-        let command_defaults = Self::get_command_defaults(config, config_path)?;
-
-        Ok(Self {
-            edition,
-            config_path: Some(config_path.to_owned()),
-            default_registry,
-            registries,
-            command_defaults,
-        })
-    }
-
-    fn parse_config(config_path: &Path) -> Result<toml::Value, miette::Error> {
-        let config_str = std::fs::read_to_string(config_path)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "failed to read config file: {}",
-                config_path.display()
-            ))?;
-        let config: toml::Value =
+        // Deserialize the remaining fields into the `Config` struct
+        let mut config: Config =
             toml::from_str(&config_str)
                 .into_diagnostic()
                 .wrap_err(miette!(
-                    "failed to parse config file: {}",
+                    "failed to parse configuration fields in file: {}",
                     config_path.display()
                 ))?;
+
+        // Set the edition and config path manually
+        config.edition = edition;
+        config.config_path = Some(config_path.to_path_buf());
+
         Ok(config)
     }
+}
 
-    fn get_default_registry(
-        config: &toml::Value,
-        registries: &HashMap<String, RegistryUri>,
-    ) -> miette::Result<Option<String>> {
-        let default_registry = config
-            .get("registry")
-            .and_then(|registry| registry.get("default"))
-            .and_then(|default| default.as_str())
-            .map(|default| default.to_string());
-        if let Some(ref default_registry) = default_registry {
-            ensure!(
-                registries.contains_key(default_registry),
-                "default registry '{}' not found in list of registries",
-                default_registry
-            );
-        }
-        Ok(default_registry)
+fn validate_edition<'de, D>(deserializer: D) -> Result<Edition, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let edition: String = Deserialize::deserialize(deserializer)?;
+    match edition.as_str() {
+        "0.10" | "canary" => Ok(Edition::from(edition.as_str())),
+        _ => Err(de::Error::custom(format!(
+            "unsupported config file edition '{}', supported editions: 0.10, canary",
+            edition
+        ))),
     }
+}
 
-    /// Load registries from the [registries] section of the config file
+impl Commands {
+    /// Get the default arguments for a specific command
     ///
     /// # Arguments
-    /// * `config` - The parsed TOML configuration
-    /// * `config_path` - Path to the configuration file (for error messages)
+    /// * `command` - The command name to get default arguments for, or None for global defaults
     ///
     /// # Returns
-    /// A map of registry names to URIs
-    fn get_registries(
-        config: &toml::Value,
-        config_path: &Path,
-    ) -> miette::Result<HashMap<String, RegistryUri>> {
-        let registries = config
-            .get("registries")
-            .and_then(|registries| registries.as_table())
-            .map(|registries| {
-                registries
-                    .iter()
-                    .map(|(name, uri)| {
-                        let uri = uri
-                            .as_str()
-                            .ok_or_else(|| miette!("registry URI must be a string"))
-                            .wrap_err(miette!("invalid URI for registry '{}'", name))
-                            .wrap_err(miette!("in config file: {}", config_path.display()))?
-                            .parse()?;
-                        Ok((name.to_owned(), uri))
-                    })
-                    .collect::<miette::Result<HashMap<String, RegistryUri>>>()
-            })
-            .unwrap_or_else(|| Ok(HashMap::new()))
-            .wrap_err(miette!(
-                "failed to load registries from config file: {}",
-                config_path.display()
-            ))?;
-        Ok(registries)
-    }
-
-    fn get_command_defaults(
-        config: toml::Value,
-        config_path: &Path,
-    ) -> miette::Result<HashMap<String, Vec<String>>> {
-        let mut command_defaults = config
-            .get("commands")
-            .and_then(|commands| commands.as_table())
-            .map(|commands| {
-                commands
-                    .iter()
-                    .map(|(command, settings)| {
-                        let default_args = settings
-                            .get("default_args")
-                            .and_then(|args| args.as_array())
-                            .map(|args| {
-                                args.iter()
-                                    .filter_map(|arg| arg.as_str().map(|s| s.to_string()))
-                                    .collect::<Vec<String>>()
-                            })
-                            .unwrap_or_default();
-                        Ok((command.to_string(), default_args))
-                    })
-                    .collect::<miette::Result<HashMap<String, Vec<String>>>>()
-            })
-            .unwrap_or_else(|| Ok(HashMap::new()))
-            .wrap_err(miette!(
-                "failed to load command defaults from config file: {}",
-                config_path.display()
-            ))?;
-
-        // Load common default arguments
-        if let Some(global_args) = config
-            .get("commands")
-            .and_then(|commands| commands.get("default_args"))
-            .and_then(|args| args.as_array())
-        {
-            let global_defaults = global_args
-                .iter()
-                .filter_map(|arg| arg.as_str().map(|s| s.to_string()))
-                .collect::<Vec<String>>();
-            command_defaults.insert(DEFAULT_ARGS_KEY.to_string(), global_defaults);
+    /// A vector of default arguments for the specified command
+    pub fn get(&self, command: Option<&str>) -> Option<&Vec<String>> {
+        match command {
+            Some(command) => self
+                .specific
+                .get(command)
+                .and_then(|config| config.default_args.as_ref()),
+            None => self.common.as_ref(),
         }
-
-        Ok(command_defaults)
     }
 }
 
@@ -353,15 +312,17 @@ default_args = ["--generate-buf-yaml", "--generate-tonic-proto-module", "src/pro
         )
         .unwrap();
 
+        let alias: RegistryAlias = "acme".parse().unwrap();
         let config = Config::new_from_config_file(&config_path).unwrap();
+        println!("{:#?}", config);
         assert_eq!(config.edition, Edition::latest());
-        assert_eq!(config.default_registry, Some("acme".to_string()));
+        assert_eq!(config.registry.default, Some("acme".to_string()));
         assert_eq!(
-            config.registries.get("acme").unwrap(),
+            config.registries.get(&alias).unwrap(),
             &"https://conan.acme.com/artifactory".parse().unwrap()
         );
         assert_eq!(
-            config.command_defaults.get("install").unwrap(),
+            config.command_defaults.get(Some("install")).unwrap(),
             &vec![
                 "--generate-buf-yaml".to_string(),
                 "--generate-tonic-proto-module".to_string(),
@@ -369,8 +330,24 @@ default_args = ["--generate-buf-yaml", "--generate-tonic-proto-module", "src/pro
             ]
         );
         assert_eq!(
-            config.command_defaults.get(DEFAULT_ARGS_KEY).unwrap(),
+            config.command_defaults.get(None).unwrap(),
             &vec!["--insecure".to_string()]
         );
+    }
+
+    #[test]
+    fn test_new_from_empty_config_file() {
+        let tmp_dir = TempDir::new().unwrap();
+        let config_path = tmp_dir.path().join(CONFIG_FILE);
+        std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+        let mut file = File::create(&config_path).unwrap();
+        file.write_all(br#"edition = "0.10""#).unwrap();
+
+        let config = Config::new_from_config_file(&config_path).unwrap();
+        assert_eq!(config.edition, Edition::latest());
+        assert_eq!(config.registry.default, None);
+        assert!(config.registries.is_empty());
+        assert!(config.command_defaults.common.is_none());
+        assert!(config.command_defaults.specific.is_empty());
     }
 }

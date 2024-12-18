@@ -25,3 +25,8 @@ pub(crate) struct SerializationError(pub ManagedFile);
 #[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("file `{0}` is missing")]
 pub(crate) struct FileNotFound(pub String);
+
+/// Error for when a registry name is invalid.
+#[derive(thiserror::Error, Diagnostic, Debug)]
+#[error("Invalid registry name format")]
+pub struct RegistryNameError;
