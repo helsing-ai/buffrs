@@ -165,8 +165,6 @@ version: v2
 
 modules:
 lint:
-  use:
-    - DEFAULT
   except:
     - PACKAGE_VERSION_SUFFIX
 breaking:
