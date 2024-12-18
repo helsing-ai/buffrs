@@ -99,20 +99,82 @@ pub struct CommandConfig {
 
 impl Config {
     /// Create a new configuration with default values
-    /// # Arguments
-    /// * `cwd` - Starting directory to search for the configuration file
-    ///
-    pub fn new(cwd: Option<&Path>) -> miette::Result<Self> {
-        match Self::locate_config(cwd) {
-            Some(config_path) => Self::new_from_config_file(&config_path),
-            None => Ok(Self {
-                edition: Edition::latest(),
-                config_path: None,
-                registry: RegistryConfig::default(),
-                registries: HashMap::new(),
-                command_defaults: Commands::default(),
-            }),
+    pub fn new() -> Self {
+        Self {
+            edition: Edition::latest(),
+            config_path: None,
+            registry: RegistryConfig::default(),
+            registries: HashMap::new(),
+            command_defaults: Commands::default(),
         }
+    }
+
+    /// Create configuration from the workspace directory
+    /// by locating the configuration file in the workspace.
+    /// 
+    /// # Arguments
+    /// * `workspace` - Path to the workspace directory
+    /// 
+    /// # Returns
+    /// Configuration loaded from file if found; or default configuration otherwise.
+    pub fn new_from_workspace(workspace: &Path) -> miette::Result<Self> {
+        let config_path = Self::locate_config(Some(workspace));
+        match config_path {
+            Some(config_path) => Self::new_from_config_file(&config_path),
+            None => Ok(Default::default()),
+        }
+    }
+
+    /// Create configuration from a TOML file
+    ///
+    /// # Arguments
+    /// * `config_path` - Path to the configuration file
+    pub fn new_from_config_file(config_path: &Path) -> miette::Result<Self> {
+        let config_str = std::fs::read_to_string(config_path)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "failed to read config file: {}",
+                config_path.display()
+            ))?;
+
+        let raw_config: toml::Value =
+            toml::from_str(&config_str)
+                .into_diagnostic()
+                .wrap_err(miette!(
+                    "failed to parse config file: {}",
+                    config_path.display()
+                ))?;
+
+        // Validate and parse the edition
+        let edition = raw_config
+            .get("edition")
+            .and_then(|edition| edition.as_str())
+            .ok_or_else(|| miette!("missing or invalid 'edition' field in config file"))?
+            .into();
+
+        match edition {
+            Edition::Canary => (),
+            _ => bail!(
+                "unsupported config file edition '{}', supported editions: {}",
+                Into::<&str>::into(edition),
+                CANARY_EDITION
+            ),
+        }
+
+        // Deserialize the remaining fields into the `Config` struct
+        let mut config: Config =
+            toml::from_str(&config_str)
+                .into_diagnostic()
+                .wrap_err(miette!(
+                    "failed to parse configuration fields in file: {}",
+                    config_path.display()
+                ))?;
+
+        // Set the edition and config path manually
+        config.edition = edition;
+        config.config_path = Some(config_path.to_path_buf());
+
+        Ok(config)
     }
 
     /// Parse a registry argument
@@ -194,57 +256,11 @@ impl Config {
 
         None
     }
+}
 
-    /// Create configuration from a TOML file
-    ///
-    /// # Arguments
-    /// * `config_path` - Path to the configuration file
-    fn new_from_config_file(config_path: &Path) -> miette::Result<Self> {
-        let config_str = std::fs::read_to_string(config_path)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "failed to read config file: {}",
-                config_path.display()
-            ))?;
-
-        let raw_config: toml::Value =
-            toml::from_str(&config_str)
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "failed to parse config file: {}",
-                    config_path.display()
-                ))?;
-
-        // Validate and parse the edition
-        let edition = raw_config
-            .get("edition")
-            .and_then(|edition| edition.as_str())
-            .ok_or_else(|| miette!("missing or invalid 'edition' field in config file"))?
-            .into();
-
-        match edition {
-            Edition::Canary => (),
-            _ => bail!(
-                "unsupported config file edition '{}', supported editions: {}",
-                Into::<&str>::into(edition),
-                CANARY_EDITION
-            ),
-        }
-
-        // Deserialize the remaining fields into the `Config` struct
-        let mut config: Config =
-            toml::from_str(&config_str)
-                .into_diagnostic()
-                .wrap_err(miette!(
-                    "failed to parse configuration fields in file: {}",
-                    config_path.display()
-                ))?;
-
-        // Set the edition and config path manually
-        config.edition = edition;
-        config.config_path = Some(config_path.to_path_buf());
-
-        Ok(config)
+impl Default for Config {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -314,7 +330,6 @@ default_args = ["--generate-buf-yaml", "--generate-tonic-proto-module", "src/pro
 
         let alias: RegistryAlias = "acme".parse().unwrap();
         let config = Config::new_from_config_file(&config_path).unwrap();
-        println!("{:#?}", config);
         assert_eq!(config.edition, Edition::latest());
         assert_eq!(config.registry.default, Some("acme".to_string()));
         assert_eq!(

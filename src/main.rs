@@ -216,12 +216,9 @@ async fn main() -> miette::Result<()> {
 }
 
 /// Main entry point for the CLI
-///
-/// This function is part of the library crate to allow for `buffrs` to be
-/// called from a `build.rs` script.
 async fn run(args: &[String]) -> miette::Result<()> {
     let cwd = std::env::current_dir().into_diagnostic()?;
-    let config = Config::new(Some(&cwd))?;
+    let config = Config::new_from_workspace(&cwd)?;
 
     // Merge default arguments with user-specified arguments
     let merged_args = merge_args_with_defaults(&config, args);
