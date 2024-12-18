@@ -24,7 +24,7 @@ use url::Url;
 use crate::{
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{Package, PackageName},
-    registry::RegistryUri,
+    registry::{RegistryRef, RegistryUri},
     ManagedFile,
 };
 
@@ -44,7 +44,8 @@ pub struct LockedPackage {
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
-    pub registry: RegistryUri,
+    #[serde(serialize_with = "RegistryRef::serialize_resolved")]
+    pub registry: RegistryRef,
     /// The identifier of the repository where the package was published
     pub repository: String,
     /// The exact version of the package
@@ -61,7 +62,7 @@ impl LockedPackage {
     /// Captures the source, version and checksum of a Package for use in reproducible installs
     pub fn lock(
         package: &Package,
-        registry: RegistryUri,
+        registry: RegistryRef,
         repository: String,
         dependants: usize,
     ) -> Self {
@@ -220,9 +221,14 @@ impl FromIterator<LockedPackage> for Lockfile {
     }
 }
 
-impl From<Lockfile> for Vec<FileRequirement> {
-    fn from(lock: Lockfile) -> Self {
-        lock.packages.values().map(FileRequirement::from).collect()
+impl TryFrom<Lockfile> for Vec<FileRequirement> {
+    type Error = miette::Report;
+
+    fn try_from(lock: Lockfile) -> miette::Result<Self> {
+        lock.packages
+            .values()
+            .map(FileRequirement::try_from)
+            .collect()
     }
 }
 
@@ -244,13 +250,15 @@ impl FileRequirement {
 
     /// Construct new file requirement.
     pub fn new(
-        url: &RegistryUri,
+        url: &RegistryRef,
         repository: &String,
         name: &PackageName,
         version: &Version,
         digest: &Digest,
-    ) -> Self {
-        let mut url = url.clone();
+    ) -> miette::Result<Self> {
+        let url: RegistryUri = url.try_into()?;
+        let mut url: url::Url = url.into();
+
         let new_path = format!(
             "{}/{}/{}/{}-{}.tgz",
             url.path(),
@@ -262,16 +270,18 @@ impl FileRequirement {
 
         url.set_path(&new_path);
 
-        Self {
+        Ok(Self {
             package: name.to_owned(),
-            url: url.into(),
+            url,
             digest: digest.clone(),
-        }
+        })
     }
 }
 
-impl From<LockedPackage> for FileRequirement {
-    fn from(package: LockedPackage) -> Self {
+impl TryFrom<LockedPackage> for FileRequirement {
+    type Error = miette::Report;
+
+    fn try_from(package: LockedPackage) -> miette::Result<Self> {
         Self::new(
             &package.registry,
             &package.repository,
@@ -282,8 +292,10 @@ impl From<LockedPackage> for FileRequirement {
     }
 }
 
-impl From<&LockedPackage> for FileRequirement {
-    fn from(package: &LockedPackage) -> Self {
+impl TryFrom<&LockedPackage> for FileRequirement {
+    type Error = miette::Report;
+
+    fn try_from(package: &LockedPackage) -> miette::Result<Self> {
         Self::new(
             &package.registry,
             &package.repository,

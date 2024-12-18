@@ -12,17 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
 use crate::{
     credentials::Credentials,
     manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
+    registry::RegistryUri,
 };
 use miette::{ensure, miette, Context, IntoDiagnostic};
 use reqwest::{Body, Method, Response};
 use semver::Version;
 use serde::Deserialize;
 use url::Url;
+
+/// The policy for validating artifactory server certificates
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CertValidationPolicy {
+    /// Validate the certificate
+    #[default]
+    Validate,
+
+    /// Do not validate the certificate
+    NoValidation,
+}
 
 /// The registry implementation for artifactory
 #[derive(Debug, Clone)]
@@ -34,14 +45,27 @@ pub struct Artifactory {
 
 impl Artifactory {
     /// Creates a new instance of an Artifactory registry client
-    pub fn new(registry: RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
+    ///
+    /// # Arguments
+    /// * `registry` - The registry URI
+    /// * `credentials` - The credentials to use for the registry
+    /// * `policy` - The policy for validating artifactory server certificates
+    pub fn new(
+        registry: RegistryUri,
+        credentials: &Credentials,
+        policy: CertValidationPolicy,
+    ) -> miette::Result<Self> {
+        let token = credentials.registry_tokens.get(&registry).cloned();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .danger_accept_invalid_certs(policy == CertValidationPolicy::NoValidation)
+            .build()
+            .into_diagnostic()?;
+
         Ok(Self {
-            registry: registry.clone(),
-            token: credentials.registry_tokens.get(&registry).cloned(),
-            client: reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .into_diagnostic()?,
+            registry,
+            token,
+            client,
         })
     }
 
@@ -58,10 +82,10 @@ impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
+            let mut uri: url::Url = self.registry.to_owned().into();
             let path = &format!("{}/api/repositories", uri.path());
             uri.set_path(path);
-            uri.into()
+            uri
         };
 
         self.new_request(Method::GET, repositories_url)
@@ -79,10 +103,10 @@ impl Artifactory {
     ) -> miette::Result<Version> {
         // First retrieve all packages matching the given name
         let search_query_url: Url = {
-            let mut url = self.registry.clone();
-            url.set_path("artifactory/api/search/artifact");
-            url.set_query(Some(&format!("name={}&repos={}", name, repository)));
-            url.into()
+            let mut uri: url::Url = self.registry.to_owned().into();
+            uri.set_path("artifactory/api/search/artifact");
+            uri.set_query(Some(&format!("name={}&repos={}", name, repository)));
+            uri
         };
 
         let response = self
@@ -162,24 +186,22 @@ impl Artifactory {
 
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
+            let url: RegistryUri = self.registry.clone();
+            let mut url: url::Url = url.into();
+            let path = url.path();
 
-            let path = manifest.registry.path().to_owned();
-
-            let mut url = manifest.registry.clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
                 path, manifest.repository, dependency.package, dependency.package, version
             ));
 
-            url.into()
+            url
         };
 
         tracing::debug!("Hitting download URL: {artifact_url}");
 
         let response = self.new_request(Method::GET, artifact_url).send().await?;
-
         let response: reqwest::Response = response.0;
-
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)

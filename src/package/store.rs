@@ -24,8 +24,10 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
+    config::Config,
     manifest::{Manifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName, PackageType},
+    resolver::DependencyGraph,
 };
 
 /// IO abstraction layer over local `buffrs` package store
@@ -40,7 +42,10 @@ impl PackageStore {
     /// Path to the dependency store
     pub const PROTO_VENDOR_PATH: &'static str = "proto/vendor";
 
-    fn new(root: PathBuf) -> Self {
+    /// Create a new package store from a given path
+    ///
+    /// Note: pub(crate) for use by unit tests
+    pub(crate) fn new(root: PathBuf) -> Self {
         Self { root }
     }
 
@@ -122,13 +127,19 @@ impl PackageStore {
     }
 
     /// Resolves a package in the local file system
-    pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
+    pub async fn resolve(
+        &self,
+        package: &PackageName,
+        config: &Config,
+    ) -> miette::Result<Manifest> {
         let manifest = self.locate(package).join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest).await?.ok_or(miette!(
-            "the package store is corrupted: `{}` is not present",
-            manifest.display()
-        ))?;
+        let manifest = Manifest::try_read_from(&manifest, Some(config))
+            .await?
+            .ok_or(miette!(
+                "the package store is corrupted: `{}` is not present",
+                manifest.display()
+            ))?;
 
         Ok(manifest)
     }
@@ -151,14 +162,39 @@ impl PackageStore {
         parser.validate()
     }
 
-    /// Packages a release from the local file system state
+    /// Packages a release from the local file system state or from a dependency graph.
+    ///
+    /// This method will package the contents of the local file system into a `Package` instance.
+    /// If the `deps` argument is provided, it will fetch the dependencies from the graph
+    /// instead of the local file system.
+    ///
+    /// # Arguments
+    /// - `manifest` - Package manifest to package
+    /// - `config` - Configuration to use (for alias resolution)
+    /// - `deps` - Optional dependency graph to fetch dependencies from
+    ///
+    /// # Returns
+    /// A `Package` instance representing the packaged release
     pub async fn release(
         &self,
         manifest: &Manifest,
         preserve_mtime: bool,
+        config: &Config,
+        deps: Option<&DependencyGraph>,
     ) -> miette::Result<Package> {
         for dependency in manifest.dependencies.iter() {
-            let resolved = self.resolve(&dependency.package).await?;
+            let resolved = if let Some(deps) = deps {
+                deps.get(&dependency.package)
+                    .map(|dep| dep.package().manifest.clone())
+            } else {
+                None
+            };
+
+            let resolved = if let Some(resolved) = resolved {
+                resolved
+            } else {
+                self.resolve(&dependency.package, config).await?
+            };
 
             let Some(ref resolved_pkg) = resolved.package else {
                 bail!("upstream package is invalid, [package] section is missing in manifest");

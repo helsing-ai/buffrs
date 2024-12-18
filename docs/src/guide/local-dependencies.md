@@ -64,7 +64,7 @@ mono
 Where `mono/mono-api/Proto.toml` has this content:
 
 ```
-edition = "0.9"
+edition = "0.10"
 
 [package]
 type = "api"
@@ -75,7 +75,7 @@ version = "0.1.0"
 And `mono/mono-server/Proto.toml` has this content:
 
 ```
-edition = "0.9"
+edition = "0.10"
 
 [dependencies]
 mono-api = { path = "../api" }
