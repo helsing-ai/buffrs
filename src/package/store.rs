@@ -18,6 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use bytes::Bytes;
 use miette::{bail, ensure, miette, Context, IntoDiagnostic};
 use tokio::fs;
 use walkdir::WalkDir;
@@ -177,6 +178,7 @@ impl PackageStore {
     pub async fn release(
         &self,
         manifest: &Manifest,
+        preserve_mtime: bool,
         config: &Config,
         deps: Option<&DependencyGraph>,
     ) -> miette::Result<Package> {
@@ -210,10 +212,17 @@ impl PackageStore {
         for entry in self.collect(&pkg_path, false).await {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry).await.unwrap();
-            entries.insert(path.into(), contents.into());
+
+            entries.insert(
+                path.into(),
+                Entry {
+                    contents: contents.into(),
+                    metadata: tokio::fs::metadata(&entry).await.ok(),
+                },
+            );
         }
 
-        let package = Package::create(manifest.clone(), entries)?;
+        let package = Package::create(manifest.clone(), entries, preserve_mtime)?;
 
         tracing::info!(":: packaged {}@{}", package.name(), package.version());
 
@@ -297,6 +306,13 @@ impl PackageStore {
     pub async fn populated_files(&self, manifest: &PackageManifest) -> Vec<PathBuf> {
         self.collect(&self.populated_path(manifest), true).await
     }
+}
+
+pub struct Entry {
+    /// Actual bytes of the file
+    pub contents: Bytes,
+    /// File metadata, like mtime, ...
+    pub metadata: Option<std::fs::Metadata>,
 }
 
 #[test]

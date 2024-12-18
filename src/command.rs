@@ -25,7 +25,7 @@ use crate::{
 };
 
 use async_recursion::async_recursion;
-use miette::{bail, ensure, miette, Context, IntoDiagnostic};
+use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
 use semver::{Version, VersionReq};
 use std::{
     env,
@@ -244,7 +244,11 @@ pub async fn remove(package: PackageName, config: &Config) -> miette::Result<()>
 /// # Arguments
 /// * `set_version` - Desired manifest version
 /// * `config` - Configuration data used for registry alias resolution
-async fn prepare_package(set_version: Option<Version>, config: &Config) -> miette::Result<Package> {
+async fn prepare_package(
+    set_version: Option<Version>,
+    preserve_mtime: bool,
+    config: &Config,
+) -> miette::Result<Package> {
     let mut manifest = Manifest::read(config).await?;
     let store = PackageStore::current().await?;
 
@@ -259,7 +263,9 @@ async fn prepare_package(set_version: Option<Version>, config: &Config) -> miett
         store.populate(pkg).await?;
     }
 
-    let package = store.release(&manifest, config, None).await?;
+    let package = store
+        .release(&manifest, preserve_mtime, config, None)
+        .await?;
 
     // Ensure package was fully resolved
     package.manifest.assert_fully_resolved()?;
@@ -272,10 +278,11 @@ pub async fn package(
     directory: impl AsRef<Path>,
     dry_run: bool,
     version: Option<Version>,
+    preserve_mtime: bool,
     config: &Config,
 ) -> miette::Result<()> {
     // Prepare the package
-    let package = prepare_package(version, config).await?;
+    let package = prepare_package(version, preserve_mtime, config).await?;
 
     if dry_run {
         return Ok(());
@@ -296,12 +303,14 @@ pub async fn package(
 }
 
 /// Publishes the api package to the registry
+#[allow(clippy::too_many_arguments)]
 pub async fn publish(
     registry: &RegistryRef,
     repository: String,
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
+    preserve_mtime: bool,
     config: &Config,
     policy: CertValidationPolicy,
 ) -> miette::Result<()> {
@@ -359,7 +368,7 @@ pub async fn publish(
         }
     }
 
-    let package = prepare_package(version, config).await?;
+    let package = prepare_package(version, preserve_mtime, config).await?;
     let credentials = Credentials::load().await?;
     let artifactory = Artifactory::new(registry.try_into()?, &credentials, policy)?;
 
@@ -390,10 +399,12 @@ pub enum GenerationOption {
 /// Installs dependencies
 ///
 /// # Arguments
+/// * `preserve_mtime` - If `true`, local dependencies will keep their modification time
 /// * `mode` - The install mode (dependencies only or all)
 /// * `generation` - Flags for generation of files
 /// * `config` - The configuration
 pub async fn install(
+    preserve_mtime: bool,
     mode: InstallMode,
     generation: &[GenerationOption],
     config: &Config,
@@ -415,11 +426,18 @@ pub async fn install(
         }
     }
 
-    let dependency_graph =
-        DependencyGraphBuilder::new(&manifest, &lockfile, &credentials, &cache, config, policy)
-            .build()
-            .await
-            .wrap_err(miette!("dependency resolution failed"))?;
+    let dependency_graph = DependencyGraphBuilder::new(
+        &manifest,
+        &lockfile,
+        &credentials,
+        &cache,
+        preserve_mtime,
+        config,
+        policy,
+    )
+    .build()
+    .await
+    .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 

@@ -17,7 +17,7 @@ use std::env;
 use buffrs::command::{self, GenerationOption, InstallMode};
 use buffrs::config::Config;
 use buffrs::manifest::Manifest;
-use buffrs::package::PackageName;
+use buffrs::package::{PackageName, PackageStore};
 use buffrs::registry::CertValidationPolicy;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{CommandFactory, Parser, Subcommand};
@@ -108,6 +108,10 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
+        /// Indicate whether access time information is preserved when creating a package.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_mtime: Option<bool>,
     },
 
     /// Packages and uploads this api to the registry
@@ -129,10 +133,19 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
+        /// Indicate whether access time information is preserved when creating a package.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_mtime: Option<bool>,
     },
 
     /// Installs dependencies
     Install {
+        /// Indicate whether access time information is preserved when installing a local.
+        /// Default is 'true'
+        #[clap(long)]
+        preserve_local_mtime: Option<bool>,
+
         /// Only install dependencies
         #[clap(long, default_value = "false")]
         only_dependencies: bool,
@@ -292,25 +305,35 @@ async fn run(args: &[String]) -> miette::Result<()> {
             output_directory,
             dry_run,
             set_version,
-        } => command::package(output_directory, dry_run, set_version, &config)
-            .await
-            .wrap_err(miette!(
-                "failed to export `{package}` into the buffrs package format"
-            )),
+            preserve_mtime,
+        } => command::package(
+            output_directory,
+            dry_run,
+            set_version,
+            preserve_mtime.unwrap_or(true),
+            &config,
+        )
+        .await
+        .wrap_err(miette!(
+            "failed to export `{package}` into the buffrs package format"
+        )),
         Command::Publish {
             registry,
             repository,
             allow_dirty,
             dry_run,
             set_version,
+            preserve_mtime,
         } => {
             let registry = config.parse_registry_arg(&registry)?;
             command::publish(
                 &registry,
                 repository.to_owned(),
+                #[cfg(feature = "git")]
                 allow_dirty,
                 dry_run,
                 set_version,
+                preserve_mtime.unwrap_or(true),
                 &config,
                 policy,
             )
@@ -319,10 +342,12 @@ async fn run(args: &[String]) -> miette::Result<()> {
                 "failed to publish `{package}` to `{registry}:{repository}`",
             ))
         }
-        Command::Lint => command::lint(&config)
-            .await
-            .wrap_err(miette!("failed to lint protocol buffers",)),
+        Command::Lint => command::lint(&config).await.wrap_err(miette!(
+            "failed to lint protocol buffers in `{}`",
+            PackageStore::PROTO_PATH
+        )),
         Command::Install {
+            preserve_local_mtime,
             only_dependencies,
             generate_buf_yaml,
         } => {
@@ -338,9 +363,15 @@ async fn run(args: &[String]) -> miette::Result<()> {
                 InstallMode::All
             };
 
-            command::install(install_mode, &generation_options, &config, policy)
-                .await
-                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+            command::install(
+                preserve_local_mtime.unwrap_or(true),
+                install_mode,
+                &generation_options,
+                &config,
+                policy,
+            )
+            .await
+            .wrap_err(miette!("failed to install dependencies for `{package}`"))
         }
         Command::Uninstall => command::uninstall()
             .await

@@ -1,12 +1,13 @@
-use async_recursion::async_recursion;
-use miette::{bail, ensure, Context, Diagnostic, IntoDiagnostic};
-use semver::VersionReq;
 use std::{
     collections::HashMap,
     env,
     ops::{Deref, DerefMut},
     path::{Path, PathBuf},
 };
+
+use async_recursion::async_recursion;
+use miette::{bail, ensure, Context, Diagnostic, IntoDiagnostic};
+use semver::VersionReq;
 use thiserror::Error;
 
 use crate::{
@@ -88,6 +89,7 @@ pub struct DependencyGraphBuilder<'a> {
     lockfile: &'a Lockfile,
     credentials: &'a Credentials,
     cache: &'a Cache,
+    preserve_mtime: bool,
     config: &'a Config,
     policy: CertValidationPolicy,
 }
@@ -104,6 +106,27 @@ impl From<RemoteDependency> for Dependency {
             package: value.package,
             manifest: value.manifest.into(),
         }
+    }
+}
+
+impl DependencyGraph {
+    /// Locates and returns a reference to a resolved dependency package by its name
+    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
+        self.entries.get(name)
+    }
+
+    /// Returns a list of all package names in the dependency graph
+    pub fn get_package_names(&self) -> Vec<PackageName> {
+        self.entries.keys().cloned().collect()
+    }
+}
+
+impl IntoIterator for DependencyGraph {
+    type Item = ResolvedDependency;
+    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_values()
     }
 }
 
@@ -134,27 +157,6 @@ struct DownloadError {
     version: VersionReq,
 }
 
-impl DependencyGraph {
-    /// Locates and returns a reference to a resolved dependency package by its name
-    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
-        self.entries.get(name)
-    }
-
-    /// Returns a list of all package names in the dependency graph
-    pub fn get_package_names(&self) -> Vec<PackageName> {
-        self.entries.keys().cloned().collect()
-    }
-}
-
-impl IntoIterator for DependencyGraph {
-    type Item = ResolvedDependency;
-    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_values()
-    }
-}
-
 impl<'a> DependencyGraphBuilder<'a> {
     /// Creates a new dependency graph builder
     ///
@@ -163,6 +165,7 @@ impl<'a> DependencyGraphBuilder<'a> {
     /// - `lockfile`: Lockfile of the root package
     /// - `credentials`: Credentials used to authenticate with remote registries
     /// - `cache`: Cache used to store downloaded packages
+    /// - `preserve_mtime`: Whether to preserve modification times during package release
     /// - `config`: Configuration settings
     /// - `policy`: Policy used to validate certificates
     ///
@@ -173,6 +176,7 @@ impl<'a> DependencyGraphBuilder<'a> {
         lockfile: &'a Lockfile,
         credentials: &'a Credentials,
         cache: &'a Cache,
+        preserve_mtime: bool,
         config: &'a Config,
         policy: CertValidationPolicy,
     ) -> Self {
@@ -183,6 +187,7 @@ impl<'a> DependencyGraphBuilder<'a> {
             cache,
             config,
             policy,
+            preserve_mtime,
         }
     }
 
@@ -311,7 +316,9 @@ impl<'a> DependencyGraphBuilder<'a> {
 
         let package = if is_root {
             let store = PackageStore::open(&abs_manifest_dir).await?;
-            let package = store.release(&manifest, self.config, Some(deps)).await?;
+            let package = store
+                .release(&manifest, self.preserve_mtime, self.config, Some(deps))
+                .await?;
 
             // Ensure that the package version doesn't clash with an existing entry,
             // and that it matches the version requirement in the manifest

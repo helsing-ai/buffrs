@@ -16,6 +16,7 @@ use std::{
     collections::BTreeMap,
     io::{self, Cursor, Read, Write},
     path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use bytes::{Buf, Bytes};
@@ -31,6 +32,8 @@ use crate::{
     registry::RegistryRef,
     ManagedFile,
 };
+
+use super::store::Entry;
 
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -48,10 +51,14 @@ impl Package {
     ///
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
-    pub fn create(mut manifest: Manifest, files: BTreeMap<PathBuf, Bytes>) -> miette::Result<Self> {
+    pub fn create(
+        mut manifest: Manifest,
+        files: BTreeMap<PathBuf, Entry>,
+        preserve_mtime: bool,
+    ) -> miette::Result<Self> {
         // Create a new conforming manifest if the edition is unknown
         if manifest.edition == Edition::Unknown {
-            manifest = Manifest::new(manifest.package.clone(), manifest.dependencies.clone());
+            manifest = Manifest::new(manifest.package, manifest.dependencies);
         }
 
         // Ensure the manifest has a package declaration
@@ -69,8 +76,23 @@ impl Package {
         Self::add_manifest_to_archive(&mut archive, manifest.clone())?;
 
         // Add files to the archive
-        for (name, contents) in &files {
+        for (name, entry) in &files {
             let mut header = tar::Header::new_gnu();
+
+            let Entry { contents, metadata } = entry;
+
+            if preserve_mtime {
+                let mtime = metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.modified().ok())
+                    .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                    .map(|duration| duration.as_secs());
+
+                if let Some(mtime) = mtime {
+                    header.set_mtime(mtime);
+                }
+            }
+
             header.set_mode(0o444);
             header.set_size(contents.len() as u64);
             archive

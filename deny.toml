@@ -12,15 +12,11 @@ multiple-versions = "warn"
 wildcards = "deny"
 
 skip = [
-    { crate = "bitflags@1",     reason = "used by `redox`, `security-framework` and `system-configuration`" },
-    { crate = "hashbrown@0.12", reason = "used by `protobuf-parse`" },
-    { crate = "heck@0.4",       reason = "used by `strum` and `sqlx`" },
-    { crate = "indexmap@1",     reason = "used by `protobuf-parse`" },
-    { crate = "syn@1",          reason = "used by `diff_derive`" },
+    { crate = "bitflags@1", reason = "used by `redox`, `security-framework` and `system-configuration`" },
 ]
 
 skip-tree = [
-    { crate = "windows-sys",     reason = "Several foundational crates are not yet up to date" },
+    { crate = "windows-sys", reason = "Several foundational crates are not yet up to date" },
     { crate = "windows-targets", reason = "Several foundational crates are not yet up to date" },
 ]
 
