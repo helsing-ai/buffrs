@@ -111,10 +111,10 @@ impl Config {
 
     /// Create configuration from the workspace directory
     /// by locating the configuration file in the workspace.
-    /// 
+    ///
     /// # Arguments
     /// * `workspace` - Path to the workspace directory
-    /// 
+    ///
     /// # Returns
     /// Configuration loaded from file if found; or default configuration otherwise.
     pub fn new_from_workspace(workspace: &Path) -> miette::Result<Self> {
