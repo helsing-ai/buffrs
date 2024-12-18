@@ -97,9 +97,9 @@ impl Config {
     /// - None -> alias://<default>
     pub fn parse_registry_arg(&self, registry: &Option<String>) -> miette::Result<RegistryRef> {
         match registry {
-            Some(registry) => RegistryRef::from_str(registry),
+            Some(registry) => registry.parse(),
             None => match &self.default_registry {
-                Some(default_registry) => RegistryRef::from_str(default_registry),
+                Some(default_registry) => default_registry.parse(),
                 None => bail!("no registry provided and no default registry found"),
             },
         }
