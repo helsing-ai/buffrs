@@ -88,12 +88,28 @@
               '';
             };
           } // buffrs.checks);
-
-          overlays.default = (_final: _prev: { buffrs = app; });
         });
     in perSystemOutputs // {
-      overlays.default = (final: _prev: {
-        buffrs = perSystemOutputs.packages.${final.stdenv.system}.default;
-      });
+      overlays = let
+        inherit (nixpkgs.lib) composeManyExtensions;
+        simple = final: _:
+          let rustToolchain = final.callPackage ./nix/toolchain.nix { };
+          in {
+            buffrs = final.callPackage ./nix/buffrs.nix {
+              inherit crane rustToolchain;
+            };
+          };
+        shim = final: prev: {
+          rust-bin = prev.rust-bin or nixpkgs.lib.trivial.warn ''
+            Unable to locate existing rust-bin, shimming the one from buffrs/rust-overlay.
+            You can avoid this warning by explicity listing rust-overlay in the overlays you pass to your nixpkgs initialization, or by using `buffrs.overlays.complete`.
+            Buffrs will stop including rust-overlay implicitly in a future version.
+          '' (rust-overlay.overlays.default final prev).rust-bin;
+        };
+      in {
+        default = composeManyExtensions [ shim simple ];
+        complete =
+          composeManyExtensions [ rust-overlay.overlays.default simple ];
+      };
     };
 }
