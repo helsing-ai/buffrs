@@ -313,7 +313,7 @@ impl DependencyGraph {
                     path, dependants, ..
                 } => {
                     bail!(
-                        "a dependency of your project requires {}@{} which collides with a local dependency for {}@{} required by {:?}", 
+                        "a dependency of your project requires {}@{} which collides with a local dependency for {}@{} required by {:?}",
                         dependency.package,
                         dependency.manifest.version,
                         dependency.package,

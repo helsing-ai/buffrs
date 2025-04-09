@@ -38,7 +38,7 @@ pub const CANARY_EDITION: &str = concat!("0.", env!("CARGO_PKG_VERSION_MINOR"));
 
 /// Edition of the buffrs manifest
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(into = "&str", from = "&str")]
+#[serde(into = "Cow<str>", from = "Cow<str>")]
 pub enum Edition {
     /// The canary edition of manifests
     ///
@@ -64,9 +64,22 @@ impl Edition {
     }
 }
 
-impl From<&str> for Edition {
-    fn from(value: &str) -> Self {
-        match value {
+use std::borrow::Cow;
+
+impl<'a> From<&'a str> for Edition {
+    fn from(value: &'a str) -> Self {
+        match &*value {
+            self::CANARY_EDITION => Self::Canary,
+            "0.8" => Self::Canary08,
+            "0.7" => Self::Canary07,
+            _ => Self::Unknown,
+        }
+    }
+}
+
+impl<'a> From<Cow<'a, str>> for Edition {
+    fn from(value: Cow<'a, str>) -> Self {
+        match &*value {
             self::CANARY_EDITION => Self::Canary,
             "0.8" => Self::Canary08,
             "0.7" => Self::Canary07,
@@ -86,13 +99,26 @@ impl From<Edition> for &'static str {
     }
 }
 
+impl From<Edition> for Cow<'static, str> {
+    fn from(value: Edition) -> Self {
+        Cow::Borrowed(match value {
+            Edition::Canary => CANARY_EDITION,
+            Edition::Canary08 => "0.8",
+            Edition::Canary07 => "0.7",
+            Edition::Unknown => "unknown",
+        })
+    }
+}
+
 /// A buffrs manifest format used for serialization and deserialization.
 ///
 /// This contains the exact structure of the `Proto.toml` and skips
 /// empty fields.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
 enum RawManifest {
     Canary {
+        edition: Edition,
         package: Option<PackageManifest>,
         dependencies: DependencyMap,
     },
@@ -125,105 +151,44 @@ impl RawManifest {
     }
 }
 
-mod serializer {
-    use super::*;
-    use serde::{ser::SerializeStruct, Serializer};
-
-    impl Serialize for RawManifest {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            match *self {
-                RawManifest::Canary {
-                    ref package,
-                    ref dependencies,
-                } => {
-                    let mut s = serializer.serialize_struct("Canary", 3)?;
-                    s.serialize_field("edition", CANARY_EDITION)?;
-                    s.serialize_field("package", package)?;
-                    s.serialize_field("dependencies", dependencies)?;
-                    s.end()
-                }
-                RawManifest::Unknown {
-                    ref package,
-                    ref dependencies,
-                } => {
-                    let mut s = serializer.serialize_struct("Unknown", 2)?;
-                    s.serialize_field("package", package)?;
-                    s.serialize_field("dependencies", dependencies)?;
-                    s.end()
-                }
-            }
+#[test]
+fn manifest() {
+    let mut dependencies = HashMap::new();
+    dependencies.insert(
+        PackageName::new("foo".to_string()).unwrap(),
+        LocalDependencyManifest {
+            path: Path::new("/foo/bar").to_path_buf(),
         }
-    }
+        .into(),
+    );
+    let man = RawManifest::Canary {
+        edition: Edition::from(CANARY_EDITION),
+        package: None,
+        dependencies,
+    };
+    let x = toml::to_string(&man).unwrap();
+    assert_eq!(
+        x,
+        format!(
+            "edition = \"{}\"\n\n[dependencies.foo]\npath = \"/foo/bar\"\n",
+            CANARY_EDITION
+        )
+    );
+
+    assert_eq!(toml::from_str::<RawManifest>(&x).unwrap(), man);
 }
 
-mod deserializer {
-    use serde::{
-        de::{self, MapAccess, Visitor},
-        Deserializer,
-    };
-
-    use super::*;
-
-    impl<'de> Deserialize<'de> for RawManifest {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            static FIELDS: &[&str] = &["package", "dependencies"];
-
-            struct ManifestVisitor;
-
-            impl<'de> Visitor<'de> for ManifestVisitor {
-                type Value = RawManifest;
-
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a buffrs manifest (`Proto.toml`)")
-                }
-
-                fn visit_map<V>(self, mut map: V) -> Result<RawManifest, V::Error>
-                where
-                    V: MapAccess<'de>,
-                {
-                    let mut edition: Option<String> = None;
-                    let mut package: Option<PackageManifest> = None;
-                    let mut dependencies: Option<HashMap<PackageName, DependencyManifest>> = None;
-
-                    while let Some(key) = map.next_key::<String>()? {
-                        match key.as_str() {
-                            "package" => package = Some(map.next_value()?),
-                            "dependencies" => dependencies = Some(map.next_value()?),
-                            "edition" => edition = Some(map.next_value()?),
-                            _ => return Err(de::Error::unknown_field(&key, FIELDS)),
-                        }
-                    }
-
-                    let dependencies = dependencies.unwrap_or_default();
-
-                    let Some(edition) = edition else {
-                        return Ok(RawManifest::Unknown {
-                            package,
-                            dependencies,
-                        });
-                    };
-
-                    match Edition::from(edition.as_str()) {
-                        Edition::Canary | Edition::Canary08 | Edition::Canary07 => Ok(RawManifest::Canary {
-                            package,
-                            dependencies,
-                        }),
-                        Edition::Unknown => Err(de::Error::custom(
-                            format!("unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}", env!("CARGO_PKG_VERSION"))
-                        )),
-                    }
-                }
-            }
-
-            deserializer.deserialize_map(ManifestVisitor)
-        }
+#[test]
+fn canary() {
+    let ed = Edition::from(CANARY_EDITION);
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    struct Ed {
+        ed: Edition,
     }
+    let ed = Ed { ed };
+    let x = toml::to_string(&ed).unwrap();
+    assert_eq!(x, format!("ed = \"{}\"\n", CANARY_EDITION));
+    assert_eq!(toml::from_str::<Ed>(&x).unwrap(), ed);
 }
 
 impl From<Manifest> for RawManifest {
@@ -236,6 +201,7 @@ impl From<Manifest> for RawManifest {
 
         match manifest.edition {
             Edition::Canary | Edition::Canary08 | Edition::Canary07 => RawManifest::Canary {
+                edition: manifest.edition,
                 package: manifest.package,
                 dependencies,
             },
