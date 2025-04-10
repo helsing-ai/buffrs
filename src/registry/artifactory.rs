@@ -67,7 +67,8 @@ impl Artifactory {
         self.new_request(Method::GET, repositories_url)
             .send()
             .await
-            .map(|_| ())}
+            .map(|_| ())
+    }
 
     /// Retrieves the latest version of a package by querying artifactory. Returns an error if no artifact could be found
     pub async fn get_latest_version(

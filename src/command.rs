@@ -193,8 +193,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
                 .get_latest_version(repository.clone(), package.clone())
                 .await?;
             // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
-            VersionReq::parse(&latest_version.to_string())
-                .into_diagnostic()?
+            VersionReq::parse(&latest_version.to_string()).into_diagnostic()?
         }
     };
 
