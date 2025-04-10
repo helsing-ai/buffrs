@@ -65,25 +65,25 @@ impl Validator {
 
 #[cfg(test)]
 mod tests {
-    use paste::paste;
-
-    macro_rules! parse_test {
-        ($name:ident) => {
-            paste! {
-                #[test]
-                fn [< can_parse_ $name >]() {
-                    use std::path::Path;
-                    let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
-                    parser.input(std::path::Path::new(concat!("tests/data/parsing/", stringify!($name), ".proto")));
-                    let packages = parser.parse().unwrap();
-                    let expected = include_str!(concat!("../tests/data/parsing/", stringify!($name), ".json"));
-                    let expected = serde_json::from_str(&expected).unwrap();
-                    similar_asserts::assert_eq!(packages, expected);
-                }
-            }
-        };
+    #[test]
+    fn can_parse_books() {
+        use std::path::Path;
+        let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
+        parser.input(std::path::Path::new("tests/data/parsing/books.proto"));
+        let packages = parser.parse().unwrap();
+        let expected = include_str!("../tests/data/parsing/books.json");
+        let expected = serde_json::from_str(expected).unwrap();
+        similar_asserts::assert_eq!(packages, expected);
     }
 
-    parse_test!(books);
-    parse_test!(addressbook);
+    #[test]
+    fn can_parse_addressbook() {
+        use std::path::Path;
+        let mut parser = super::Parser::new(Path::new("tests/data/parsing"));
+        parser.input(std::path::Path::new("tests/data/parsing/addressbook.proto"));
+        let packages = parser.parse().unwrap();
+        let expected = include_str!("../tests/data/parsing/addressbook.json");
+        let expected = serde_json::from_str(expected).unwrap();
+        similar_asserts::assert_eq!(packages, expected);
+    }
 }
