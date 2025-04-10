@@ -13,6 +13,7 @@ wildcards = "deny"
 
 skip = [
     { crate = "bitflags@1", reason = "used by `redox`, `security-framework` and `system-configuration`" },
+    { crate = "paste", reason = "dtolnay stopped maintaining this crate but it likely won't need further work and there is no clear replacement" },
 ]
 
 skip-tree = [
