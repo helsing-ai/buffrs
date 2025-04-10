@@ -194,8 +194,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
                 .await?;
             // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
             VersionReq::parse(&latest_version.to_string())
-                .into_diagnostic()
-                .map_err(miette::Report::from)?
+                .into_diagnostic()?
         }
     };
 

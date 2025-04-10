@@ -67,9 +67,7 @@ impl Artifactory {
         self.new_request(Method::GET, repositories_url)
             .send()
             .await
-            .map(|_| ())
-            .map_err(miette::Report::from)
-    }
+            .map(|_| ())}
 
     /// Retrieves the latest version of a package by querying artifactory. Returns an error if no artifact could be found
     pub async fn get_latest_version(
@@ -125,10 +123,10 @@ impl Artifactory {
                 let uri = artifact_search_result.to_owned().uri;
                 let full_artifact_name = uri
                     .split('/')
-                    .last()
+                    .next_back()
                     .map(|name_tgz| name_tgz.trim_end_matches(".tgz"));
                 let artifact_version = full_artifact_name
-                    .and_then(|name| name.split('-').last())
+                    .and_then(|name| name.split('-').next_back())
                     .and_then(|version_str| Version::parse(version_str).ok());
 
                 // we double check that the artifact name matches exactly
