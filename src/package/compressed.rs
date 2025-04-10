@@ -14,7 +14,7 @@
 
 use std::{
     collections::BTreeMap,
-    io::{self, Cursor, Read, Write},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
@@ -184,7 +184,7 @@ impl Package {
 
         let mut tar = tar::Archive::new(Bytes::from(tar).reader());
 
-        let manifest = tar
+        let mut manifest_bytes = tar
             .entries()
             .into_diagnostic()
             .wrap_err(miette!("corrupted tar package"))?
@@ -202,17 +202,16 @@ impl Package {
             })
             .ok_or_else(|| miette!("missing manifest"))?;
 
+        let mut manifest = String::new();
+        manifest_bytes
+            .read_to_string(&mut manifest)
+            .into_diagnostic()
+            .wrap_err(miette!("manifest has invalid character encoding"))?;
+
         let manifest = manifest
-            .bytes()
-            .collect::<io::Result<Vec<_>>>()
+            .parse()
             .into_diagnostic()
             .wrap_err(DeserializationError(ManagedFile::Manifest))?;
-
-        let manifest = String::from_utf8(manifest)
-            .into_diagnostic()
-            .wrap_err(miette!("manifest has invalid character encoding"))?
-            .parse()
-            .into_diagnostic()?;
 
         Ok(Self { manifest, tgz })
     }
