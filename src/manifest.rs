@@ -70,7 +70,7 @@ impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
             self::CANARY_EDITION => Self::Canary,
-            "0.9" => Self::Canary08,
+            "0.9" => Self::Canary09,
             "0.8" => Self::Canary08,
             "0.7" => Self::Canary07,
             _ => Self::Unknown,
