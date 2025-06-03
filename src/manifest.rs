@@ -24,9 +24,10 @@ use std::{
 use tokio::fs;
 
 use crate::{
+    config::{self},
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
-    registry::RegistryUri,
+    registry::RegistryRef,
     ManagedFile,
 };
 
@@ -198,7 +199,9 @@ mod deserializer {
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
                             "package" => package = Some(map.next_value()?),
-                            "dependencies" => dependencies = Some(map.next_value()?),
+                            "dependencies" => {
+                                dependencies = Some(map.next_value()?);
+                            }
                             "edition" => edition = Some(map.next_value()?),
                             _ => return Err(de::Error::unknown_field(&key, FIELDS)),
                         }
@@ -276,6 +279,9 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
 }
 
+/// A resolved version of the manifest with registry aliases and local dependencies resolved
+pub struct ResolvedManifest(pub Manifest);
+
 impl Manifest {
     /// Create a new manifest of the current edition
     pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>) -> Self {
@@ -295,14 +301,76 @@ impl Manifest {
     }
 
     /// Loads the manifest from the current directory
-    pub async fn read() -> miette::Result<Self> {
-        Self::try_read_from(MANIFEST_FILE)
+    pub async fn read(config: &config::Config) -> miette::Result<Self> {
+        Self::try_read_from(MANIFEST_FILE, Some(config))
             .await?
             .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
     }
 
+    /// Parses the manifest from the given string
+    ///
+    /// # Arguments
+    /// * `contents` - The contents of the manifest file
+    /// * `config` - The configuration to use for resolving registry aliases
+    pub fn try_parse(contents: &str, config: Option<&config::Config>) -> miette::Result<Self> {
+        let raw: RawManifest = toml::from_str(contents)
+            .into_diagnostic()
+            .wrap_err(DeserializationError(ManagedFile::Manifest))?;
+
+        let dependencies = raw
+            .dependencies()
+            .iter()
+            .map(|(package, manifest)| {
+                let package = package.clone();
+                let manifest = match manifest {
+                    DependencyManifest::Remote(remote_manifest) => {
+                        // For remote manifest dependencies, resolve the registry alias
+                        DependencyManifest::Remote(RemoteDependencyManifest {
+                            version: remote_manifest.version.clone(),
+                            repository: remote_manifest.repository.clone(),
+                            registry: remote_manifest.registry.with_alias_resolved(config)?,
+                        })
+                    }
+                    DependencyManifest::Local(local_manifest) => {
+                        // For local dependencies, check if a remote manifest is present
+                        // and resolve its registry alias
+                        if let Some(ref remote_manifest) = local_manifest.publish {
+                            DependencyManifest::Local(LocalDependencyManifest {
+                                path: local_manifest.path.clone(),
+                                publish: Some(RemoteDependencyManifest {
+                                    version: remote_manifest.version.clone(),
+                                    repository: remote_manifest.repository.clone(),
+                                    registry: remote_manifest
+                                        .registry
+                                        .with_alias_resolved(config)?,
+                                }),
+                            })
+                        } else {
+                            manifest.clone()
+                        }
+                    }
+                };
+
+                Ok(Dependency { package, manifest })
+            })
+            .collect::<miette::Result<Vec<_>>>()?;
+
+        Ok(Self {
+            edition: raw.edition(),
+            package: raw.package().cloned(),
+            dependencies,
+        })
+    }
+
     /// Loads the manifest from the given path
-    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Option<Self>> {
+    ///
+    /// # Arguments
+    /// * `path` - The path to the manifest file
+    /// * `config` - The configuration to use for resolving registry aliases
+    pub async fn try_read_from(
+        path: impl AsRef<Path>,
+        config: Option<&config::Config>,
+    ) -> miette::Result<Option<Self>> {
         let contents = match fs::read_to_string(path.as_ref()).await {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -316,11 +384,7 @@ impl Manifest {
             }
         };
 
-        let raw: RawManifest = toml::from_str(&contents)
-            .into_diagnostic()
-            .wrap_err(DeserializationError(ManagedFile::Manifest))?;
-
-        Ok(Some(raw.into()))
+        Ok(Some(Self::try_parse(&contents, config)?))
     }
 
     /// Persists the manifest into the current directory
@@ -348,32 +412,103 @@ impl Manifest {
         .into_diagnostic()
         .wrap_err(WriteError(MANIFEST_FILE))
     }
-}
 
-impl From<RawManifest> for Manifest {
-    fn from(raw: RawManifest) -> Self {
-        let dependencies = raw
-            .dependencies()
-            .iter()
-            .map(|(package, manifest)| Dependency {
-                package: package.to_owned(),
-                manifest: manifest.to_owned(),
-            })
-            .collect();
-
-        Self {
-            edition: raw.edition(),
-            package: raw.package().cloned(),
-            dependencies,
+    /// Tests if the manifest is fully resolved (only contains remote dependencies)
+    pub fn assert_fully_resolved(&self) -> miette::Result<()> {
+        for dependency in &self.dependencies {
+            if dependency.manifest.is_local() {
+                return Err(miette!(
+                    "dependency {} of {} does not specify version/registry/repository",
+                    dependency.package,
+                    self.package
+                        .as_ref()
+                        .map(|p| p.name.clone())
+                        .map(|n| n.to_string())
+                        .unwrap_or("package".to_string())
+                ));
+            }
         }
+
+        Ok(())
     }
 }
 
-impl FromStr for Manifest {
-    type Err = toml::de::Error;
+impl ResolvedManifest {
+    /// Returns a clone of this manifest suitable for publishing
+    ///
+    /// - All local manifest dependencies are replaced with their remote counterparts
+    pub fn new_from_manifest(mut manifest: Manifest) -> miette::Result<Self> {
+        // Resolve aliases in dependencies prior to packaging
+        for dependency in &mut manifest.dependencies {
+            if let DependencyManifest::Local(ref local_manifest) = dependency.manifest {
+                match local_manifest.publish {
+                    Some(ref remote_manifest) => {
+                        dependency.manifest = DependencyManifest::Remote(remote_manifest.clone());
+                    }
+                    None => {
+                        return Err(miette!(
+                            "local dependency {} of {} does not specify version/registry/repository",
+                            dependency.package,
+                            manifest.package
+                                .as_ref()
+                                .map(|p| p.name.clone())
+                                .map(|n| n.to_string())
+                                .unwrap_or("package".to_string())
+                        ));
+                    }
+                }
+            }
+        }
 
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        input.parse::<RawManifest>().map(Self::from)
+        Ok(Self(manifest))
+    }
+}
+
+/// Trait for serializable manifest types
+pub trait PublishableManifest {
+    /// Returns the header for the manifest file
+    fn header() -> Option<&'static str>;
+    /// Returns the name of the manifest file
+    fn file_name() -> String;
+}
+
+impl PublishableManifest for Manifest {
+    fn header() -> Option<&'static str> {
+        None
+    }
+
+    fn file_name() -> String {
+        format!("{}.orig", MANIFEST_FILE)
+    }
+}
+
+impl PublishableManifest for ResolvedManifest {
+    fn header() -> Option<&'static str> {
+        const MANIFEST_PREFIX: &str = r#"# THIS FILE IS AUTOMATICALLY GENERATED BY BUFFRS
+#
+# When uploading packages to the registry buffrs will automatically
+# "normalize" Proto.toml files for maximal compatibility
+# with all versions of buffrs and also rewrite `path` dependencies
+# to registry dependencies.
+#
+# If you are reading this file be aware that the original Proto.toml
+# will likely look very different (and much more reasonable).
+# See Proto.toml.orig for the original contents.
+"#;
+
+        Some(MANIFEST_PREFIX)
+    }
+
+    fn file_name() -> String {
+        MANIFEST_FILE.to_owned()
+    }
+}
+
+impl TryInto<ResolvedManifest> for Manifest {
+    type Error = miette::Report;
+
+    fn try_into(self) -> Result<ResolvedManifest, Self::Error> {
+        ResolvedManifest::new_from_manifest(self)
     }
 }
 
@@ -382,6 +517,14 @@ impl TryInto<String> for Manifest {
 
     fn try_into(self) -> Result<String, Self::Error> {
         toml::to_string_pretty(&RawManifest::from(self))
+    }
+}
+
+impl TryInto<String> for ResolvedManifest {
+    type Error = toml::ser::Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        self.0.try_into()
     }
 }
 
@@ -411,7 +554,7 @@ pub struct Dependency {
 impl Dependency {
     /// Creates a new dependency
     pub fn new(
-        registry: RegistryUri,
+        registry: &RegistryRef,
         repository: String,
         package: PackageName,
         version: VersionReq,
@@ -421,7 +564,7 @@ impl Dependency {
             manifest: RemoteDependencyManifest {
                 repository,
                 version,
-                registry,
+                registry: registry.to_owned(),
             }
             .into(),
         }
@@ -463,7 +606,7 @@ impl Display for Dependency {
 }
 
 /// Manifest format for dependencies
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum DependencyManifest {
     /// A remote dependency from artifactory
@@ -486,7 +629,7 @@ pub struct RemoteDependencyManifest {
     /// Artifactory repository to pull dependency from
     pub repository: String,
     /// Artifactory registry to pull from
-    pub registry: RegistryUri,
+    pub registry: RegistryRef,
 }
 
 impl From<RemoteDependencyManifest> for DependencyManifest {
@@ -500,10 +643,64 @@ impl From<RemoteDependencyManifest> for DependencyManifest {
 pub struct LocalDependencyManifest {
     /// Path to local buffrs package
     pub path: PathBuf,
+    /// Optional remote manifest for publishing
+    #[serde(flatten)]
+    pub publish: Option<RemoteDependencyManifest>,
 }
 
 impl From<LocalDependencyManifest> for DependencyManifest {
     fn from(value: LocalDependencyManifest) -> Self {
         Self::Local(value)
+    }
+}
+
+// Custom deserialization logic for `DependencyManifest`
+mod dependency_manifest_deserializer {
+    use super::*;
+    use serde::{de::Error, Deserialize, Deserializer};
+
+    impl<'de> Deserialize<'de> for DependencyManifest {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            #[derive(Deserialize)]
+            struct TempManifest {
+                path: Option<PathBuf>,
+                version: Option<VersionReq>,
+                repository: Option<String>,
+                registry: Option<RegistryRef>,
+            }
+
+            let temp: TempManifest = TempManifest::deserialize(deserializer)?;
+
+            if let Some(path) = temp.path {
+                // Deserialize as a local dependency with optional remote attributes
+                Ok(DependencyManifest::Local(LocalDependencyManifest {
+                    path,
+                    publish: match (temp.version, temp.repository, temp.registry) {
+                        (Some(version), Some(repository), Some(registry)) => {
+                            Some(RemoteDependencyManifest {
+                                version,
+                                repository,
+                                registry,
+                            })
+                        }
+                        _ => None,
+                    },
+                }))
+            } else if let (Some(version), Some(repository), Some(registry)) =
+                (temp.version, temp.repository, temp.registry)
+            {
+                // Deserialize as a remote dependency
+                Ok(DependencyManifest::Remote(RemoteDependencyManifest {
+                    version,
+                    repository,
+                    registry,
+                }))
+            } else {
+                Err(D::Error::custom("Invalid dependency manifest"))
+            }
+        }
     }
 }

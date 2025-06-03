@@ -109,6 +109,8 @@ impl VirtualFileSystem {
 
             let filter_gitkeep = |f: &PathBuf| !f.ends_with(".gitkeep");
 
+            let filter_proto_toml_orig = |f: &PathBuf| !f.ends_with("Proto.toml.orig");
+
             let mut actual_files: Vec<PathBuf> = vfs
                 .files
                 .iter()
@@ -116,6 +118,7 @@ impl VirtualFileSystem {
                 .map(|f| f.strip_prefix(self.root()).unwrap().to_path_buf())
                 .filter(filter_vhome)
                 .filter(filter_gitkeep)
+                .filter(filter_proto_toml_orig)
                 .collect();
 
             actual_files.sort();
@@ -127,6 +130,7 @@ impl VirtualFileSystem {
                 .map(|f| f.strip_prefix(expected.as_ref()).unwrap().to_path_buf())
                 .filter(filter_vhome)
                 .filter(filter_gitkeep)
+                .filter(filter_proto_toml_orig)
                 .collect();
 
             expected_files.sort();

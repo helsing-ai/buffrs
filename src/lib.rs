@@ -23,10 +23,14 @@ use thiserror::Error;
 pub mod cache;
 /// CLI command implementations
 pub mod command;
+/// Configuration file (.buffrs/config.toml) handling
+pub mod config;
 /// Credential management
 pub mod credentials;
 /// Common error types
 pub mod errors;
+/// Integration with external tools
+pub mod integration;
 /// Lockfile implementation
 pub mod lock;
 /// Manifest format and IO
