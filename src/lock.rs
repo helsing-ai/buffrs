@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use miette::{ensure, Context, IntoDiagnostic};
 use semver::Version;
@@ -136,7 +136,7 @@ struct RawLockfile {
 /// Used to ensure future installations will deterministically select the exact same packages.
 #[derive(Default)]
 pub struct Lockfile {
-    packages: HashMap<PackageName, LockedPackage>,
+    packages: BTreeMap<PackageName, LockedPackage>,
 }
 
 impl Lockfile {
@@ -223,7 +223,10 @@ impl FromIterator<LockedPackage> for Lockfile {
 
 impl TryFrom<Lockfile> for Vec<FileRequirement> {
     type Error = miette::Report;
-
+    /// Converts lockfile into list of required files
+    ///
+    /// Must return files with a stable order to ensure identical lockfiles lead to identical
+    /// buffrs-cache nix derivations
     fn try_from(lock: Lockfile) -> miette::Result<Self> {
         lock.packages
             .values()
@@ -303,5 +306,97 @@ impl TryFrom<&LockedPackage> for FileRequirement {
             &package.version,
             &package.digest,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::BTreeMap, str::FromStr};
+
+    use semver::Version;
+
+    use crate::{package::PackageName, registry::RegistryUri};
+
+    use super::{Digest, DigestAlgorithm, FileRequirement, LockedPackage, Lockfile};
+
+    fn simple_lockfile() -> Lockfile {
+        Lockfile {
+            packages: BTreeMap::from([
+                (
+                    PackageName::new("package1").unwrap(),
+                    LockedPackage {
+                        name: PackageName::new("package1").unwrap(),
+                        digest: Digest::from_parts(
+                            DigestAlgorithm::SHA256,
+                            "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
+                        )
+                        .unwrap(),
+                        registry: RegistryUri::from_str("http://my-registry.com").unwrap(),
+                        repository: "my-repo".to_owned(),
+                        version: Version::new(0, 1, 0),
+                        dependencies: vec![],
+                        dependants: 1,
+                    },
+                ),
+                (
+                    PackageName::new("package2").unwrap(),
+                    LockedPackage {
+                        name: PackageName::new("package2").unwrap(),
+                        digest: Digest::from_parts(
+                            DigestAlgorithm::SHA256,
+                            "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353bce3",
+                        )
+                        .unwrap(),
+                        registry: RegistryUri::from_str("http://my-registry.com").unwrap(),
+                        repository: "my-other-repo".to_owned(),
+                        version: Version::new(0, 2, 0),
+                        dependencies: vec![],
+                        dependants: 1,
+                    },
+                ),
+                (
+                    PackageName::new("package3").unwrap(),
+                    LockedPackage {
+                        name: PackageName::new("package3").unwrap(),
+                        digest: Digest::from_parts(
+                            DigestAlgorithm::SHA256,
+                            "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353bce3",
+                        )
+                        .unwrap(),
+                        registry: RegistryUri::from_str("http://your-registry.com").unwrap(),
+                        repository: "your-repo".to_owned(),
+                        version: Version::new(0, 2, 0),
+                        dependencies: vec![],
+                        dependants: 1,
+                    },
+                ),
+                (
+                    PackageName::new("package4").unwrap(),
+                    LockedPackage {
+                        name: PackageName::new("package4").unwrap(),
+                        digest: Digest::from_parts(
+                            DigestAlgorithm::SHA256,
+                            "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353bce3",
+                        )
+                        .unwrap(),
+                        registry: RegistryUri::from_str("http://your-registry.com").unwrap(),
+                        repository: "your-other-repo".to_owned(),
+                        version: Version::new(0, 2, 0),
+                        dependencies: vec![],
+                        dependants: 1,
+                    },
+                ),
+            ]),
+        }
+    }
+
+    #[test]
+    fn stable_file_requirement_order() {
+        let lock = simple_lockfile();
+        let files: Vec<FileRequirement> = lock.into();
+        for _ in 0..30 {
+            let other_files: Vec<FileRequirement> = simple_lockfile().into();
+            assert!(other_files == files)
+        }
     }
 }
