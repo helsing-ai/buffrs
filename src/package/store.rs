@@ -19,12 +19,12 @@ use std::{
 };
 
 use bytes::Bytes;
-use miette::{bail, ensure, miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, bail, ensure, miette};
 use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{Manifest, PackageManifest, MANIFEST_FILE},
+    manifest::{MANIFEST_FILE, Manifest, PackageManifest},
     package::{Package, PackageName, PackageType},
 };
 

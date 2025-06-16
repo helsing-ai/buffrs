@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, miette};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,10 +24,10 @@ use std::{
 use tokio::fs;
 
 use crate::{
+    ManagedFile,
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
-    ManagedFile,
 };
 
 /// The name of the manifest file
@@ -131,7 +131,7 @@ impl RawManifest {
 
 mod serializer {
     use super::*;
-    use serde::{ser::SerializeStruct, Serializer};
+    use serde::{Serializer, ser::SerializeStruct};
 
     impl Serialize for RawManifest {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -165,8 +165,8 @@ mod serializer {
 
 mod deserializer {
     use serde::{
-        de::{self, MapAccess, Visitor},
         Deserializer,
+        de::{self, MapAccess, Visitor},
     };
 
     use super::*;
@@ -214,13 +214,17 @@ mod deserializer {
                     };
 
                     match Edition::from(edition.as_str()) {
-                        Edition::Canary | Edition::Canary09 | Edition::Canary08 | Edition::Canary07 => Ok(RawManifest::Canary {
+                        Edition::Canary
+                        | Edition::Canary09
+                        | Edition::Canary08
+                        | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
                         }),
-                        Edition::Unknown => Err(de::Error::custom(
-                            format!("unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}", env!("CARGO_PKG_VERSION"))
-                        )),
+                        Edition::Unknown => Err(de::Error::custom(format!(
+                            "unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}",
+                            env!("CARGO_PKG_VERSION")
+                        ))),
                     }
                 }
             }

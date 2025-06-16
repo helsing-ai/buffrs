@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{BTreeMap, btree_map::Entry},
     path::PathBuf,
 };
 
@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::validation::{
-    rules::{Rule, RuleSet},
     Violations,
+    rules::{Rule, RuleSet},
 };
 
 mod entity;
@@ -38,4 +38,4 @@ mod package;
 mod packages;
 mod service;
 
-pub use self::{entity::*, message::*, package::*, packages::*, r#enum::*, service::*};
+pub use self::{entity::*, r#enum::*, message::*, package::*, packages::*, service::*};

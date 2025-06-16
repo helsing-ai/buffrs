@@ -1,6 +1,6 @@
 [licenses]
 version = 2
-allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0", "ISC"]
+allow = ["Apache-2.0", "BSD-3-Clause", "MIT", "Unicode-3.0", "ISC", "Zlib"]
 
 [[licenses.clarify]]
 name = "ring"
@@ -10,10 +10,6 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-
-skip = [
-    { crate = "bitflags@1", reason = "used by `redox`, `security-framework` and `system-configuration`" },
-]
 
 skip-tree = [
     { crate = "windows-sys", reason = "Several foundational crates are not yet up to date" },

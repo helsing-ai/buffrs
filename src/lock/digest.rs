@@ -14,7 +14,7 @@
 
 use std::{fmt, str::FromStr};
 
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Visitor};
 use sha2::Digest as _;
 use strum::{Display, EnumString};
 use thiserror::Error;
@@ -179,7 +179,7 @@ impl<'de> Deserialize<'de> for Digest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_test::{assert_tokens, Token};
+    use serde_test::{Token, assert_tokens};
 
     const HELLO_DIGEST: &str =
         "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";

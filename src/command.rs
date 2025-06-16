@@ -16,14 +16,14 @@ use crate::{
     cache::Cache,
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, Manifest, PackageManifest, MANIFEST_FILE},
+    manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, ResolvedDependency},
 };
 
 use async_recursion::async_recursion;
-use miette::{bail, ensure, miette, Context as _, IntoDiagnostic};
+use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use std::{
     env,
@@ -318,11 +318,16 @@ pub async fn publish(
     #[cfg(feature = "git")]
     if let Ok(statuses) = git_statuses().await {
         if !allow_dirty && !statuses.is_empty() {
-            tracing::error!("{} files in the working directory contain changes that were not yet committed into git:\n", statuses.len());
+            tracing::error!(
+                "{} files in the working directory contain changes that were not yet committed into git:\n",
+                statuses.len()
+            );
 
             statuses.iter().for_each(|s| tracing::error!("{}", s));
 
-            tracing::error!("\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n");
+            tracing::error!(
+                "\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n"
+            );
 
             bail!("attempted to publish a dirty repository");
         }
@@ -579,15 +584,21 @@ mod tests {
     fn valid_dependency_locator() {
         assert!("repo/pkg@1.0.0".parse::<DependencyLocator>().is_ok());
         assert!("repo/pkg@=1.0".parse::<DependencyLocator>().is_ok());
-        assert!("repo-with-dash/pkg@=1.0"
-            .parse::<DependencyLocator>()
-            .is_ok());
-        assert!("repo-with-dash/pkg-with-dash@=1.0"
-            .parse::<DependencyLocator>()
-            .is_ok());
-        assert!("repo/pkg@=1.0.0-with-prerelease"
-            .parse::<DependencyLocator>()
-            .is_ok());
+        assert!(
+            "repo-with-dash/pkg@=1.0"
+                .parse::<DependencyLocator>()
+                .is_ok()
+        );
+        assert!(
+            "repo-with-dash/pkg-with-dash@=1.0"
+                .parse::<DependencyLocator>()
+                .is_ok()
+        );
+        assert!(
+            "repo/pkg@=1.0.0-with-prerelease"
+                .parse::<DependencyLocator>()
+                .is_ok()
+        );
         assert!("repo/pkg@latest".parse::<DependencyLocator>().is_ok());
         assert!("repo/pkg".parse::<DependencyLocator>().is_ok());
     }
@@ -597,9 +608,11 @@ mod tests {
         assert!("/xyz@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo/@1.0.0".parse::<DependencyLocator>().is_err());
         assert!("repo@1.0.0".parse::<DependencyLocator>().is_err());
-        assert!("repo/pkg@latestwithtypo"
-            .parse::<DependencyLocator>()
-            .is_err());
+        assert!(
+            "repo/pkg@latestwithtypo"
+                .parse::<DependencyLocator>()
+                .is_err()
+        );
         assert!("repo/pkg@=1#meta".parse::<DependencyLocator>().is_err());
         assert!("repo/PKG@=1.0".parse::<DependencyLocator>().is_err());
     }

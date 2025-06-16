@@ -18,9 +18,9 @@ use std::{collections::HashMap, io::ErrorKind, path::PathBuf};
 use tokio::fs;
 
 use crate::{
+    ManagedFile,
     errors::{DeserializationError, FileExistsError, ReadError, SerializationError, WriteError},
     registry::RegistryUri,
-    ManagedFile,
 };
 
 /// Filename of the credential store

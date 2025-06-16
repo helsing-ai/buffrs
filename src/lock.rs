@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use miette::{ensure, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -22,10 +22,10 @@ use tokio::fs;
 use url::Url;
 
 use crate::{
+    ManagedFile,
     errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
     package::{Package, PackageName},
     registry::RegistryUri,
-    ManagedFile,
 };
 
 mod digest;

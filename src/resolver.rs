@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_recursion::async_recursion;
-use miette::{bail, ensure, Context, Diagnostic};
+use miette::{Context, Diagnostic, bail, ensure};
 use semver::VersionReq;
 use thiserror::Error;
 
@@ -10,8 +10,8 @@ use crate::{
     credentials::Credentials,
     lock::{FileRequirement, Lockfile},
     manifest::{
-        Dependency, DependencyManifest, LocalDependencyManifest, Manifest,
-        RemoteDependencyManifest, MANIFEST_FILE,
+        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
+        RemoteDependencyManifest,
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
@@ -313,7 +313,7 @@ impl DependencyGraph {
                     path, dependants, ..
                 } => {
                     bail!(
-                        "a dependency of your project requires {}@{} which collides with a local dependency for {}@{} required by {:?}", 
+                        "a dependency of your project requires {}@{} which collides with a local dependency for {}@{} required by {:?}",
                         dependency.package,
                         dependency.manifest.version,
                         dependency.package,
@@ -392,9 +392,9 @@ impl DependencyGraph {
             ensure!(
                 is_root || dependency.manifest.registry == local_locked.registry,
                 "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
-                    dependency.package,
-                    dependency.manifest.registry,
-                    local_locked.registry,
+                dependency.package,
+                dependency.manifest.registry,
+                local_locked.registry,
             );
 
             // For now we should only check cache if locked package matches manifest,

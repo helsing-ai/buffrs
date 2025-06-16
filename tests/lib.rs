@@ -7,7 +7,7 @@ use std::{
 
 use assert_fs::TempDir;
 use bytes::Bytes;
-use fs_extra::dir::{get_dir_content, CopyOptions};
+use fs_extra::dir::{CopyOptions, get_dir_content};
 use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
@@ -190,9 +190,7 @@ impl Drop for VirtualFileSystem {
 
 #[macro_export]
 macro_rules! parent_directory {
-    () => {{
-        std::path::Path::new(file!()).parent().unwrap()
-    }};
+    () => {{ std::path::Path::new(file!()).parent().unwrap() }};
 }
 
 enum FileType {
