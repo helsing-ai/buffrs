@@ -86,7 +86,7 @@ axum = { version = "0.8", default-features = false, features = [
   "http1",
 ] }
 fs_extra = "1.3"
-gix = { version = "0.71", default-features = false }
+gix = { version = "0.72", default-features = false }
 hex = "0.4.3"
 predicates = "3.0"
 pretty_assertions = "1.4"
