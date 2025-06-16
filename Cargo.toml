@@ -1,7 +1,7 @@
 [package]
 name = "buffrs"
 version = "0.10.0"
-edition = "2021"
+edition = "2024"
 description = "Modern protobuf package management"
 authors = [
   "André Sá De Mello <andre.mello@helsing.ai>",
