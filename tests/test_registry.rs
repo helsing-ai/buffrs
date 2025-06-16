@@ -20,7 +20,7 @@ type State = Arc<RwLock<HashMap<String, Bytes>>>;
 async fn test_registry(listener: TcpListener) -> miette::Result<()> {
     let state = Arc::new(RwLock::new(HashMap::<String, Bytes>::new()));
     let app = Router::new()
-        .route("/*path", get(get_package).put(put_package))
+        .route("/{*path}", get(get_package).put(put_package))
         .with_state(state);
     axum::serve(listener, app)
         .await
