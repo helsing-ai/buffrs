@@ -11,10 +11,6 @@ license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 multiple-versions = "warn"
 wildcards = "deny"
 
-skip = [
-    { crate = "bitflags@1", reason = "used by `redox`, `security-framework` and `system-configuration`" },
-]
-
 skip-tree = [
     { crate = "windows-sys", reason = "Several foundational crates are not yet up to date" },
     { crate = "windows-targets", reason = "Several foundational crates are not yet up to date" },
