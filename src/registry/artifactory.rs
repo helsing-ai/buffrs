@@ -80,7 +80,7 @@ impl Artifactory {
         let search_query_url: Url = {
             let mut url = self.registry.clone();
             url.set_path("artifactory/api/search/artifact");
-            url.set_query(Some(&format!("name={}&repos={}", name, repository)));
+            url.set_query(Some(&format!("name={name}&repos={repository}")));
             url.into()
         };
 
@@ -133,7 +133,7 @@ impl Artifactory {
                 // we double check that the artifact name matches exactly
                 let expected_artifact_name = artifact_version
                     .clone()
-                    .map(|av| format!("{}-{}", name, av));
+                    .map(|av| format!("{name}-{av}"));
                 if full_artifact_name.is_some_and(|actual| {
                     expected_artifact_name.is_some_and(|expected| expected == actual)
                 }) {

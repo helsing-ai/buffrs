@@ -35,7 +35,9 @@ impl Rule for PackageHierarchy {
             ret
         };
 
-        let violations = package
+        
+
+        package
             .files
             .iter()
             .filter_map(|path| {
@@ -59,9 +61,7 @@ impl Rule for PackageHierarchy {
                     None
                 }
             })
-            .collect::<Vec<_>>();
-
-        violations
+            .collect::<Vec<_>>()
     }
 }
 

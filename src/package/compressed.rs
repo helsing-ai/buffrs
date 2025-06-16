@@ -14,23 +14,23 @@
 
 use std::{
     collections::BTreeMap,
-    io::{self, Cursor, Read, Write},
+    io::{self, BufReader, Cursor, Read, Write},
     path::{Path, PathBuf},
     time::UNIX_EPOCH,
 };
 
 use bytes::{Buf, Bytes};
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, miette};
 use semver::Version;
 use tokio::fs;
 
 use crate::{
+    ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, Manifest, MANIFEST_FILE},
+    manifest::{self, Edition, MANIFEST_FILE, Manifest},
     package::PackageName,
     registry::RegistryUri,
-    ManagedFile,
 };
 
 use super::store::Entry;
@@ -201,6 +201,8 @@ impl Package {
                     .is_some()
             })
             .ok_or_else(|| miette!("missing manifest"))?;
+
+        let manifest = BufReader::new(manifest);
 
         let manifest = manifest
             .bytes()
