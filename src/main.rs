@@ -18,7 +18,7 @@ use buffrs::package::{PackageName, PackageStore};
 use buffrs::registry::RegistryUri;
 use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
-use miette::{miette, WrapErr};
+use miette::{WrapErr, miette};
 use semver::Version;
 
 #[derive(Parser)]

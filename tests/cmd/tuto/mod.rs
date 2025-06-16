@@ -1,4 +1,4 @@
-use crate::{with_test_registry, VirtualFileSystem};
+use crate::{VirtualFileSystem, with_test_registry};
 use std::process::Command;
 
 #[test]
@@ -91,12 +91,14 @@ fn fixture() {
         // Sensor Server
         {
             // cargo init sensor-server
-            assert!(Command::new("cargo")
-                .args(["init", "sensor-server"])
-                .current_dir(&cwd)
-                .status()
-                .unwrap()
-                .success());
+            assert!(
+                Command::new("cargo")
+                    .args(["init", "sensor-server"])
+                    .current_dir(&cwd)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
 
             // cd sensor-server
             let cwd = cwd.join("sensor-server");
@@ -146,27 +148,31 @@ fn fixture() {
             dbg!(git_root);
 
             // cargo add buffrs --no-default-features
-            assert!(Command::new("cargo")
-                .args(["add", "buffrs", "--no-default-features", "--path", git_root])
-                .current_dir(&cwd)
-                .status()
-                .unwrap()
-                .success());
+            assert!(
+                Command::new("cargo")
+                    .args(["add", "buffrs", "--no-default-features", "--path", git_root])
+                    .current_dir(&cwd)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
 
             // cargo add --build buffrs --features=build
-            assert!(Command::new("cargo")
-                .args([
-                    "add",
-                    "buffrs",
-                    "--build",
-                    "--no-default-features",
-                    "--path",
-                    git_root
-                ])
-                .current_dir(&cwd)
-                .status()
-                .unwrap()
-                .success());
+            assert!(
+                Command::new("cargo")
+                    .args([
+                        "add",
+                        "buffrs",
+                        "--build",
+                        "--no-default-features",
+                        "--path",
+                        git_root
+                    ])
+                    .current_dir(&cwd)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
 
             // ed build.rs
             std::fs::copy(
@@ -183,12 +189,14 @@ fn fixture() {
             .unwrap();
 
             // cargo build
-            assert!(Command::new("cargo")
-                .arg("build")
-                .current_dir(&cwd)
-                .status()
-                .unwrap()
-                .success());
+            assert!(
+                Command::new("cargo")
+                    .arg("build")
+                    .current_dir(&cwd)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
         }
     });
 }

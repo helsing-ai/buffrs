@@ -35,7 +35,9 @@ pub enum PackageNameError {
     #[error("package name must start with alphabetic character, but was {0:}")]
     InvalidStart(char),
     /// Invalid character.
-    #[error("package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}")]
+    #[error(
+        "package name must consist of only ASCII lowercase and dashes, but contains {0:} at position {1:}"
+    )]
     InvalidCharacter(char, usize),
 }
 

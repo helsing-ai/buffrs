@@ -19,7 +19,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, miette};
 use walkdir::WalkDir;
 
 use crate::{

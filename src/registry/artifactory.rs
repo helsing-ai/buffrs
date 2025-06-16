@@ -18,7 +18,7 @@ use crate::{
     manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
 };
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, ensure, miette};
 use reqwest::{Body, Method, Response};
 use semver::Version;
 use serde::Deserialize;
@@ -131,9 +131,8 @@ impl Artifactory {
                     .and_then(|version_str| Version::parse(version_str).ok());
 
                 // we double check that the artifact name matches exactly
-                let expected_artifact_name = artifact_version
-                    .clone()
-                    .map(|av| format!("{name}-{av}"));
+                let expected_artifact_name =
+                    artifact_version.clone().map(|av| format!("{name}-{av}"));
                 if full_artifact_name.is_some_and(|actual| {
                     expected_artifact_name.is_some_and(|expected| expected == actual)
                 }) {

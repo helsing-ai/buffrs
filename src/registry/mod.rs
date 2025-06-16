@@ -23,7 +23,7 @@ mod artifactory;
 mod cache;
 
 pub use artifactory::Artifactory;
-use miette::{ensure, miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, ensure, miette};
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -99,7 +99,9 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
 struct UnsupportedVersionRequirement(VersionReq);
 
 #[derive(Error, Debug)]
-#[error("{0} is not supported yet. Pin the exact version you want to use with '='. For example: '=1.0.4' instead of '^1.0.0'")]
+#[error(
+    "{0} is not supported yet. Pin the exact version you want to use with '='. For example: '=1.0.4' instead of '^1.0.0'"
+)]
 struct VersionNotPinned(VersionReq);
 
 fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
@@ -152,7 +154,7 @@ mod tests {
     use crate::{
         manifest::Dependency,
         package::PackageName,
-        registry::{dependency_version_string, VersionNotPinned},
+        registry::{VersionNotPinned, dependency_version_string},
     };
 
     use super::RegistryUri;

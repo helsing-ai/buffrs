@@ -35,8 +35,6 @@ impl Rule for PackageHierarchy {
             ret
         };
 
-        
-
         package
             .files
             .iter()

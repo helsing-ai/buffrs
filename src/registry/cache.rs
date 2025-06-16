@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use miette::{miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, miette};
 use tokio::fs;
 
 use crate::{

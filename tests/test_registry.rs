@@ -4,14 +4,13 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use axum::{
-    extract,
-    http::{header, StatusCode},
+    Router, extract,
+    http::{StatusCode, header},
     response::IntoResponse,
     routing::get,
-    Router,
 };
 use bytes::Bytes;
-use miette::{miette, Context as _, IntoDiagnostic};
+use miette::{Context as _, IntoDiagnostic, miette};
 use tokio::net::TcpListener;
 
 type State = Arc<RwLock<HashMap<String, Bytes>>>;
