@@ -279,10 +279,10 @@ pub async fn publish(
     #[cfg(feature = "git")]
     async fn git_statuses() -> miette::Result<Vec<String>> {
         use std::process::Stdio;
-
         let output = tokio::process::Command::new("git")
             .arg("status")
             .arg("--porcelain")
+            .arg("Proto.toml,proto/*.proto")
             .stderr(Stdio::null())
             .output()
             .await;
