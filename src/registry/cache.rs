@@ -122,8 +122,8 @@ mod tests {
                 version: "0.1.0".parse().unwrap(),
                 description: None,
             }),
-            vec![],
-            None
+            Some(vec![]),
+            None,
         );
 
         let package_bytes =

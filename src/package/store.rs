@@ -157,7 +157,7 @@ impl PackageStore {
         manifest: &Manifest,
         preserve_mtime: bool,
     ) -> miette::Result<Package> {
-        for dependency in manifest.dependencies.iter() {
+        for dependency in manifest.dependencies.iter().flatten() {
             let resolved = self.resolve(&dependency.package).await?;
 
             let Some(ref resolved_pkg) = resolved.package else {

@@ -106,14 +106,12 @@ impl From<Edition> for &'static str {
 enum RawManifest {
     Canary {
         package: Option<PackageManifest>,
-        dependencies: DependencyMap,
-        // TODO mz/delayed-decision: Decide if this will become Option[] or default to empty HashMap
+        dependencies: Option<DependencyMap>,
         workspace: Option<Workspace>,
-
     },
     Unknown {
         package: Option<PackageManifest>,
-        dependencies: DependencyMap,
+        dependencies: Option<DependencyMap>,
         workspace: Option<Workspace>,
     },
 }
@@ -126,10 +124,10 @@ impl RawManifest {
         }
     }
 
-    fn dependencies(&self) -> &DependencyMap {
+    fn dependencies(&self) -> Option<&DependencyMap> {
         match self {
-            Self::Canary { dependencies, .. } => dependencies,
-            Self::Unknown { dependencies, .. } => dependencies,
+            Self::Canary { dependencies, .. } => dependencies.as_ref(),
+            Self::Unknown { dependencies, .. } => dependencies.as_ref(),
         }
     }
 
@@ -173,7 +171,7 @@ mod serializer {
                 RawManifest::Unknown {
                     ref package,
                     ref dependencies,
-                    ref workspace
+                    ref workspace,
                 } => {
                     let mut s = serializer.serialize_struct("Unknown", 2)?;
                     s.serialize_field("package", package)?;
@@ -229,13 +227,11 @@ mod deserializer {
                         }
                     }
 
-                    let dependencies = dependencies.unwrap_or_default();
-
                     let Some(edition) = edition else {
                         return Ok(RawManifest::Unknown {
                             package,
                             dependencies,
-                            workspace
+                            workspace,
                         });
                     };
 
@@ -248,7 +244,7 @@ mod deserializer {
                         | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
-                            workspace
+                            workspace,
                         }),
                         Edition::Unknown => Err(de::Error::custom(format!(
                             "unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}",
@@ -265,13 +261,15 @@ mod deserializer {
 
 impl From<Manifest> for RawManifest {
     fn from(manifest: Manifest) -> Self {
-        let dependencies: DependencyMap = manifest
-            .dependencies
-            .into_iter()
-            .map(|dep| (dep.package, dep.manifest))
-            .collect();
+        let dependencies = manifest.dependencies.map(|deps| {
+            deps.into_iter()
+                .map(|dep| (dep.package, dep.manifest))
+                .collect()
+        });
 
         let workspace: Option<Workspace> = manifest.workspace;
+
+        // TODO Error handling for exclusivity goes here
 
         match manifest.edition {
             Edition::Canary
@@ -282,13 +280,12 @@ impl From<Manifest> for RawManifest {
             | Edition::Canary07 => RawManifest::Canary {
                 package: manifest.package,
                 dependencies,
-                workspace
-
+                workspace,
             },
             Edition::Unknown => RawManifest::Unknown {
                 package: manifest.package,
                 dependencies,
-                workspace
+                workspace,
             },
         }
     }
@@ -313,7 +310,7 @@ pub struct Workspace {
     /// Packages to include in the workspace.
     pub members: Option<Vec<String>>,
     /// Packages to exclude from the workspace.
-    pub exclude: Option<Vec<String>>
+    pub exclude: Option<Vec<String>>,
 }
 
 /// The buffrs manifest format used for internal processing, contains a parsed
@@ -325,19 +322,23 @@ pub struct Manifest {
     /// Metadata about the root package
     pub package: Option<PackageManifest>,
     /// List of packages the root package depends on
-    pub dependencies: Vec<Dependency>,
+    pub dependencies: Option<Vec<Dependency>>,
     /// Definition of a buffrs workspace
     pub workspace: Option<Workspace>,
 }
 
 impl Manifest {
     /// Create a new manifest of the current edition
-    pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>, workspace: Option<Workspace>) -> Self {
+    pub fn new(
+        package: Option<PackageManifest>,
+        dependencies: Option<Vec<Dependency>>,
+        workspace: Option<Workspace>,
+    ) -> Self {
         Self {
             edition: Edition::latest(),
             package,
             dependencies,
-            workspace
+            workspace,
         }
     }
 
@@ -389,7 +390,7 @@ impl Manifest {
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
             self.dependencies.clone(),
-            self.workspace.clone()
+            self.workspace.clone(),
         ));
 
         let manifest_file_path = dir_path.join(MANIFEST_FILE);
@@ -408,14 +409,14 @@ impl Manifest {
 
 impl From<RawManifest> for Manifest {
     fn from(raw: RawManifest) -> Self {
-        let dependencies = raw
-            .dependencies()
-            .iter()
-            .map(|(package, manifest)| Dependency {
-                package: package.to_owned(),
-                manifest: manifest.to_owned(),
-            })
-            .collect();
+        let dependencies = raw.dependencies().map(|deps| {
+            deps.into_iter()
+                .map(|(package, manifest)| Dependency {
+                    package: package.to_owned(),
+                    manifest: manifest.to_owned(),
+                })
+                .collect()
+        });
 
         let workspace = raw.workspace().cloned();
 
@@ -423,7 +424,7 @@ impl From<RawManifest> for Manifest {
             edition: raw.edition(),
             package: raw.package().cloned(),
             dependencies,
-            workspace
+            workspace,
         }
     }
 }

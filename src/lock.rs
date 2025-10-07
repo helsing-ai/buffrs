@@ -75,6 +75,7 @@ impl LockedPackage {
                 .manifest
                 .dependencies
                 .iter()
+                .flatten()
                 .map(|d| d.package.clone())
                 .collect(),
             dependants,
