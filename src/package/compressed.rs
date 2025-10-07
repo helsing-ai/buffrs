@@ -55,7 +55,7 @@ impl Package {
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
-            manifest = Manifest::new(manifest.package, manifest.dependencies);
+            manifest = Manifest::new(manifest.package, manifest.dependencies, manifest.workspace);
         }
 
         if manifest.package.is_none() {

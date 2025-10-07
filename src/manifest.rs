@@ -102,11 +102,15 @@ impl From<Edition> for &'static str {
 enum RawManifest {
     Canary {
         package: Option<PackageManifest>,
+        // TODO mz/delayedIgnore -decision: Decide if this will become Option[] or default to empty HashMap
         dependencies: DependencyMap,
+        workspace: Option<Workspace>,
+
     },
     Unknown {
         package: Option<PackageManifest>,
         dependencies: DependencyMap,
+        workspace: Option<Workspace>,
     },
 }
 
@@ -131,6 +135,13 @@ impl RawManifest {
             Self::Unknown { .. } => Edition::Unknown,
         }
     }
+
+    fn workspace(&self) -> Option<&Workspace> {
+        match self {
+            Self::Canary { workspace, .. } => workspace.as_ref(),
+            Self::Unknown { workspace, .. } => workspace.as_ref(),
+        }
+    }
 }
 
 mod serializer {
@@ -146,20 +157,24 @@ mod serializer {
                 RawManifest::Canary {
                     ref package,
                     ref dependencies,
+                    ref workspace,
                 } => {
                     let mut s = serializer.serialize_struct("Canary", 3)?;
                     s.serialize_field("edition", CANARY_EDITION)?;
                     s.serialize_field("package", package)?;
                     s.serialize_field("dependencies", dependencies)?;
+                    s.serialize_field("workspace", workspace)?;
                     s.end()
                 }
                 RawManifest::Unknown {
                     ref package,
                     ref dependencies,
+                    ref workspace
                 } => {
                     let mut s = serializer.serialize_struct("Unknown", 2)?;
                     s.serialize_field("package", package)?;
                     s.serialize_field("dependencies", dependencies)?;
+                    s.serialize_field("workspace", workspace)?;
                     s.end()
                 }
             }
@@ -180,7 +195,7 @@ mod deserializer {
         where
             D: Deserializer<'de>,
         {
-            static FIELDS: &[&str] = &["package", "dependencies"];
+            static FIELDS: &[&str] = &["package", "dependencies", "workspace"];
 
             struct ManifestVisitor;
 
@@ -198,12 +213,14 @@ mod deserializer {
                     let mut edition: Option<String> = None;
                     let mut package: Option<PackageManifest> = None;
                     let mut dependencies: Option<HashMap<PackageName, DependencyManifest>> = None;
+                    let mut workspace: Option<Workspace> = None;
 
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
                             "package" => package = Some(map.next_value()?),
                             "dependencies" => dependencies = Some(map.next_value()?),
                             "edition" => edition = Some(map.next_value()?),
+                            "workspace" => workspace = Some(map.next_value()?),
                             _ => return Err(de::Error::unknown_field(&key, FIELDS)),
                         }
                     }
@@ -214,6 +231,7 @@ mod deserializer {
                         return Ok(RawManifest::Unknown {
                             package,
                             dependencies,
+                            workspace
                         });
                     };
 
@@ -225,6 +243,7 @@ mod deserializer {
                         | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
+                            workspace
                         }),
                         Edition::Unknown => Err(de::Error::custom(format!(
                             "unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}",
@@ -247,6 +266,8 @@ impl From<Manifest> for RawManifest {
             .map(|dep| (dep.package, dep.manifest))
             .collect();
 
+        let workspace: Option<Workspace> = manifest.workspace;
+
         match manifest.edition {
             Edition::Canary
             | Edition::Canary10
@@ -255,10 +276,13 @@ impl From<Manifest> for RawManifest {
             | Edition::Canary07 => RawManifest::Canary {
                 package: manifest.package,
                 dependencies,
+                workspace
+
             },
             Edition::Unknown => RawManifest::Unknown {
                 package: manifest.package,
                 dependencies,
+                workspace
             },
         }
     }
@@ -275,6 +299,15 @@ impl FromStr for RawManifest {
 /// Map representation of the dependency list
 pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 
+/// Workspace implementation that follows Cargo conventions
+///
+/// https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Workspace {
+    pub members: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>
+}
+
 /// The buffrs manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -285,15 +318,18 @@ pub struct Manifest {
     pub package: Option<PackageManifest>,
     /// List of packages the root package depends on
     pub dependencies: Vec<Dependency>,
+    /// Definition of a buffrs workspace
+    pub workspace: Option<Workspace>,
 }
 
 impl Manifest {
     /// Create a new manifest of the current edition
-    pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>) -> Self {
+    pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>, workspace: Option<Workspace>) -> Self {
         Self {
             edition: Edition::latest(),
             package,
             dependencies,
+            workspace
         }
     }
 
@@ -345,6 +381,7 @@ impl Manifest {
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
             self.dependencies.clone(),
+            self.workspace.clone()
         ));
 
         let manifest_file_path = dir_path.join(MANIFEST_FILE);
@@ -372,10 +409,13 @@ impl From<RawManifest> for Manifest {
             })
             .collect();
 
+        let workspace = raw.workspace().cloned();
+
         Self {
             edition: raw.edition(),
             package: raw.package().cloned(),
             dependencies,
+            workspace
         }
     }
 }

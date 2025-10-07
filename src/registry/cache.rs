@@ -123,6 +123,7 @@ mod tests {
                 description: None,
             }),
             vec![],
+            None
         );
 
         let package_bytes =
