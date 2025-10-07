@@ -46,6 +46,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.11.x
+    Canary11,
     /// The canary edition used by buffrs 0.10.x
     Canary10,
     /// The canary edition used by buffrs 0.9.x
@@ -71,7 +73,8 @@ impl Edition {
 impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
-            self::CANARY_EDITION => Self::Canary,
+            CANARY_EDITION => Self::Canary,
+            "0.11" => Self::Canary11,
             "0.10" => Self::Canary10,
             "0.9" => Self::Canary09,
             "0.8" => Self::Canary08,
@@ -85,6 +88,7 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
+            Edition::Canary11 => "0.11",
             Edition::Canary10 => "0.10",
             Edition::Canary09 => "0.9",
             Edition::Canary08 => "0.8",
@@ -102,8 +106,8 @@ impl From<Edition> for &'static str {
 enum RawManifest {
     Canary {
         package: Option<PackageManifest>,
-        // TODO mz/delayedIgnore -decision: Decide if this will become Option[] or default to empty HashMap
         dependencies: DependencyMap,
+        // TODO mz/delayed-decision: Decide if this will become Option[] or default to empty HashMap
         workspace: Option<Workspace>,
 
     },
@@ -237,6 +241,7 @@ mod deserializer {
 
                     match Edition::from(edition.as_str()) {
                         Edition::Canary
+                        | Edition::Canary11
                         | Edition::Canary10
                         | Edition::Canary09
                         | Edition::Canary08
@@ -270,6 +275,7 @@ impl From<Manifest> for RawManifest {
 
         match manifest.edition {
             Edition::Canary
+            | Edition::Canary11
             | Edition::Canary10
             | Edition::Canary09
             | Edition::Canary08
@@ -304,7 +310,9 @@ pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 /// https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
+    /// Packages to include in the workspace.
     pub members: Option<Vec<String>>,
+    /// Packages to exclude from the workspace.
     pub exclude: Option<Vec<String>>
 }
 
