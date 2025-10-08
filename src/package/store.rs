@@ -125,10 +125,12 @@ impl PackageStore {
     pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
         let manifest = self.locate(package).join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest).await?.ok_or(miette!(
-            "the package store is corrupted: `{}` is not present",
-            manifest.display()
-        ))?;
+        let manifest = Manifest::try_read_from(&manifest).await.wrap_err({
+            miette!(
+                "the package store is corrupted: `{}` is not present",
+                manifest.display()
+            )
+        })?;
 
         Ok(manifest)
     }

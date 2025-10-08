@@ -213,8 +213,7 @@ impl Package {
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
-            .parse()
-            .into_diagnostic()?;
+            .parse()?;
 
         Ok(Self { manifest, tgz })
     }

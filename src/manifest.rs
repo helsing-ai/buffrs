@@ -23,6 +23,7 @@ use std::{
 };
 use tokio::fs;
 
+use crate::errors::InvalidManifestError;
 use crate::{
     ManagedFile,
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
@@ -352,17 +353,18 @@ impl Manifest {
 
     /// Loads the manifest from the current directory
     pub async fn read() -> miette::Result<Self> {
-        Self::try_read_from(MANIFEST_FILE)
-            .await?
-            .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
+        Self::try_read_from(MANIFEST_FILE).await
     }
 
     /// Loads the manifest from the given path
-    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Option<Self>> {
+    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
         let contents = match fs::read_to_string(path.as_ref()).await {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(None);
+                return Err(e).into_diagnostic().wrap_err(miette!(
+                    "failed to read non-existent manifest file from `{}`",
+                    path.as_ref().display()
+                ));
             }
             Err(e) => {
                 return Err(e).into_diagnostic().wrap_err(miette!(
@@ -376,7 +378,7 @@ impl Manifest {
             .into_diagnostic()
             .wrap_err(DeserializationError(ManagedFile::Manifest))?;
 
-        Ok(Some(raw.into()))
+        raw.try_into()
     }
 
     /// Persists the manifest into the current directory
@@ -407,8 +409,10 @@ impl Manifest {
     }
 }
 
-impl From<RawManifest> for Manifest {
-    fn from(raw: RawManifest) -> Self {
+impl TryFrom<RawManifest> for Manifest {
+    type Error = miette::Report;
+
+    fn try_from(raw: RawManifest) -> Result<Manifest, Self::Error> {
         let dependencies = raw.dependencies().map(|deps| {
             deps.into_iter()
                 .map(|(package, manifest)| Dependency {
@@ -420,20 +424,30 @@ impl From<RawManifest> for Manifest {
 
         let workspace = raw.workspace().cloned();
 
-        Self {
+        if let (&Some(_), &Some(_)) = (&dependencies, &workspace) {
+            return Err(miette!(
+                "manifest cannot have both dependencies and workspace sections"
+            ))
+            .wrap_err(InvalidManifestError(ManagedFile::Manifest));
+        }
+
+        Ok(Self {
             edition: raw.edition(),
             package: raw.package().cloned(),
             dependencies,
             workspace,
-        }
+        })
     }
 }
 
 impl FromStr for Manifest {
-    type Err = toml::de::Error;
+    type Err = miette::Report;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        input.parse::<RawManifest>().map(Self::from)
+        input
+            .parse::<RawManifest>()
+            .map_err(|_| DeserializationError(ManagedFile::Manifest))
+            .map(|a| Manifest::try_from(a))?
     }
 }
 
@@ -565,5 +579,37 @@ pub struct LocalDependencyManifest {
 impl From<LocalDependencyManifest> for DependencyManifest {
     fn from(value: LocalDependencyManifest) -> Self {
         Self::Local(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::manifest::Manifest;
+    use std::str::FromStr;
+
+    #[test]
+    fn invalid_mixed_manifest() {
+        let mixed_dep_and_workspace = r#"
+        [workspace]
+
+        [dependencies]
+        "#;
+        let manifest = Manifest::from_str(mixed_dep_and_workspace);
+        assert!(manifest.is_err());
+        let report = manifest.err().unwrap();
+        println!("{}", report.to_string());
+        assert!(
+            report
+                .to_string()
+                .contains("manifest Proto.toml is invalid")
+        )
+    }
+
+    /// TODO: mz/research: Clarify correct behaviour for empty files. Test should imho not pass
+    #[test]
+    fn invalid_empty_manifest() {
+        let empty_manifest = "";
+        let manifest = Manifest::from_str(empty_manifest);
+        assert!(manifest.is_ok());
     }
 }

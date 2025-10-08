@@ -239,8 +239,8 @@ impl DependencyGraph {
             preserve_mtime,
         } = params;
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
-            .await?
-            .ok_or_else(|| {
+            .await
+            .wrap_err({
                 miette::miette!(
                     "no `{}` for package {} found at path {}",
                     MANIFEST_FILE,
