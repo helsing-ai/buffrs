@@ -270,8 +270,6 @@ impl From<Manifest> for RawManifest {
 
         let workspace: Option<Workspace> = manifest.workspace;
 
-        // TODO Error handling for exclusivity goes here
-
         match manifest.edition {
             Edition::Canary
             | Edition::Canary11
