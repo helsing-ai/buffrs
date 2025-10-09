@@ -70,7 +70,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, Some(vec![]), None);
+    let manifest = Manifest::new(package, Some(vec![]), None)?;
 
     manifest.write().await?;
 
@@ -104,7 +104,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, Some(vec![]), None);
+    let manifest = Manifest::new(package, Some(vec![]), None)?;
     manifest.write_at(&package_dir).await?;
 
     PackageStore::open(&package_dir)

@@ -312,6 +312,14 @@ pub struct Workspace {
     pub exclude: Option<Vec<String>>,
 }
 
+/// A manifest can define either a package or a workspace
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManifestType {
+    /// The Manifest defines a package
+    Package,
+    /// The Manifest defines a workspace
+    Workspace,
+}
 /// The buffrs manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -324,21 +332,44 @@ pub struct Manifest {
     pub dependencies: Option<Vec<Dependency>>,
     /// Definition of a buffrs workspace
     pub workspace: Option<Workspace>,
+    /// Type of the manifest: workspace or package
+    pub manifest_type: ManifestType,
 }
 
 impl Manifest {
+    /// Determine the ManifestType based on dependencies and workspace
+    fn get_manifest_type(
+        dependencies: &Option<Vec<Dependency>>,
+        workspace: &Option<Workspace>,
+    ) -> miette::Result<ManifestType> {
+        match (&dependencies, &workspace) {
+            (&Some(_), &Some(_)) => Err(miette!(
+                "manifest cannot have both dependencies and workspace sections"
+            ))
+            .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
+            (None, None) => Err(miette!(
+                "manifest cannot have both dependencies and workspace sections"
+            ))
+            .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
+            (&Some(_), None) => Ok(ManifestType::Package),
+            (None, &Some(_)) => Ok(ManifestType::Workspace),
+        }
+    }
+
     /// Create a new manifest of the current edition
     pub fn new(
         package: Option<PackageManifest>,
         dependencies: Option<Vec<Dependency>>,
         workspace: Option<Workspace>,
-    ) -> Self {
-        Self {
+    ) -> miette::Result<Self> {
+        let manifest_type = Manifest::get_manifest_type(&dependencies, &workspace)?;
+        Ok(Self {
             edition: Edition::latest(),
             package,
             dependencies,
             workspace,
-        }
+            manifest_type,
+        })
     }
 
     /// Checks if the manifest file exists in the filesystem
@@ -391,7 +422,7 @@ impl Manifest {
             self.package.clone(),
             self.dependencies.clone(),
             self.workspace.clone(),
-        ));
+        )?);
 
         let manifest_file_path = dir_path.join(MANIFEST_FILE);
         fs::write(
@@ -422,18 +453,14 @@ impl TryFrom<RawManifest> for Manifest {
 
         let workspace = raw.workspace().cloned();
 
-        if let (&Some(_), &Some(_)) = (&dependencies, &workspace) {
-            return Err(miette!(
-                "manifest cannot have both dependencies and workspace sections"
-            ))
-            .wrap_err(InvalidManifestError(ManagedFile::Manifest));
-        }
+        let manifest_type = Manifest::get_manifest_type(&dependencies, &workspace)?;
 
         Ok(Self {
             edition: raw.edition(),
             package: raw.package().cloned(),
             dependencies,
             workspace,
+            manifest_type,
         })
     }
 }
@@ -603,11 +630,10 @@ mod tests {
         )
     }
 
-    /// TODO: mz/research: Clarify correct behaviour for empty files. Test should imho not pass
     #[test]
     fn invalid_empty_manifest() {
         let empty_manifest = "";
         let manifest = Manifest::from_str(empty_manifest);
-        assert!(manifest.is_ok());
+        assert!(manifest.is_err());
     }
 }
