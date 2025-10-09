@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
-
 use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::Path;
 use thiserror::Error;
 use tokio::fs;
 use url::Url;
@@ -150,7 +150,12 @@ impl Lockfile {
 
     /// Loads the Lockfile from the current directory
     pub async fn read() -> miette::Result<Self> {
-        match fs::read_to_string(LOCKFILE).await {
+        Self::read_from(LOCKFILE).await
+    }
+
+    /// Loads the Lockfile from a specific path.
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
+        match fs::read_to_string(path).await {
             Ok(contents) => {
                 let raw: RawLockfile = toml::from_str(&contents)
                     .into_diagnostic()
@@ -168,6 +173,15 @@ impl Lockfile {
     pub async fn read_or_default() -> miette::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
+        } else {
+            Ok(Lockfile::default())
+        }
+    }
+
+    /// Loads the Lockfile from a specific path, if it exists, otherwise returns an empty one
+    pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
+        if Lockfile::exists().await? {
+            Lockfile::read_from(path).await
         } else {
             Ok(Lockfile::default())
         }
