@@ -110,7 +110,7 @@ struct ProcessDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
-    base_path: Option<&'a PathBuf>,
+    base_path: &'a PathBuf,
 }
 
 struct ProcessLocalDependency<'a> {
@@ -122,7 +122,7 @@ struct ProcessLocalDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
-    base_path: Option<&'a PathBuf>,
+    base_path: &'a PathBuf,
 }
 
 struct ProcessRemoteDependency<'a> {
@@ -133,7 +133,7 @@ struct ProcessRemoteDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
-    base_path: Option<&'a PathBuf>,
+    base_path: &'a PathBuf,
 }
 
 impl DependencyGraph {
@@ -144,7 +144,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         preserve_mtime: bool,
-        base_path: Option<&PathBuf>,
+        base_path: &PathBuf,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -249,11 +249,7 @@ impl DependencyGraph {
         } = params;
 
         // Resolve the dependency path relative to the base path (package directory)
-        let resolved_path = if let Some(base) = base_path {
-            base.join(&dependency.manifest.path)
-        } else {
-            dependency.manifest.path.clone()
-        };
+        let resolved_path = base_path.join(&dependency.manifest.path);
 
         let path = resolved_path.join(MANIFEST_FILE);
 
@@ -301,7 +297,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     preserve_mtime,
-                    base_path: Some(&resolved_path),
+                    base_path: &resolved_path,
                 },
             )
             .await?;

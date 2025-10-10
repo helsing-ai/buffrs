@@ -458,7 +458,7 @@ async fn install_package(
         &credentials.into(),
         &cache,
         preserve_mtime,
-        Some(package_path),
+        package_path,
     )
     .await
     .wrap_err(miette!("dependency resolution failed"))?;
