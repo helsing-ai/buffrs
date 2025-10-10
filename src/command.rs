@@ -70,7 +70,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, vec![]);
+    let manifest = Manifest::new(package, Some(vec![]), None);
 
     manifest.write().await?;
 
@@ -104,7 +104,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, vec![]);
+    let manifest = Manifest::new(package, Some(vec![]), None);
     manifest.write_at(&package_dir).await?;
 
     PackageStore::open(&package_dir)
@@ -199,6 +199,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     manifest
         .dependencies
+        .get_or_insert_with(Vec::new)
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
@@ -215,10 +216,14 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
     let dependency = manifest
         .dependencies
         .iter()
+        .flatten()
         .position(|d| d.package == package)
         .ok_or_else(|| miette!("package {package} not in manifest"))?;
 
-    let dependency = manifest.dependencies.remove(dependency);
+    let dependency = manifest
+        .dependencies
+        .get_or_insert_with(Vec::new)
+        .remove(dependency);
 
     store.uninstall(&dependency.package).await.ok();
 
@@ -443,7 +448,7 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
         Ok(())
     }
 
-    for dependency in manifest.dependencies {
+    for dependency in manifest.dependencies.iter().flatten() {
         traverse_and_install(
             &dependency.package,
             &dependency_graph,

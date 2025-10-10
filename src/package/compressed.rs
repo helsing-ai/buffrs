@@ -55,7 +55,7 @@ impl Package {
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
-            manifest = Manifest::new(manifest.package, manifest.dependencies);
+            manifest = Manifest::new(manifest.package, manifest.dependencies, manifest.workspace);
         }
 
         if manifest.package.is_none() {
@@ -213,8 +213,7 @@ impl Package {
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
-            .parse()
-            .into_diagnostic()?;
+            .parse()?;
 
         Ok(Self { manifest, tgz })
     }

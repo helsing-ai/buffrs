@@ -203,6 +203,7 @@ impl Artifactory {
             .manifest
             .dependencies
             .iter()
+            .flatten()
             .filter(|d| d.manifest.is_local())
             .collect();
 

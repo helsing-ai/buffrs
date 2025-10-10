@@ -23,6 +23,7 @@ use std::{
 };
 use tokio::fs;
 
+use crate::errors::InvalidManifestError;
 use crate::{
     ManagedFile,
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
@@ -46,6 +47,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.11.x
+    Canary11,
     /// The canary edition used by buffrs 0.10.x
     Canary10,
     /// The canary edition used by buffrs 0.9.x
@@ -71,7 +74,8 @@ impl Edition {
 impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
-            self::CANARY_EDITION => Self::Canary,
+            CANARY_EDITION => Self::Canary,
+            "0.11" => Self::Canary11,
             "0.10" => Self::Canary10,
             "0.9" => Self::Canary09,
             "0.8" => Self::Canary08,
@@ -85,6 +89,7 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
+            Edition::Canary11 => "0.11",
             Edition::Canary10 => "0.10",
             Edition::Canary09 => "0.9",
             Edition::Canary08 => "0.8",
@@ -102,11 +107,13 @@ impl From<Edition> for &'static str {
 enum RawManifest {
     Canary {
         package: Option<PackageManifest>,
-        dependencies: DependencyMap,
+        dependencies: Option<DependencyMap>,
+        workspace: Option<Workspace>,
     },
     Unknown {
         package: Option<PackageManifest>,
-        dependencies: DependencyMap,
+        dependencies: Option<DependencyMap>,
+        workspace: Option<Workspace>,
     },
 }
 
@@ -118,10 +125,10 @@ impl RawManifest {
         }
     }
 
-    fn dependencies(&self) -> &DependencyMap {
+    fn dependencies(&self) -> Option<&DependencyMap> {
         match self {
-            Self::Canary { dependencies, .. } => dependencies,
-            Self::Unknown { dependencies, .. } => dependencies,
+            Self::Canary { dependencies, .. } => dependencies.as_ref(),
+            Self::Unknown { dependencies, .. } => dependencies.as_ref(),
         }
     }
 
@@ -129,6 +136,13 @@ impl RawManifest {
         match self {
             Self::Canary { .. } => Edition::Canary,
             Self::Unknown { .. } => Edition::Unknown,
+        }
+    }
+
+    fn workspace(&self) -> Option<&Workspace> {
+        match self {
+            Self::Canary { workspace, .. } => workspace.as_ref(),
+            Self::Unknown { workspace, .. } => workspace.as_ref(),
         }
     }
 }
@@ -146,20 +160,24 @@ mod serializer {
                 RawManifest::Canary {
                     ref package,
                     ref dependencies,
+                    ref workspace,
                 } => {
                     let mut s = serializer.serialize_struct("Canary", 3)?;
                     s.serialize_field("edition", CANARY_EDITION)?;
                     s.serialize_field("package", package)?;
                     s.serialize_field("dependencies", dependencies)?;
+                    s.serialize_field("workspace", workspace)?;
                     s.end()
                 }
                 RawManifest::Unknown {
                     ref package,
                     ref dependencies,
+                    ref workspace,
                 } => {
                     let mut s = serializer.serialize_struct("Unknown", 2)?;
                     s.serialize_field("package", package)?;
                     s.serialize_field("dependencies", dependencies)?;
+                    s.serialize_field("workspace", workspace)?;
                     s.end()
                 }
             }
@@ -180,7 +198,7 @@ mod deserializer {
         where
             D: Deserializer<'de>,
         {
-            static FIELDS: &[&str] = &["package", "dependencies"];
+            static FIELDS: &[&str] = &["package", "dependencies", "workspace"];
 
             struct ManifestVisitor;
 
@@ -198,33 +216,36 @@ mod deserializer {
                     let mut edition: Option<String> = None;
                     let mut package: Option<PackageManifest> = None;
                     let mut dependencies: Option<HashMap<PackageName, DependencyManifest>> = None;
+                    let mut workspace: Option<Workspace> = None;
 
                     while let Some(key) = map.next_key::<String>()? {
                         match key.as_str() {
                             "package" => package = Some(map.next_value()?),
                             "dependencies" => dependencies = Some(map.next_value()?),
                             "edition" => edition = Some(map.next_value()?),
+                            "workspace" => workspace = Some(map.next_value()?),
                             _ => return Err(de::Error::unknown_field(&key, FIELDS)),
                         }
                     }
-
-                    let dependencies = dependencies.unwrap_or_default();
 
                     let Some(edition) = edition else {
                         return Ok(RawManifest::Unknown {
                             package,
                             dependencies,
+                            workspace,
                         });
                     };
 
                     match Edition::from(edition.as_str()) {
                         Edition::Canary
+                        | Edition::Canary11
                         | Edition::Canary10
                         | Edition::Canary09
                         | Edition::Canary08
                         | Edition::Canary07 => Ok(RawManifest::Canary {
                             package,
                             dependencies,
+                            workspace,
                         }),
                         Edition::Unknown => Err(de::Error::custom(format!(
                             "unsupported manifest edition, supported editions of {} are: {CANARY_EDITION}",
@@ -241,24 +262,29 @@ mod deserializer {
 
 impl From<Manifest> for RawManifest {
     fn from(manifest: Manifest) -> Self {
-        let dependencies: DependencyMap = manifest
-            .dependencies
-            .into_iter()
-            .map(|dep| (dep.package, dep.manifest))
-            .collect();
+        let dependencies = manifest.dependencies.map(|deps| {
+            deps.into_iter()
+                .map(|dep| (dep.package, dep.manifest))
+                .collect()
+        });
+
+        let workspace: Option<Workspace> = manifest.workspace;
 
         match manifest.edition {
             Edition::Canary
+            | Edition::Canary11
             | Edition::Canary10
             | Edition::Canary09
             | Edition::Canary08
             | Edition::Canary07 => RawManifest::Canary {
                 package: manifest.package,
                 dependencies,
+                workspace,
             },
             Edition::Unknown => RawManifest::Unknown {
                 package: manifest.package,
                 dependencies,
+                workspace,
             },
         }
     }
@@ -275,6 +301,17 @@ impl FromStr for RawManifest {
 /// Map representation of the dependency list
 pub type DependencyMap = HashMap<PackageName, DependencyManifest>;
 
+/// Workspace implementation that follows Cargo conventions
+///
+/// https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Workspace {
+    /// Packages to include in the workspace.
+    pub members: Option<Vec<String>>,
+    /// Packages to exclude from the workspace.
+    pub exclude: Option<Vec<String>>,
+}
+
 /// The buffrs manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,16 +321,23 @@ pub struct Manifest {
     /// Metadata about the root package
     pub package: Option<PackageManifest>,
     /// List of packages the root package depends on
-    pub dependencies: Vec<Dependency>,
+    pub dependencies: Option<Vec<Dependency>>,
+    /// Definition of a buffrs workspace
+    pub workspace: Option<Workspace>,
 }
 
 impl Manifest {
     /// Create a new manifest of the current edition
-    pub fn new(package: Option<PackageManifest>, dependencies: Vec<Dependency>) -> Self {
+    pub fn new(
+        package: Option<PackageManifest>,
+        dependencies: Option<Vec<Dependency>>,
+        workspace: Option<Workspace>,
+    ) -> Self {
         Self {
             edition: Edition::latest(),
             package,
             dependencies,
+            workspace,
         }
     }
 
@@ -307,17 +351,18 @@ impl Manifest {
 
     /// Loads the manifest from the current directory
     pub async fn read() -> miette::Result<Self> {
-        Self::try_read_from(MANIFEST_FILE)
-            .await?
-            .ok_or(miette!("`{MANIFEST_FILE}` does not exist"))
+        Self::try_read_from(MANIFEST_FILE).await
     }
 
     /// Loads the manifest from the given path
-    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Option<Self>> {
+    pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
         let contents = match fs::read_to_string(path.as_ref()).await {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(None);
+                return Err(e).into_diagnostic().wrap_err(miette!(
+                    "failed to read non-existent manifest file from `{}`",
+                    path.as_ref().display()
+                ));
             }
             Err(e) => {
                 return Err(e).into_diagnostic().wrap_err(miette!(
@@ -331,7 +376,7 @@ impl Manifest {
             .into_diagnostic()
             .wrap_err(DeserializationError(ManagedFile::Manifest))?;
 
-        Ok(Some(raw.into()))
+        raw.try_into()
     }
 
     /// Persists the manifest into the current directory
@@ -345,6 +390,7 @@ impl Manifest {
         let raw = RawManifest::from(Manifest::new(
             self.package.clone(),
             self.dependencies.clone(),
+            self.workspace.clone(),
         ));
 
         let manifest_file_path = dir_path.join(MANIFEST_FILE);
@@ -361,30 +407,45 @@ impl Manifest {
     }
 }
 
-impl From<RawManifest> for Manifest {
-    fn from(raw: RawManifest) -> Self {
-        let dependencies = raw
-            .dependencies()
-            .iter()
-            .map(|(package, manifest)| Dependency {
-                package: package.to_owned(),
-                manifest: manifest.to_owned(),
-            })
-            .collect();
+impl TryFrom<RawManifest> for Manifest {
+    type Error = miette::Report;
 
-        Self {
+    fn try_from(raw: RawManifest) -> Result<Manifest, Self::Error> {
+        let dependencies = raw.dependencies().map(|deps| {
+            deps.into_iter()
+                .map(|(package, manifest)| Dependency {
+                    package: package.to_owned(),
+                    manifest: manifest.to_owned(),
+                })
+                .collect()
+        });
+
+        let workspace = raw.workspace().cloned();
+
+        if let (&Some(_), &Some(_)) = (&dependencies, &workspace) {
+            return Err(miette!(
+                "manifest cannot have both dependencies and workspace sections"
+            ))
+            .wrap_err(InvalidManifestError(ManagedFile::Manifest));
+        }
+
+        Ok(Self {
             edition: raw.edition(),
             package: raw.package().cloned(),
             dependencies,
-        }
+            workspace,
+        })
     }
 }
 
 impl FromStr for Manifest {
-    type Err = toml::de::Error;
+    type Err = miette::Report;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        input.parse::<RawManifest>().map(Self::from)
+        input
+            .parse::<RawManifest>()
+            .map_err(|_| DeserializationError(ManagedFile::Manifest))
+            .map(|a| Manifest::try_from(a))?
     }
 }
 
@@ -516,5 +577,37 @@ pub struct LocalDependencyManifest {
 impl From<LocalDependencyManifest> for DependencyManifest {
     fn from(value: LocalDependencyManifest) -> Self {
         Self::Local(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::manifest::Manifest;
+    use std::str::FromStr;
+
+    #[test]
+    fn invalid_mixed_manifest() {
+        let mixed_dep_and_workspace = r#"
+        [workspace]
+
+        [dependencies]
+        "#;
+        let manifest = Manifest::from_str(mixed_dep_and_workspace);
+        assert!(manifest.is_err());
+        let report = manifest.err().unwrap();
+        println!("{}", report.to_string());
+        assert!(
+            report
+                .to_string()
+                .contains("manifest Proto.toml is invalid")
+        )
+    }
+
+    /// TODO: mz/research: Clarify correct behaviour for empty files. Test should imho not pass
+    #[test]
+    fn invalid_empty_manifest() {
+        let empty_manifest = "";
+        let manifest = Manifest::from_str(empty_manifest);
+        assert!(manifest.is_ok());
     }
 }

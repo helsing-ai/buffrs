@@ -150,7 +150,7 @@ impl DependencyGraph {
 
         let mut entries = HashMap::new();
 
-        for dependency in &manifest.dependencies {
+        for dependency in manifest.dependencies.iter().flatten() {
             Self::process_dependency(
                 &mut entries,
                 ProcessDependency {
@@ -239,8 +239,8 @@ impl DependencyGraph {
             preserve_mtime,
         } = params;
         let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
-            .await?
-            .ok_or_else(|| {
+            .await
+            .wrap_err({
                 miette::miette!(
                     "no `{}` for package {} found at path {}",
                     MANIFEST_FILE,
@@ -256,6 +256,7 @@ impl DependencyGraph {
         let sub_dependencies = package.manifest.dependencies.clone();
         let sub_dependency_names: Vec<_> = sub_dependencies
             .iter()
+            .flatten()
             .map(|sub_dependency| sub_dependency.package.clone())
             .collect();
 
@@ -272,7 +273,7 @@ impl DependencyGraph {
             },
         );
 
-        for sub_dependency in sub_dependencies {
+        for sub_dependency in sub_dependencies.into_iter().flatten() {
             Self::process_dependency(
                 entries,
                 ProcessDependency {
@@ -347,6 +348,7 @@ impl DependencyGraph {
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
             let sub_dependency_names: Vec<_> = sub_dependencies
                 .iter()
+                .flatten()
                 .map(|sub_dependency| sub_dependency.package.clone())
                 .collect();
 
@@ -361,7 +363,7 @@ impl DependencyGraph {
                 },
             );
 
-            for sub_dependency in sub_dependencies {
+            for sub_dependency in sub_dependencies.into_iter().flatten() {
                 Self::process_dependency(
                     entries,
                     ProcessDependency {
