@@ -372,7 +372,9 @@ impl Manifest {
 
     /// Loads the manifest from the current directory
     pub async fn read() -> miette::Result<Self> {
-        Self::try_read_from(MANIFEST_FILE).await
+        Self::try_read_from(MANIFEST_FILE)
+            .await
+            .wrap_err(miette!("`{MANIFEST_FILE}` does not exist"))
     }
 
     /// Loads the manifest from the given path
