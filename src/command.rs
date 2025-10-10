@@ -367,7 +367,15 @@ pub async fn publish(
     artifactory.publish(package, repository).await
 }
 
-/// Installs dependencies for either a package or a workspace
+/// Installs dependencies for the current project
+///
+/// Behavior depends on the manifest type:
+/// - **Package**: Installs dependencies listed in the `[dependencies]` section
+/// - **Workspace**: Installs dependencies for all workspace members
+///
+/// # Arguments
+///
+/// * `preserve_mtime` - If true, local dependencies preserve their modification time
 pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
 
@@ -385,7 +393,7 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
 }
 
 /// Installs dependencies for a workspace (not yet implemented)
-pub async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette::Result<()> {
+async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette::Result<()> {
     let root_path = env::current_dir()
         .into_diagnostic()
         .wrap_err("current dir could not be retrieved")?;
@@ -426,7 +434,7 @@ pub async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> mie
 /// Installs dependencies of a package
 ///
 /// if [preserve_mtime] is true, local dependencies will keep their modification time
-pub async fn install_package(
+async fn install_package(
     preserve_mtime: bool,
     manifest: &Manifest,
     lockfile: &Lockfile,
