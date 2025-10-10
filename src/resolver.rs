@@ -110,6 +110,7 @@ struct ProcessDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
+    base_path: Option<&'a PathBuf>,
 }
 
 struct ProcessLocalDependency<'a> {
@@ -121,6 +122,7 @@ struct ProcessLocalDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
+    base_path: Option<&'a PathBuf>,
 }
 
 struct ProcessRemoteDependency<'a> {
@@ -131,6 +133,7 @@ struct ProcessRemoteDependency<'a> {
     credentials: &'a Arc<Credentials>,
     cache: &'a Cache,
     preserve_mtime: bool,
+    base_path: Option<&'a PathBuf>,
 }
 
 impl DependencyGraph {
@@ -141,6 +144,7 @@ impl DependencyGraph {
         credentials: &Arc<Credentials>,
         cache: &Cache,
         preserve_mtime: bool,
+        base_path: Option<&PathBuf>,
     ) -> miette::Result<Self> {
         let name = manifest
             .package
@@ -161,6 +165,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     preserve_mtime,
+                    base_path,
                 },
             )
             .await?;
@@ -181,6 +186,7 @@ impl DependencyGraph {
             credentials,
             cache,
             preserve_mtime,
+            base_path,
         } = params;
         match dependency.manifest {
             DependencyManifest::Remote(manifest) => {
@@ -197,6 +203,7 @@ impl DependencyGraph {
                         credentials,
                         cache,
                         preserve_mtime,
+                        base_path,
                     },
                 )
                 .await?;
@@ -215,6 +222,7 @@ impl DependencyGraph {
                         credentials,
                         cache,
                         preserve_mtime,
+                        base_path,
                     },
                 )
                 .await?;
@@ -237,19 +245,28 @@ impl DependencyGraph {
             credentials,
             cache,
             preserve_mtime,
+            base_path,
         } = params;
-        let manifest = Manifest::try_read_from(&dependency.manifest.path.join(MANIFEST_FILE))
-            .await
-            .wrap_err({
-                miette::miette!(
-                    "no `{}` for package {} found at path {}",
-                    MANIFEST_FILE,
-                    dependency.package,
-                    dependency.manifest.path.join(MANIFEST_FILE).display()
-                )
-            })?;
 
-        let store = PackageStore::open(&dependency.manifest.path).await?;
+        // Resolve the dependency path relative to the base path (package directory)
+        let resolved_path = if let Some(base) = base_path {
+            base.join(&dependency.manifest.path)
+        } else {
+            dependency.manifest.path.clone()
+        };
+
+        let path = resolved_path.join(MANIFEST_FILE);
+
+        let manifest = Manifest::try_read_from(&path).await.wrap_err({
+            miette::miette!(
+                "no `{}` for package {} found at path {}",
+                MANIFEST_FILE,
+                dependency.package,
+                path.display()
+            )
+        })?;
+
+        let store = PackageStore::open(&resolved_path).await?;
         let package = store.release(&manifest, preserve_mtime).await?;
 
         let dependency_name = package.name().clone();
@@ -264,7 +281,7 @@ impl DependencyGraph {
             dependency_name.clone(),
             ResolvedDependency::Local {
                 package,
-                path: dependency.manifest.path,
+                path: resolved_path.clone(),
                 dependants: vec![Dependant {
                     name,
                     version_req: VersionReq::STAR,
@@ -284,6 +301,7 @@ impl DependencyGraph {
                     credentials,
                     cache,
                     preserve_mtime,
+                    base_path: Some(&resolved_path),
                 },
             )
             .await?;
@@ -305,6 +323,7 @@ impl DependencyGraph {
             credentials,
             cache,
             preserve_mtime,
+            base_path,
         } = params;
         let version_req = dependency.manifest.version.clone();
 
@@ -374,6 +393,7 @@ impl DependencyGraph {
                         credentials,
                         cache,
                         preserve_mtime,
+                        base_path,
                     },
                 )
                 .await?;

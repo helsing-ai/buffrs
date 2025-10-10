@@ -124,7 +124,8 @@ mod tests {
             }),
             Some(vec![]),
             None,
-        );
+        )
+        .expect("should create a valid manifest");
 
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());

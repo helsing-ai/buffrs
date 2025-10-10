@@ -22,6 +22,8 @@ use crate::{
     resolver::{DependencyGraph, ResolvedDependency},
 };
 
+use crate::lock::LOCKFILE;
+use crate::manifest::ManifestType;
 use async_recursion::async_recursion;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
@@ -70,7 +72,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, Some(vec![]), None);
+    let manifest = Manifest::new(package, Some(vec![]), None)?;
 
     manifest.write().await?;
 
@@ -104,7 +106,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
         })
         .transpose()?;
 
-    let manifest = Manifest::new(package, Some(vec![]), None);
+    let manifest = Manifest::new(package, Some(vec![]), None)?;
     manifest.write_at(&package_dir).await?;
 
     PackageStore::open(&package_dir)
@@ -365,13 +367,72 @@ pub async fn publish(
     artifactory.publish(package, repository).await
 }
 
-/// Installs dependencies
-///
-/// if [preserve_mtime] is true, local dependencies will keep their modification time
+/// Installs dependencies for either a package or a workspace
 pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-    let lockfile = Lockfile::read_or_default().await?;
-    let store = PackageStore::current().await?;
+
+    match manifest.manifest_type {
+        ManifestType::Package => {
+            let lockfile = Lockfile::read_or_default().await?;
+            let store = PackageStore::current().await?;
+            let current_path = env::current_dir()
+                .into_diagnostic()
+                .wrap_err("current dir could not be retrieved")?;
+            install_package(preserve_mtime, &manifest, &lockfile, &store, &current_path).await
+        }
+        ManifestType::Workspace => install_workspace(preserve_mtime, &manifest).await,
+    }
+}
+
+/// Installs dependencies for a workspace (not yet implemented)
+pub async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette::Result<()> {
+    let root_path = env::current_dir()
+        .into_diagnostic()
+        .wrap_err("current dir could not be retrieved")?;
+    let workspace = manifest.workspace.as_ref().ok_or_else(|| {
+        miette!(
+            "buffers install for workspaces executed on manifest that does not define a workspace."
+        )
+    })?;
+    let packages = workspace.resolve_members(root_path)?;
+    tracing::info!(
+        ":: workspace found. running install for {} packages in workspace",
+        packages.len()
+    );
+
+    for package in packages {
+        let canonical_name = fs::canonicalize(&package).await.into_diagnostic()?;
+        let pkg_manifest = Manifest::try_read_from(package.join(MANIFEST_FILE)).await?;
+        let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
+        let store = PackageStore::open(&package).await?;
+
+        tracing::info!(
+            ":: running install for package: {}",
+            canonical_name.to_str().unwrap()
+        );
+        install_package(
+            preserve_mtime,
+            &pkg_manifest,
+            &pkg_lockfile,
+            &store,
+            &package,
+        )
+        .await?
+    }
+
+    Ok(())
+}
+
+/// Installs dependencies of a package
+///
+/// if [preserve_mtime] is true, local dependencies will keep their modification time
+pub async fn install_package(
+    preserve_mtime: bool,
+    manifest: &Manifest,
+    lockfile: &Lockfile,
+    store: &PackageStore,
+    package_path: &PathBuf,
+) -> miette::Result<()> {
     let credentials = Credentials::load().await?;
     let cache = Cache::open().await?;
 
@@ -389,6 +450,7 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
         &credentials.into(),
         &cache,
         preserve_mtime,
+        Some(package_path),
     )
     .await
     .wrap_err(miette!("dependency resolution failed"))?;
