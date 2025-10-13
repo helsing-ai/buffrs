@@ -537,7 +537,9 @@ async fn install_package(
         .await?;
     }
 
-    Lockfile::from_iter(locked.into_iter()).write().await
+    Lockfile::from_iter(locked.into_iter())
+        .write(package_path)
+        .await
 }
 
 /// Uninstalls dependencies

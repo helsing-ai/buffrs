@@ -188,7 +188,7 @@ impl Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    pub async fn write(&self) -> miette::Result<()> {
+    pub async fn write(&self, path: impl AsRef<Path>) -> miette::Result<()> {
         let mut packages: Vec<_> = self
             .packages
             .values()
@@ -206,8 +206,10 @@ impl Lockfile {
             packages,
         };
 
+        let lockfile_path = path.as_ref().to_path_buf().join(LOCKFILE);
+
         fs::write(
-            LOCKFILE,
+            lockfile_path,
             toml::to_string(&raw)
                 .into_diagnostic()
                 .wrap_err(SerializationError(ManagedFile::Lock))?
