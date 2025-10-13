@@ -55,7 +55,20 @@ impl Package {
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
-            manifest = Manifest::new(manifest.package, manifest.dependencies, manifest.workspace)?;
+            // Upgrade unknown edition to latest
+            let mut builder = Manifest::builder();
+            if let Some(pkg) = manifest.package {
+                builder = builder.package(pkg);
+            }
+            manifest = match (manifest.dependencies, manifest.workspace) {
+                (Some(deps), None) => builder.dependencies(deps).build(),
+                (None, Some(ws)) => builder.workspace(ws).build(),
+                _ => {
+                    return Err(miette!(
+                        "manifest must have either dependencies or workspace"
+                    ));
+                }
+            };
         }
 
         if manifest.package.is_none() {

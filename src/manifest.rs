@@ -346,22 +346,83 @@ impl Manifest {
         }
     }
 
-    /// Create a new manifest of the current edition
-    pub fn new(
-        package: Option<PackageManifest>,
-        dependencies: Option<Vec<Dependency>>,
-        workspace: Option<Workspace>,
-    ) -> miette::Result<Self> {
-        let manifest_type = Manifest::get_manifest_type(&dependencies, &workspace)?;
-        Ok(Self {
-            edition: Edition::latest(),
-            package,
-            dependencies,
-            workspace,
-            manifest_type,
-        })
+    /// Creates a builder for constructing a Manifest
+    pub fn builder() -> ManifestBuilder<Unset> {
+        ManifestBuilder {
+            package: None,
+            state: Unset,
+        }
+    }
+}
+
+/// Typestate marker: neither dependencies nor workspace set
+pub struct Unset;
+/// Typestate marker: dependencies set
+pub struct WithDependencies {
+    dependencies: Vec<Dependency>,
+}
+/// Typestate marker: workspace set
+pub struct WithWorkspace {
+    workspace: Workspace,
+}
+
+/// Builder for constructing a Manifest using the typestate pattern
+pub struct ManifestBuilder<State> {
+    package: Option<PackageManifest>,
+    state: State,
+}
+
+impl ManifestBuilder<Unset> {
+    /// Sets the package metadata
+    pub fn package(mut self, package: PackageManifest) -> Self {
+        self.package = Some(package);
+        self
     }
 
+    /// Sets the dependencies, transitioning to package manifest
+    pub fn dependencies(self, dependencies: Vec<Dependency>) -> ManifestBuilder<WithDependencies> {
+        ManifestBuilder {
+            package: self.package,
+            state: WithDependencies { dependencies },
+        }
+    }
+
+    /// Sets the workspace configuration, transitioning to workspace manifest
+    pub fn workspace(self, workspace: Workspace) -> ManifestBuilder<WithWorkspace> {
+        ManifestBuilder {
+            package: self.package,
+            state: WithWorkspace { workspace },
+        }
+    }
+}
+
+impl ManifestBuilder<WithDependencies> {
+    /// Builds a package manifest
+    pub fn build(self) -> Manifest {
+        Manifest {
+            edition: Edition::latest(),
+            package: self.package,
+            dependencies: Some(self.state.dependencies),
+            workspace: None,
+            manifest_type: ManifestType::Package,
+        }
+    }
+}
+
+impl ManifestBuilder<WithWorkspace> {
+    /// Builds a workspace manifest
+    pub fn build(self) -> Manifest {
+        Manifest {
+            edition: Edition::latest(),
+            package: self.package,
+            dependencies: None,
+            workspace: Some(self.state.workspace),
+            manifest_type: ManifestType::Workspace,
+        }
+    }
+}
+
+impl Manifest {
     /// Checks if the manifest file exists in the filesystem
     pub async fn exists() -> miette::Result<bool> {
         fs::try_exists(MANIFEST_FILE)
@@ -411,12 +472,11 @@ impl Manifest {
 
     /// Persists the manifest into the provided directory, which must exist
     pub async fn write_at(&self, dir_path: &Path) -> miette::Result<()> {
-        // hint: create a canary manifest from the current one
-        let raw = RawManifest::from(Manifest::new(
-            self.package.clone(),
-            self.dependencies.clone(),
-            self.workspace.clone(),
-        )?);
+        // hint: create a canary manifest from the current one by cloning fields
+        let raw = RawManifest::from(Manifest {
+            edition: Edition::latest(),
+            ..self.clone()
+        });
 
         let manifest_file_path = dir_path.join(MANIFEST_FILE);
         fs::write(
@@ -603,32 +663,103 @@ impl From<LocalDependencyManifest> for DependencyManifest {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest::Manifest;
-    use std::str::FromStr;
+    mod raw_manifest_tests {
+        use crate::manifest::{Manifest, RawManifest};
+        use std::str::FromStr;
 
-    #[test]
-    fn invalid_mixed_manifest() {
-        let mixed_dep_and_workspace = r#"
+        #[test]
+        fn test_cloned_manifest_convert_to_exact_same_string() {
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "lib"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
+            let cloned_raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
+                .expect("should be convertable to str");
+            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
+                .expect("should be convertable to str");
+
+            assert!(cloned_raw_manifest_str.contains("edition"));
+            assert_eq!(cloned_raw_manifest_str, raw_manifest_str);
+        }
+    }
+    mod manifest_tests {
+        use crate::manifest::{Edition, Manifest, ManifestBuilder, RawManifest};
+        use std::str::FromStr;
+
+        #[test]
+        fn invalid_mixed_manifest() {
+            let mixed_dep_and_workspace = r#"
         [workspace]
 
         [dependencies]
         "#;
-        let manifest = Manifest::from_str(mixed_dep_and_workspace);
-        assert!(manifest.is_err());
-        let report = manifest.err().unwrap();
-        println!("{}", report.to_string());
-        assert!(
-            report
-                .to_string()
-                .contains("manifest Proto.toml is invalid")
-        )
-    }
+            let manifest = Manifest::from_str(mixed_dep_and_workspace);
+            assert!(manifest.is_err());
+            let report = manifest.err().unwrap();
+            println!("{}", report.to_string());
+            assert!(
+                report
+                    .to_string()
+                    .contains("manifest Proto.toml is invalid")
+            )
+        }
 
-    #[test]
-    fn invalid_empty_manifest() {
-        let empty_manifest = "";
-        let manifest = Manifest::from_str(empty_manifest);
-        assert!(manifest.is_err());
+        #[test]
+        fn invalid_empty_manifest() {
+            let empty_manifest = "";
+            let manifest = Manifest::from_str(empty_manifest);
+            assert!(manifest.is_err());
+        }
+
+        #[test]
+        fn manifest_parsing_ok() {
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "lib"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
+            let package = manifest.clone().package.expect("should have valid package");
+
+            assert_eq!(manifest.edition, Edition::Canary);
+            assert!(manifest.workspace.is_none());
+
+            let manifest_clone = manifest.clone();
+            assert_eq!(manifest.edition, manifest_clone.edition);
+        }
+
+        /// TODO(mz): Clarify correct behavior for reserialization of manifests
+        #[test]
+        fn test_add_edition_attribute() {
+            let manifest = r#"
+            [package]
+            type = "lib"
+            name = "lib"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
+            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
+                .expect("should be convertable to str");
+
+            // assert!(raw_manifest_str.contains("edition"))
+        }
     }
 
     mod workspace_tests {

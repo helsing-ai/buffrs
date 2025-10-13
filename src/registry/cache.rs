@@ -115,17 +115,15 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = Manifest::new(
-            Some(PackageManifest {
+        let manifest = Manifest::builder()
+            .package(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
-            }),
-            Some(vec![]),
-            None,
-        )
-        .expect("should create a valid manifest");
+            })
+            .dependencies(vec![])
+            .build();
 
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
