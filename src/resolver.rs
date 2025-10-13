@@ -1,10 +1,11 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_recursion::async_recursion;
-use miette::{Context, Diagnostic, bail, ensure};
+use miette::{Context, Diagnostic, bail, ensure, miette};
 use semver::VersionReq;
 use thiserror::Error;
 
+use crate::package::PackageType;
 use crate::{
     cache::{Cache, Entry},
     credentials::Credentials,
@@ -18,6 +19,7 @@ use crate::{
 };
 
 /// Represents a dependency contextualized by the current dependency graph
+#[derive(Debug)]
 pub enum ResolvedDependency {
     /// A resolved dependency that is located on a remote registry
     Remote {
@@ -62,6 +64,7 @@ impl ResolvedDependency {
 }
 
 /// Represents a requester of the associated dependency
+#[derive(Debug)]
 pub struct Dependant {
     /// Package that requested the dependency
     pub name: PackageName,
@@ -70,6 +73,7 @@ pub struct Dependant {
 }
 
 /// Represents direct and transitive dependencies of the root package
+#[derive(Debug)]
 pub struct DependencyGraph {
     entries: HashMap<PackageName, ResolvedDependency>,
 }
@@ -105,6 +109,7 @@ struct DownloadError {
 struct ProcessDependency<'a> {
     name: PackageName,
     dependency: Dependency,
+    parent_package_type: Option<PackageType>,
     is_root: bool,
     lockfile: &'a Lockfile,
     credentials: &'a Arc<Credentials>,
@@ -116,6 +121,7 @@ struct ProcessDependency<'a> {
 struct ProcessLocalDependency<'a> {
     name: PackageName,
     dependency: LocalDependency,
+    parent_package_type: Option<PackageType>,
     #[allow(dead_code)]
     is_root: bool,
     lockfile: &'a Lockfile,
@@ -128,6 +134,7 @@ struct ProcessLocalDependency<'a> {
 struct ProcessRemoteDependency<'a> {
     name: PackageName,
     dependency: RemoteDependency,
+    parent_package_type: Option<PackageType>,
     is_root: bool,
     lockfile: &'a Lockfile,
     credentials: &'a Arc<Credentials>,
@@ -146,6 +153,8 @@ impl DependencyGraph {
         preserve_mtime: bool,
         base_path: &PathBuf,
     ) -> miette::Result<Self> {
+        let parent_package_type = manifest.clone().package.map(|p| p.kind);
+
         let name = manifest
             .package
             .as_ref()
@@ -160,6 +169,7 @@ impl DependencyGraph {
                 ProcessDependency {
                     name: name.clone(),
                     dependency: dependency.clone(),
+                    parent_package_type,
                     is_root: true,
                     lockfile,
                     credentials,
@@ -181,6 +191,7 @@ impl DependencyGraph {
         let ProcessDependency {
             name,
             dependency,
+            parent_package_type,
             is_root,
             lockfile,
             credentials,
@@ -198,6 +209,7 @@ impl DependencyGraph {
                             package: dependency.package,
                             manifest,
                         },
+                        parent_package_type,
                         is_root,
                         lockfile,
                         credentials,
@@ -217,6 +229,7 @@ impl DependencyGraph {
                             package: dependency.package,
                             manifest,
                         },
+                        parent_package_type,
                         is_root,
                         lockfile,
                         credentials,
@@ -240,6 +253,7 @@ impl DependencyGraph {
         let ProcessLocalDependency {
             name,
             dependency,
+            parent_package_type,
             is_root: _,
             lockfile,
             credentials,
@@ -264,8 +278,18 @@ impl DependencyGraph {
 
         let store = PackageStore::open(&resolved_path).await?;
         let package = store.release(&manifest, preserve_mtime).await?;
-
         let dependency_name = package.name().clone();
+
+        let package_type = package.clone().manifest.package.map(|p| p.kind);
+
+        if let (Some(PackageType::Lib), Some(PackageType::Api)) =
+            (parent_package_type, package_type)
+        {
+            return Err(miette!(
+                "A package of type lib can not be dependent on type api"
+            ));
+        }
+
         let sub_dependencies = package.manifest.dependencies.clone();
         let sub_dependency_names: Vec<_> = sub_dependencies
             .iter()
@@ -292,6 +316,7 @@ impl DependencyGraph {
                 ProcessDependency {
                     name: dependency_name.clone(),
                     dependency: sub_dependency,
+                    parent_package_type: package_type,
                     is_root: false,
                     lockfile,
                     credentials,
@@ -314,6 +339,7 @@ impl DependencyGraph {
         let ProcessRemoteDependency {
             name,
             dependency,
+            parent_package_type,
             is_root,
             lockfile,
             credentials,
@@ -359,6 +385,16 @@ impl DependencyGraph {
             let dependency_pkg =
                 Self::resolve(dependency.clone(), is_root, lockfile, credentials, cache).await?;
 
+            let package_type = dependency_pkg.clone().manifest.package.map(|p| p.kind);
+
+            if let (Some(PackageType::Lib), Some(PackageType::Api)) =
+                (parent_package_type, package_type)
+            {
+                return Err(miette!(
+                    "A package of type lib can not be dependent on type api"
+                ));
+            }
+
             let dependency_name = dependency_pkg.name().clone();
             let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
             let sub_dependency_names: Vec<_> = sub_dependencies
@@ -384,6 +420,7 @@ impl DependencyGraph {
                     ProcessDependency {
                         name: dependency_name.clone(),
                         dependency: sub_dependency,
+                        parent_package_type: package_type,
                         is_root: false,
                         lockfile,
                         credentials,
@@ -483,5 +520,152 @@ impl IntoIterator for DependencyGraph {
 
     fn into_iter(self) -> Self::IntoIter {
         self.entries.into_values()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::{Manifest, PackageManifest};
+    use semver::Version;
+    use std::sync::Arc;
+    use tempfile::TempDir;
+
+    fn create_test_manifest(
+        name: &str,
+        package_type: PackageType,
+        dependencies: Vec<Dependency>,
+    ) -> Manifest {
+        Manifest::builder()
+            .package(PackageManifest {
+                kind: package_type,
+                name: name.parse().unwrap(),
+                version: Version::new(0, 1, 0),
+                description: None,
+            })
+            .dependencies(dependencies)
+            .build()
+    }
+
+    #[tokio::test]
+    async fn test_lib_cannot_depend_on_api() {
+        let temp_dir = TempDir::new().unwrap();
+        let api_dir = temp_dir.path().join("api-package");
+        std::fs::create_dir(&api_dir).unwrap();
+
+        // Create an API package
+        let api_manifest = create_test_manifest("api-package", PackageType::Api, vec![]);
+        api_manifest.write_at(&api_dir).await.unwrap();
+
+        // Create proto directory for API package
+        std::fs::create_dir_all(api_dir.join("proto")).unwrap();
+
+        // Create a lib package that tries to depend on the API package
+        let lib_manifest = Manifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: "lib-package".parse().unwrap(),
+                version: Version::new(0, 1, 0),
+                description: None,
+            })
+            .dependencies(vec![Dependency {
+                package: "api-package".parse().unwrap(),
+                manifest: LocalDependencyManifest {
+                    path: api_dir.clone(),
+                }
+                .into(),
+            }])
+            .build();
+
+        let lockfile = Lockfile::default();
+        let credentials = Arc::new(Credentials::default());
+        let cache = Cache::open().await.unwrap();
+
+        let result = DependencyGraph::from_manifest(
+            &lib_manifest,
+            &lockfile,
+            &credentials,
+            &cache,
+            false,
+            &temp_dir.path().to_path_buf(),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("lib can not be dependent on type api")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_api_can_depend_on_lib() {
+        let temp_dir = TempDir::new().unwrap();
+        let lib_dir = temp_dir.path().join("lib-package");
+        std::fs::create_dir(&lib_dir).unwrap();
+
+        // Create a lib package
+        let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
+        lib_manifest.write_at(&lib_dir).await.unwrap();
+
+        // Create proto directory for lib package
+        std::fs::create_dir_all(lib_dir.join("proto")).unwrap();
+
+        // Create an API package that depends on the lib package (should work)
+        let api_manifest = Manifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Api,
+                name: "api-package".parse().unwrap(),
+                version: Version::new(0, 1, 0),
+                description: None,
+            })
+            .dependencies(vec![Dependency {
+                package: "lib-package".parse().unwrap(),
+                manifest: LocalDependencyManifest {
+                    path: lib_dir.clone(),
+                }
+                .into(),
+            }])
+            .build();
+
+        let lockfile = Lockfile::default();
+        let credentials = Arc::new(Credentials::default());
+        let cache = Cache::open().await.unwrap();
+
+        let result = DependencyGraph::from_manifest(
+            &api_manifest,
+            &lockfile,
+            &credentials,
+            &cache,
+            false,
+            &temp_dir.path().to_path_buf(),
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_empty_dependencies_graph() {
+        let manifest = create_test_manifest("test-package", PackageType::Lib, vec![]);
+        let lockfile = Lockfile::default();
+        let credentials = Arc::new(Credentials::default());
+        let cache = Cache::open().await.unwrap();
+        let temp_dir = TempDir::new().unwrap();
+
+        let graph = DependencyGraph::from_manifest(
+            &manifest,
+            &lockfile,
+            &credentials,
+            &cache,
+            false,
+            &temp_dir.path().to_path_buf(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(graph.entries.len(), 0);
     }
 }
