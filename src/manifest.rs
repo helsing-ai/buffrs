@@ -760,6 +760,84 @@ mod tests {
 
             // assert!(raw_manifest_str.contains("edition"))
         }
+
+        #[test]
+        fn workspace_manifest_roundtrip() {
+            let manifest_str = r#"
+            edition = "0.12"
+
+            [workspace]
+            members = ["pkg1", "pkg2"]
+            "#;
+
+            let manifest = Manifest::from_str(manifest_str).expect("should parse");
+            assert_eq!(
+                manifest.manifest_type,
+                crate::manifest::ManifestType::Workspace
+            );
+            assert!(manifest.dependencies.is_none());
+            assert!(manifest.workspace.is_some());
+
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(serialized.contains("edition"));
+            assert!(serialized.contains("[workspace]"));
+        }
+
+        #[test]
+        fn builder_enforces_dependencies_xor_workspace() {
+            use crate::workspace::Workspace;
+
+            // Package manifest
+            let manifest = Manifest::builder().dependencies(vec![]).build();
+            assert_eq!(
+                manifest.manifest_type,
+                crate::manifest::ManifestType::Package
+            );
+
+            // Workspace manifest
+            let manifest = Manifest::builder()
+                .workspace(Workspace {
+                    members: None,
+                    exclude: None,
+                })
+                .build();
+            assert_eq!(
+                manifest.manifest_type,
+                crate::manifest::ManifestType::Workspace
+            );
+        }
+
+        #[test]
+        fn unknown_edition_parsed_correctly() {
+            let manifest_str = r#"
+            edition = "99.99"
+
+            [package]
+            type = "lib"
+            name = "test"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let result = Manifest::from_str(manifest_str);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn manifest_without_edition_becomes_unknown() {
+            let manifest_str = r#"
+            [package]
+            type = "lib"
+            name = "test"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = Manifest::from_str(manifest_str).expect("should parse");
+            assert_eq!(manifest.edition, Edition::Unknown);
+        }
     }
 
     mod workspace_tests {
