@@ -286,7 +286,56 @@ pub async fn package(
 pub async fn publish(
     registry: RegistryUri,
     repository: String,
-    #[cfg(feature = "git")] allow_dirty: bool,
+    allow_dirty: bool,
+    dry_run: bool,
+    version: Option<Version>,
+    preserve_mtime: bool,
+) -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+
+    match manifest.manifest_type {
+        ManifestType::Package => {
+            publish_package(
+                registry,
+                repository,
+                allow_dirty,
+                dry_run,
+                version,
+                preserve_mtime,
+            )
+            .await
+        }
+        ManifestType::Workspace => {
+            publish_workspace(
+                registry,
+                repository,
+                allow_dirty,
+                dry_run,
+                version,
+                preserve_mtime,
+            )
+            .await
+        }
+    }
+}
+
+async fn publish_workspace(
+    _registry: RegistryUri,
+    _repository: String,
+    _allow_dirty: bool,
+    _dry_run: bool,
+    _version: Option<Version>,
+    _preserve_mtime: bool,
+) -> miette::Result<()> {
+    tracing::warn!("buffrs publish not implemented yet");
+    Ok(())
+}
+
+/// Publishes the api package to the registry
+async fn publish_package(
+    registry: RegistryUri,
+    repository: String,
+    allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
     preserve_mtime: bool,
