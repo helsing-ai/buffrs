@@ -42,6 +42,7 @@ pub mod resolver;
 pub mod validation;
 /// Workspace related business logic.
 pub mod workspace;
+pub mod resolver_v2;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";

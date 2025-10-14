@@ -327,6 +327,16 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    pub fn get_dependency_package_names(&self) -> Vec<PackageName>{
+        self
+            .dependencies
+            .clone()
+            .unwrap_or_default()
+            .iter()
+            .map(|d| d.package.clone())
+            .collect()
+    }
+    
     /// Determine the ManifestType based on dependencies and workspace
     fn get_manifest_type(
         dependencies: &Option<Vec<Dependency>>,
