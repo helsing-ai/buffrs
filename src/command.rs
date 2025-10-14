@@ -518,8 +518,6 @@ async fn install_package(
         .map(|dep| dep.name.to_string())
         .collect();
 
-    tracing::info!("{:?} -> {:?}", package_path, human_friendly_str);
-
     let mut locked = Vec::new();
 
     for dependency_node in dependencies {
@@ -550,7 +548,9 @@ async fn install_package(
                 let downloaded_package = artifactory.download(dependency).await?;
 
                 // Add to lockfile - count dependants from the graph
-                let dependants_count = graph_v2.nodes.values()
+                let dependants_count = graph_v2
+                    .nodes
+                    .values()
                     .filter(|node| node.dependencies.contains(&dependency_node.name))
                     .count();
 
@@ -560,10 +560,10 @@ async fn install_package(
             }
         };
 
-        store.unpack(&package).await.wrap_err(miette!(
-            "failed to unpack package {}",
-            &package.name()
-        ))?;
+        store
+            .unpack(&package)
+            .await
+            .wrap_err(miette!("failed to unpack package {}", &package.name()))?;
 
         tracing::info!(
             ":: installed {}@{}",
@@ -604,8 +604,8 @@ pub async fn install_package_old(
         preserve_mtime,
         package_path,
     )
-        .await
-        .wrap_err(miette!("dependency resolution failed"))?;
+    .await
+    .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -670,7 +670,7 @@ pub async fn install_package_old(
             &mut locked,
             String::new(),
         )
-            .await?;
+        .await?;
     }
 
     Lockfile::from_iter(locked.into_iter())

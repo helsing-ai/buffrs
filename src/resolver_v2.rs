@@ -345,7 +345,7 @@ pub enum DependencyError {
     DownloadError {
         name: PackageName,
         version: VersionReq,
-    }
+    },
 }
 
 // tests moves to ./tests/resolver_v2_tests.rs
