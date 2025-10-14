@@ -6,7 +6,7 @@ use crate::registry::RegistryUri;
 use async_recursion::async_recursion;
 use miette::{Diagnostic, bail};
 use semver::VersionReq;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use thiserror::Error;
 
@@ -67,6 +67,79 @@ impl DependencyGraph {
         Ok(Self {
             nodes: builder.nodes,
         })
+    }
+
+    /// Perform topological sort on the dependency graph
+    ///
+    /// Returns packages in installation order (dependencies before dependents)
+    /// Detects cycles and returns an error if found
+    ///
+    /// Implements Kahn's algorithm
+    pub fn topological_sort(&self) -> Result<Vec<PackageName>, DependencyError> {
+        let mut in_degree: HashMap<PackageName, usize> = HashMap::new();
+        let mut adj_list: HashMap<PackageName, Vec<PackageName>> = HashMap::new();
+
+        // Initialize in-degree and adjacency list
+        // For topological sort: process dependencies before dependents
+        // in_degree[A] = number of packages A depends on
+        // adj_list[A] = list of packages that depend on A
+        for (name, node) in &self.nodes {
+            in_degree.entry(name.clone()).or_insert(0);
+
+            for dep in &node.dependencies {
+                // name depends on dep, so increment names in-degree
+                *in_degree.entry(name.clone()).or_insert(0) += 1;
+                // Add name to dep's dependents list
+                adj_list
+                    .entry(dep.clone())
+                    .or_insert_with(Vec::new)
+                    .push(name.clone());
+            }
+        }
+
+        // Initialize queue with V that don't depend on any other node.
+        // At least one such E needs exist, otherwise a cycle exists
+        let mut queue: VecDeque<PackageName> = in_degree
+            .iter()
+            .filter(|&(_, degree)| *degree == 0)
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        let mut sorted = Vec::new();
+
+        // Process queue, add process V to sorted list
+        while let Some(node) = queue.pop_front() {
+            sorted.push(node.clone());
+
+            if let Some(neighbors) = adj_list.get(&node) {
+                for neighbor in neighbors {
+                    if let Some(degree) = in_degree.get_mut(neighbor) {
+                        *degree -= 1;
+
+                        let no_incoming_edges = *degree == 0;
+                        if no_incoming_edges {
+                            queue.push_back(neighbor.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Cycles should not happen since we check during graph constructon, but
+        if sorted.len() != self.nodes.len() {
+            let unprocessed: Vec<_> = self
+                .nodes
+                .keys()
+                .filter(|name| !sorted.contains(name))
+                .map(|n| n.to_string())
+                .collect();
+
+            return Err(DependencyError::CircularDependency(
+                unprocessed.join(" -> "),
+            ));
+        }
+
+        Ok(sorted)
     }
 }
 
@@ -949,5 +1022,336 @@ mod tests {
         } else {
             panic!("Expected local dependency source");
         }
+    }
+
+    // Topological Sort Tests
+    // These tests verify correct ordering without re-testing graph construction
+
+    /// Helper function to manually construct a DependencyGraph for testing topological sort
+    fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGraph {
+        let mut graph_nodes = HashMap::new();
+
+        for (name, dependencies) in nodes {
+            graph_nodes.insert(
+                name.clone(),
+                DependencyNode {
+                    name: name.clone(),
+                    package_type: Some(PackageType::Lib),
+                    source: DependencySource::Local {
+                        path: PathBuf::from("/tmp"),
+                    },
+                    dependencies,
+                    version: VersionReq::STAR,
+                },
+            );
+        }
+
+        DependencyGraph { nodes: graph_nodes }
+    }
+
+    #[test]
+    fn test_topo_sort_linear_chain() {
+        // Graph: a -> b -> c
+        // Expected order: c, b, a (dependencies before dependents)
+        let graph = build_test_graph(vec![
+            ("c".parse().expect("valid package name"), vec![]),
+            (
+                "b".parse().expect("valid package name"),
+                vec!["c".parse().expect("valid package name")],
+            ),
+            (
+                "a".parse().expect("valid package name"),
+                vec!["b".parse().expect("valid package name")],
+            ),
+        ]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 3);
+
+        // Find positions
+        let pos_a = sorted
+            .iter()
+            .position(|n| n.to_string() == "a")
+            .expect("a in sorted");
+        let pos_b = sorted
+            .iter()
+            .position(|n| n.to_string() == "b")
+            .expect("b in sorted");
+        let pos_c = sorted
+            .iter()
+            .position(|n| n.to_string() == "c")
+            .expect("c in sorted");
+
+        // c must come before b, b must come before a
+        assert!(pos_c < pos_b, "c should come before b");
+        assert!(pos_b < pos_a, "b should come before a");
+    }
+
+    #[test]
+    fn test_topo_sort_diamond() {
+        // Graph: d <- b <- a
+        //        d <- c <-/
+        // Expected: d before both b and c, b and c before a
+        let graph = build_test_graph(vec![
+            ("d".parse().expect("valid package name"), vec![]),
+            (
+                "b".parse().expect("valid package name"),
+                vec!["d".parse().expect("valid package name")],
+            ),
+            (
+                "c".parse().expect("valid package name"),
+                vec!["d".parse().expect("valid package name")],
+            ),
+            (
+                "a".parse().expect("valid package name"),
+                vec![
+                    "b".parse().expect("valid package name"),
+                    "c".parse().expect("valid package name"),
+                ],
+            ),
+        ]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 4);
+
+        let pos_a = sorted
+            .iter()
+            .position(|n| n.to_string() == "a")
+            .expect("a in sorted");
+        let pos_b = sorted
+            .iter()
+            .position(|n| n.to_string() == "b")
+            .expect("b in sorted");
+        let pos_c = sorted
+            .iter()
+            .position(|n| n.to_string() == "c")
+            .expect("c in sorted");
+        let pos_d = sorted
+            .iter()
+            .position(|n| n.to_string() == "d")
+            .expect("d in sorted");
+
+        // d must come before b and c
+        assert!(pos_d < pos_b, "d should come before b");
+        assert!(pos_d < pos_c, "d should come before c");
+
+        // b and c must come before a
+        assert!(pos_b < pos_a, "b should come before a");
+        assert!(pos_c < pos_a, "c should come before a");
+    }
+
+    #[test]
+    fn test_topo_sort_multiple_roots() {
+        // Graph: a -> c
+        //        b -> c
+        // Expected: c before both a and b
+        let graph = build_test_graph(vec![
+            ("c".parse().expect("valid package name"), vec![]),
+            (
+                "a".parse().expect("valid package name"),
+                vec!["c".parse().expect("valid package name")],
+            ),
+            (
+                "b".parse().expect("valid package name"),
+                vec!["c".parse().expect("valid package name")],
+            ),
+        ]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 3);
+
+        let pos_a = sorted
+            .iter()
+            .position(|n| n.to_string() == "a")
+            .expect("a in sorted");
+        let pos_b = sorted
+            .iter()
+            .position(|n| n.to_string() == "b")
+            .expect("b in sorted");
+        let pos_c = sorted
+            .iter()
+            .position(|n| n.to_string() == "c")
+            .expect("c in sorted");
+
+        // c must come before both a and b
+        assert!(pos_c < pos_a, "c should come before a");
+        assert!(pos_c < pos_b, "c should come before b");
+    }
+
+    #[test]
+    fn test_topo_sort_complex_graph() {
+        // More complex graph:
+        //   e <- d <- a
+        //   e <- c <-/
+        //   b <- c
+        // Expected: e before d and c, d and c before a, c before b
+        let graph = build_test_graph(vec![
+            ("e".parse().expect("valid package name"), vec![]),
+            (
+                "d".parse().expect("valid package name"),
+                vec!["e".parse().expect("valid package name")],
+            ),
+            (
+                "c".parse().expect("valid package name"),
+                vec!["e".parse().expect("valid package name")],
+            ),
+            (
+                "b".parse().expect("valid package name"),
+                vec!["c".parse().expect("valid package name")],
+            ),
+            (
+                "a".parse().expect("valid package name"),
+                vec![
+                    "d".parse().expect("valid package name"),
+                    "c".parse().expect("valid package name"),
+                ],
+            ),
+        ]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 5);
+
+        let pos_a = sorted
+            .iter()
+            .position(|n| n.to_string() == "a")
+            .expect("a in sorted");
+        let pos_b = sorted
+            .iter()
+            .position(|n| n.to_string() == "b")
+            .expect("b in sorted");
+        let pos_c = sorted
+            .iter()
+            .position(|n| n.to_string() == "c")
+            .expect("c in sorted");
+        let pos_d = sorted
+            .iter()
+            .position(|n| n.to_string() == "d")
+            .expect("d in sorted");
+        let pos_e = sorted
+            .iter()
+            .position(|n| n.to_string() == "e")
+            .expect("e in sorted");
+
+        // e must come before d and c
+        assert!(pos_e < pos_d, "e should come before d");
+        assert!(pos_e < pos_c, "e should come before c");
+
+        // d and c must come before a
+        assert!(pos_d < pos_a, "d should come before a");
+        assert!(pos_c < pos_a, "c should come before a");
+
+        // c must come before b
+        assert!(pos_c < pos_b, "c should come before b");
+    }
+
+    #[test]
+    fn test_topo_sort_single_node() {
+        // Graph with just one node
+        let graph = build_test_graph(vec![("a".parse().expect("valid package name"), vec![])]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 1);
+        assert_eq!(sorted[0].to_string(), "a");
+    }
+
+    #[test]
+    fn test_topo_sort_parallel_chains() {
+        // Two independent chains: a -> b and c -> d
+        let graph = build_test_graph(vec![
+            ("b".parse().expect("valid package name"), vec![]),
+            (
+                "a".parse().expect("valid package name"),
+                vec!["b".parse().expect("valid package name")],
+            ),
+            ("d".parse().expect("valid package name"), vec![]),
+            (
+                "c".parse().expect("valid package name"),
+                vec!["d".parse().expect("valid package name")],
+            ),
+        ]);
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+
+        assert_eq!(sorted.len(), 4);
+
+        let pos_a = sorted
+            .iter()
+            .position(|n| n.to_string() == "a")
+            .expect("a in sorted");
+        let pos_b = sorted
+            .iter()
+            .position(|n| n.to_string() == "b")
+            .expect("b in sorted");
+        let pos_c = sorted
+            .iter()
+            .position(|n| n.to_string() == "c")
+            .expect("c in sorted");
+        let pos_d = sorted
+            .iter()
+            .position(|n| n.to_string() == "d")
+            .expect("d in sorted");
+
+        // Within each chain, dependencies come first
+        assert!(pos_b < pos_a, "b should come before a");
+        assert!(pos_d < pos_c, "d should come before c");
+    }
+
+    #[test]
+    fn test_topo_sort_detects_cycle() {
+        // Manually construct a graph with a cycle: a -> b -> a
+        // This tests that topological_sort detects cycles as a safety net
+        let mut nodes = HashMap::new();
+
+        nodes.insert(
+            "a".parse().expect("valid package name"),
+            DependencyNode {
+                name: "a".parse().expect("valid package name"),
+                package_type: Some(PackageType::Lib),
+                source: DependencySource::Local {
+                    path: PathBuf::from("/tmp"),
+                },
+                dependencies: vec!["b".parse().expect("valid package name")],
+                version: VersionReq::STAR,
+            },
+        );
+
+        nodes.insert(
+            "b".parse().expect("valid package name"),
+            DependencyNode {
+                name: "b".parse().expect("valid package name"),
+                package_type: Some(PackageType::Lib),
+                source: DependencySource::Local {
+                    path: PathBuf::from("/tmp"),
+                },
+                dependencies: vec!["a".parse().expect("valid package name")],
+                version: VersionReq::STAR,
+            },
+        );
+
+        let graph = DependencyGraph { nodes };
+
+        let result = graph.topological_sort();
+        assert!(result.is_err(), "should detect cycle");
+
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, DependencyError::CircularDependency(_)),
+            "error should be CircularDependency"
+        );
+    }
+
+    #[test]
+    fn test_topo_sort_empty_graph() {
+        let graph = DependencyGraph {
+            nodes: HashMap::new(),
+        };
+
+        let sorted = graph.topological_sort().expect("sort should succeed");
+        assert_eq!(sorted.len(), 0);
     }
 }
