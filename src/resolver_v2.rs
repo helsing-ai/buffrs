@@ -40,14 +40,19 @@ pub struct DependencyNode {
 // Maps a package name to metadata describing the package
 pub type MetadataMap = HashMap<PackageName, DependencyNode>;
 
+pub struct DependencyDetails {
+    pub name: PackageName,
+    pub node: DependencyNode,
+}
+
 /// A dependency graph containing nodes and edges
 #[derive(Debug)]
-pub struct DependencyGraph {
+pub struct DependencyGraphV2 {
     /// Map of package names to their metadata
     pub nodes: MetadataMap,
 }
 
-impl DependencyGraph {
+impl DependencyGraphV2 {
     /// Build a dependency graph from a manifest
     ///
     /// This is a pure graph construction - no I/O operations like downloading or installing
@@ -67,6 +72,22 @@ impl DependencyGraph {
         Ok(Self {
             nodes: builder.nodes,
         })
+    }
+
+    /// Returns dependencies in topological order (dependencies before dependents)
+    ///
+    /// This is a convenience method that combines topological_sort with node lookup
+    pub fn ordered_dependencies(&self) -> Result<Vec<DependencyDetails>, DependencyError> {
+        let sorted_names = self.topological_sort()?;
+        Ok(sorted_names
+            .into_iter()
+            .filter_map(|name| {
+                self.nodes.get(&name).map(|node| DependencyDetails {
+                    name: name.clone(),
+                    node: node.clone(),
+                })
+            })
+            .collect())
     }
 
     /// Perform topological sort on the dependency graph
@@ -319,6 +340,12 @@ pub enum DependencyError {
 
     #[error("circular dependency detected: {0}")]
     CircularDependency(String),
+
+    #[error("failed to download dependency {name}@{version} from the registry")]
+    DownloadError {
+        name: PackageName,
+        version: VersionReq,
+    }
 }
 
 // tests moves to ./tests/resolver_v2_tests.rs

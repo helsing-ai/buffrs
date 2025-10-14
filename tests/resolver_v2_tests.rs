@@ -1,6 +1,6 @@
 use buffrs::manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest};
 use buffrs::package::{PackageName, PackageType};
-use buffrs::resolver_v2::{DependencyGraph, DependencyNode, DependencySource};
+use buffrs::resolver_v2::{DependencyGraphV2, DependencyNode, DependencySource};
 use semver::{Version, VersionReq};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ async fn test_empty_graph() {
     let manifest = create_test_manifest("test-package", PackageType::Lib, vec![]);
     let temp_dir = TempDir::new().expect("create temp dir");
 
-    let graph = DependencyGraph::build(&manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -65,7 +65,7 @@ async fn test_single_local_dependency() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -133,7 +133,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -189,7 +189,7 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&lib_manifest, &temp_dir.path().to_path_buf()).await;
+    let result = DependencyGraphV2::build(&lib_manifest, &temp_dir.path().to_path_buf()).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -229,7 +229,7 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
+    let result = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
@@ -290,7 +290,7 @@ async fn test_circular_dependency_direct() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir).await;
+    let result = DependencyGraphV2::build(&pkg1_manifest, &pkg1_dir).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -382,7 +382,7 @@ async fn test_circular_dependency_indirect() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir).await;
+    let result = DependencyGraphV2::build(&pkg1_manifest, &pkg1_dir).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -481,7 +481,7 @@ async fn test_diamond_dependency() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -571,7 +571,7 @@ async fn test_multiple_dependencies_from_single_package() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -634,7 +634,7 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
+    let result = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());
@@ -684,7 +684,7 @@ async fn test_relative_path_resolution() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
         .await
         .expect("build graph");
 
@@ -705,7 +705,7 @@ async fn test_relative_path_resolution() {
 // These tests verify correct ordering without re-testing graph construction
 
 /// Helper function to manually construct a DependencyGraph for testing topological sort
-fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGraph {
+fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGraphV2 {
     let mut graph_nodes = HashMap::new();
 
     for (name, dependencies) in nodes {
@@ -723,7 +723,7 @@ fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGr
         );
     }
 
-    DependencyGraph { nodes: graph_nodes }
+    DependencyGraphV2 { nodes: graph_nodes }
 }
 
 #[test]
@@ -1010,7 +1010,7 @@ fn test_topo_sort_detects_cycle() {
         },
     );
 
-    let graph = DependencyGraph { nodes };
+    let graph = DependencyGraphV2 { nodes };
 
     let result = graph.topological_sort();
     assert!(result.is_err(), "should detect cycle");
@@ -1027,7 +1027,7 @@ fn test_topo_sort_detects_cycle() {
 
 #[test]
 fn test_topo_sort_empty_graph() {
-    let graph = DependencyGraph {
+    let graph = DependencyGraphV2 {
         nodes: HashMap::new(),
     };
 

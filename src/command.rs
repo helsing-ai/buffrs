@@ -20,10 +20,12 @@ use crate::{
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, ResolvedDependency},
+    resolver_v2,
 };
 
 use crate::lock::LOCKFILE;
-use crate::manifest::ManifestType;
+use crate::manifest::{DependencyManifest, ManifestType, RemoteDependencyManifest};
+use crate::resolver_v2::DependencySource;
 use async_recursion::async_recursion;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
@@ -494,6 +496,91 @@ async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette:
 async fn install_package(
     preserve_mtime: bool,
     manifest: &Manifest,
+    _lockfile: &Lockfile,
+    store: &PackageStore,
+    package_path: &PathBuf,
+) -> miette::Result<()> {
+    let credentials = Credentials::load().await?;
+
+    store.clear().await?;
+
+    if let Some(ref pkg) = manifest.package {
+        store.populate(pkg).await?;
+
+        tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
+    }
+
+    let graph_v2 = resolver_v2::DependencyGraphV2::build(manifest, package_path).await?;
+    let dependencies = graph_v2.ordered_dependencies()?;
+
+    let human_friendly_str: Vec<String> = dependencies
+        .iter()
+        .map(|dep| dep.name.to_string())
+        .collect();
+
+    tracing::info!("{:?} -> {:?}", package_path, human_friendly_str);
+
+    let mut locked = Vec::new();
+
+    for dependency_node in dependencies {
+        // Iterate through the dependencies in order and install them
+        let package = match dependency_node.node.source {
+            DependencySource::Local { path } => {
+                // For local dependencies, read manifest and release it
+                let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
+                store.release(&dep_manifest, preserve_mtime).await?
+            }
+            DependencySource::Remote {
+                repository,
+                registry,
+            } => {
+                // For remote dependencies, download and add to lockfile
+                let artifactory = Artifactory::new(registry.clone(), &credentials)
+                    .wrap_err(miette!("failed to initialize registry {}", registry))?;
+
+                let dependency = Dependency {
+                    package: dependency_node.node.name.clone(),
+                    manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+                        registry: registry.clone(),
+                        repository: repository.clone(),
+                        version: dependency_node.node.version.clone(),
+                    }),
+                };
+
+                let downloaded_package = artifactory.download(dependency).await?;
+
+                // Add to lockfile - count dependants from the graph
+                let dependants_count = graph_v2.nodes.values()
+                    .filter(|node| node.dependencies.contains(&dependency_node.name))
+                    .count();
+
+                locked.push(downloaded_package.lock(registry, repository, dependants_count));
+
+                downloaded_package
+            }
+        };
+
+        store.unpack(&package).await.wrap_err(miette!(
+            "failed to unpack package {}",
+            &package.name()
+        ))?;
+
+        tracing::info!(
+            ":: installed {}@{}",
+            dependency_node.name,
+            package.version()
+        );
+    }
+
+    // Write lockfile
+    Lockfile::from_iter(locked.into_iter())
+        .write(package_path)
+        .await
+}
+
+pub async fn install_package_old(
+    preserve_mtime: bool,
+    manifest: &Manifest,
     lockfile: &Lockfile,
     store: &PackageStore,
     package_path: &PathBuf,
@@ -517,8 +604,8 @@ async fn install_package(
         preserve_mtime,
         package_path,
     )
-    .await
-    .wrap_err(miette!("dependency resolution failed"))?;
+        .await
+        .wrap_err(miette!("dependency resolution failed"))?;
 
     let mut locked = Vec::new();
 
@@ -583,7 +670,7 @@ async fn install_package(
             &mut locked,
             String::new(),
         )
-        .await?;
+            .await?;
     }
 
     Lockfile::from_iter(locked.into_iter())
