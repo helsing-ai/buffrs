@@ -37,12 +37,13 @@ pub mod package;
 pub mod registry;
 /// Resolve package dependencies.
 pub mod resolver;
+/// Resolve package dependencies (v2)
+pub mod resolver_v2;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;
 /// Workspace related business logic.
 pub mod workspace;
-pub mod resolver_v2;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
