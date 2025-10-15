@@ -319,6 +319,35 @@ impl GraphBuilder {
         // Check for local/remote conflicts
         self.validate_manifest_conflicts(dependency, existing)?;
 
+        // Check for version conflicts on remote dependencies
+        self.validate_version_compatibility(dependency, existing)?;
+
+        Ok(())
+    }
+
+    /// Validates that version requirements are compatible when the same package is requested multiple times
+    fn validate_version_compatibility(
+        &self,
+        dependency: &Dependency,
+        existing: &DependencyNode,
+    ) -> miette::Result<()> {
+        // Only check version compatibility for remote dependencies
+        if let (DependencyManifest::Remote(new_remote), DependencySource::Remote { .. }) =
+            (&dependency.manifest, &existing.source)
+        {
+            // For now, buffrs only supports pinned versions (see TODO #205)
+            // We check if the version requirements are equal since they should be exact pins
+            // In the future with dynamic version resolution, this would need to check for compatibility
+            if new_remote.version != existing.version {
+                bail!(DependencyError::VersionConflict {
+                    package: dependency.package.clone(),
+                    requester: PackageName::unchecked("unknown"), // TODO: thread parent package name
+                    required_version: new_remote.version.clone(),
+                    existing_version: existing.version.clone(),
+                });
+            }
+        }
+
         Ok(())
     }
 
@@ -374,6 +403,21 @@ pub enum DependencyError {
     /// A circular dependency was detected in the dependency graph
     #[error("circular dependency detected: {0}")]
     CircularDependency(String),
+
+    /// Version conflict between multiple dependants
+    #[error(
+        "version conflict for {package}: {requester} requires {required_version} but already resolved to {existing_version}"
+    )]
+    VersionConflict {
+        /// The package with conflicting versions
+        package: PackageName,
+        /// The package requesting the conflicting version
+        requester: PackageName,
+        /// The version requirement that conflicts
+        required_version: VersionReq,
+        /// The version already resolved in the graph
+        existing_version: VersionReq,
+    },
 
     /// Failed to download a dependency from the registry
     #[error("failed to download dependency {name}@{version} from the registry")]

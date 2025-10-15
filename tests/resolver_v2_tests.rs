@@ -1034,3 +1034,106 @@ fn test_topo_sort_empty_graph() {
     let sorted = graph.topological_sort().expect("sort should succeed");
     assert_eq!(sorted.len(), 0);
 }
+
+#[tokio::test]
+async fn test_version_conflict_detection() {
+    use buffrs::manifest::{Dependency, RemoteDependencyManifest};
+    use buffrs::registry::RegistryUri;
+
+    let temp_dir = TempDir::new().expect("create temp dir");
+
+    // Create a root package that depends on two packages, both of which depend on the same
+    // package but with different versions
+    let pkg1_dir = temp_dir.path().join("pkg1");
+    let pkg2_dir = temp_dir.path().join("pkg2");
+    std::fs::create_dir(&pkg1_dir).expect("create dir");
+    std::fs::create_dir(&pkg2_dir).expect("create dir");
+    std::fs::create_dir_all(pkg1_dir.join("proto")).expect("create proto dir");
+    std::fs::create_dir_all(pkg2_dir.join("proto")).expect("create proto dir");
+
+    let registry: RegistryUri = "https://registry.example.com"
+        .parse()
+        .expect("valid registry");
+
+    // pkg1 depends on common@1.0.0
+    let pkg1_manifest = Manifest::builder()
+        .package(PackageManifest {
+            kind: PackageType::Lib,
+            name: "pkg1".parse().expect("valid package name"),
+            version: Version::new(0, 1, 0),
+            description: None,
+        })
+        .dependencies(vec![Dependency {
+            package: "common".parse().expect("valid package name"),
+            manifest: RemoteDependencyManifest {
+                registry: registry.clone(),
+                repository: "test-repo".to_string(),
+                version: VersionReq::parse("=1.0.0").expect("valid version"),
+            }
+            .into(),
+        }])
+        .build();
+    pkg1_manifest
+        .write_at(&pkg1_dir)
+        .await
+        .expect("write manifest");
+
+    // pkg2 depends on common@2.0.0 (conflict!)
+    let pkg2_manifest = Manifest::builder()
+        .package(PackageManifest {
+            kind: PackageType::Lib,
+            name: "pkg2".parse().expect("valid package name"),
+            version: Version::new(0, 1, 0),
+            description: None,
+        })
+        .dependencies(vec![Dependency {
+            package: "common".parse().expect("valid package name"),
+            manifest: RemoteDependencyManifest {
+                registry: registry.clone(),
+                repository: "test-repo".to_string(),
+                version: VersionReq::parse("=2.0.0").expect("valid version"),
+            }
+            .into(),
+        }])
+        .build();
+    pkg2_manifest
+        .write_at(&pkg2_dir)
+        .await
+        .expect("write manifest");
+
+    // Root package depends on both pkg1 and pkg2
+    let root_manifest = Manifest::builder()
+        .package(PackageManifest {
+            kind: PackageType::Api,
+            name: "root".parse().expect("valid package name"),
+            version: Version::new(0, 1, 0),
+            description: None,
+        })
+        .dependencies(vec![
+            Dependency {
+                package: "pkg1".parse().expect("valid package name"),
+                manifest: LocalDependencyManifest {
+                    path: pkg1_dir.clone(),
+                }
+                .into(),
+            },
+            Dependency {
+                package: "pkg2".parse().expect("valid package name"),
+                manifest: LocalDependencyManifest {
+                    path: pkg2_dir.clone(),
+                }
+                .into(),
+            },
+        ])
+        .build();
+
+    let result = DependencyGraphV2::build(&root_manifest, &temp_dir.path().to_path_buf()).await;
+
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("version conflict") || err_msg.contains("VersionConflict"),
+        "Error should mention version conflict, got: {}",
+        err_msg
+    );
+}
