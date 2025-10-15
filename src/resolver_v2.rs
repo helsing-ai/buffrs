@@ -14,10 +14,15 @@ use thiserror::Error;
 #[derive(Debug, Clone)]
 pub enum DependencySource {
     /// A local dependencies, expressed by it's path
-    Local { path: PathBuf },
+    Local {
+        /// Local path
+        path: PathBuf,
+    },
     /// A remote dependencies, expressed by it's repo & registry
     Remote {
+        /// Registry
         registry: RegistryUri,
+        /// Repository name
         repository: String,
     },
 }
@@ -37,11 +42,14 @@ pub struct DependencyNode {
     pub version: VersionReq,
 }
 
-// Maps a package name to metadata describing the package
+/// Maps a package name to metadata describing the package
 pub type MetadataMap = HashMap<PackageName, DependencyNode>;
 
+/// Represents a resolved dependency with its name and metadata
 pub struct DependencyDetails {
+    /// The package name
     pub name: PackageName,
+    /// The dependency node containing metadata
     pub node: DependencyNode,
 }
 
@@ -161,6 +169,13 @@ impl DependencyGraphV2 {
         }
 
         Ok(sorted)
+    }
+
+    pub fn dependants_count_of(&self, package_name: &PackageName) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| node.dependencies.contains(&package_name))
+            .count()
     }
 }
 
@@ -302,6 +317,17 @@ impl GraphBuilder {
         existing: &DependencyNode,
     ) -> miette::Result<()> {
         // Check for local/remote conflicts
+        self.validate_manifest_conflicts(dependency, existing)?;
+
+        Ok(())
+    }
+
+    /// Checks for conflicting dependencies betweel local / remote deps in the dependency tree
+    fn validate_manifest_conflicts(
+        &self,
+        dependency: &Dependency,
+        existing: &DependencyNode,
+    ) -> miette::Result<()> {
         match (&dependency.manifest, &existing.source) {
             (DependencyManifest::Local(_), DependencySource::Remote { .. }) => {
                 bail!(DependencyError::LocalRemoteConflict {
@@ -322,28 +348,39 @@ impl GraphBuilder {
     }
 }
 
+/// Errors that can occur during dependency resolution
 #[derive(Error, Diagnostic, Debug)]
 pub enum DependencyError {
+    /// A local dependency conflicts with a remote dependency
     #[error(
         "local dependency {local_pkg} conflicts with remote dependency required by {requester}"
     )]
     LocalRemoteConflict {
+        /// The package that is declared as local
         local_pkg: PackageName,
+        /// The package that requires it as remote
         requester: PackageName,
     },
 
+    /// A lib package cannot depend on an api package
     #[error("package of type lib cannot depend on package of type api: {parent} -> {dependency}")]
     InvalidPackageTypeDependency {
+        /// The parent lib package
         parent: PackageName,
+        /// The api package being depended on
         dependency: PackageName,
     },
 
+    /// A circular dependency was detected in the dependency graph
     #[error("circular dependency detected: {0}")]
     CircularDependency(String),
 
+    /// Failed to download a dependency from the registry
     #[error("failed to download dependency {name}@{version} from the registry")]
     DownloadError {
+        /// Package name
         name: PackageName,
+        /// Version requirement
         version: VersionReq,
     },
 }
