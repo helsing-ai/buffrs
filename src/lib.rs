@@ -35,10 +35,8 @@ pub mod manifest;
 pub mod package;
 /// Supported registries
 pub mod registry;
-/// Resolve package dependencies.
-pub mod resolver;
 /// Resolve package dependencies (v2)
-pub mod resolver_v2;
+pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;

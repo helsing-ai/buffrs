@@ -1,702 +1,469 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-
+use crate::credentials::Credentials;
+use crate::manifest::{
+    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
+};
+use crate::package::{PackageName, PackageType};
+use crate::registry::{Artifactory, RegistryUri};
 use async_recursion::async_recursion;
-use miette::{Context, Diagnostic, bail, ensure, miette};
+use miette::{Context as _, Diagnostic, bail, miette};
 use semver::VersionReq;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::package::PackageType;
-use crate::{
-    cache::{Cache, Entry},
-    credentials::Credentials,
-    lock::{FileRequirement, Lockfile},
-    manifest::{
-        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-        RemoteDependencyManifest,
-    },
-    package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, RegistryUri},
-};
-
-/// Represents a dependency contextualized by the current dependency graph
-#[derive(Debug)]
-pub enum ResolvedDependency {
-    /// A resolved dependency that is located on a remote registry
-    Remote {
-        /// The materialized package as downloaded from the registry
-        package: Package,
-        /// The registry the package was downloaded from
-        registry: RegistryUri,
-        /// The repository in the registry where the package can be found
-        repository: String,
-        /// Packages that requested this dependency (and what versions they accept)
-        dependants: Vec<Dependant>,
-        /// Transitive dependencies
-        depends_on: Vec<PackageName>,
-    },
-    /// A resolved depnedency that is located on the filesystem
+/// Models the source of a dependency
+#[derive(Debug, Clone)]
+pub enum DependencySource {
+    /// A local dependencies, expressed by it's path
     Local {
-        /// The materialized package that was created from the buffrs package at the given path
-        package: Package,
-        /// Location of the requested package
+        /// Local path
         path: PathBuf,
-        /// Packages that requested this dependency (and what versions they accept)
-        dependants: Vec<Dependant>,
-        /// Transitive dependencies
-        depends_on: Vec<PackageName>,
+    },
+    /// A remote dependencies, expressed by it's repo & registry
+    Remote {
+        /// Registry
+        registry: RegistryUri,
+        /// Repository name
+        repository: String,
     },
 }
 
-impl ResolvedDependency {
-    pub(crate) fn package(&self) -> &Package {
-        match self {
-            Self::Remote { package, .. } => package,
-            Self::Local { package, .. } => package,
-        }
-    }
-
-    pub(crate) fn depends_on(&self) -> &[PackageName] {
-        match self {
-            Self::Remote { depends_on, .. } => depends_on,
-            Self::Local { depends_on, .. } => depends_on,
-        }
-    }
-}
-
-/// Represents a requester of the associated dependency
-#[derive(Debug)]
-pub struct Dependant {
-    /// Package that requested the dependency
+/// Represents metadata about a dependency in the graph
+#[derive(Debug, Clone)]
+pub struct DependencyNode {
+    /// The package name
     pub name: PackageName,
+    /// Package type (api or lib)
+    pub package_type: Option<PackageType>,
+    /// Where this dependency comes from
+    pub source: DependencySource,
+    /// Packages that this package depends on
+    pub dependencies: Vec<PackageName>,
     /// Version requirement
-    pub version_req: VersionReq,
+    pub version: VersionReq,
 }
 
-/// Represents direct and transitive dependencies of the root package
+/// Maps a package name to metadata describing the package
+pub type MetadataMap = HashMap<PackageName, DependencyNode>;
+
+/// Represents a resolved dependency with its name and metadata
+pub struct DependencyDetails {
+    /// The package name
+    pub name: PackageName,
+    /// The dependency node containing metadata
+    pub node: DependencyNode,
+}
+
+/// A dependency graph containing nodes and edges
 #[derive(Debug)]
 pub struct DependencyGraph {
-    entries: HashMap<PackageName, ResolvedDependency>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-struct RemoteDependency {
-    package: PackageName,
-    manifest: RemoteDependencyManifest,
-}
-
-impl From<RemoteDependency> for Dependency {
-    fn from(value: RemoteDependency) -> Self {
-        Dependency {
-            package: value.package,
-            manifest: value.manifest.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-struct LocalDependency {
-    package: PackageName,
-    manifest: LocalDependencyManifest,
-}
-
-#[derive(Error, Diagnostic, Debug)]
-#[error("failed to download dependency {name}@{version} from the registry")]
-struct DownloadError {
-    name: PackageName,
-    version: VersionReq,
-}
-
-struct ProcessDependency<'a> {
-    name: PackageName,
-    dependency: Dependency,
-    parent_package_type: Option<PackageType>,
-    is_root: bool,
-    lockfile: &'a Lockfile,
-    credentials: &'a Arc<Credentials>,
-    cache: &'a Cache,
-    preserve_mtime: bool,
-    base_path: &'a PathBuf,
-}
-
-struct ProcessLocalDependency<'a> {
-    name: PackageName,
-    dependency: LocalDependency,
-    parent_package_type: Option<PackageType>,
-    #[allow(dead_code)]
-    is_root: bool,
-    lockfile: &'a Lockfile,
-    credentials: &'a Arc<Credentials>,
-    cache: &'a Cache,
-    preserve_mtime: bool,
-    base_path: &'a PathBuf,
-}
-
-struct ProcessRemoteDependency<'a> {
-    name: PackageName,
-    dependency: RemoteDependency,
-    parent_package_type: Option<PackageType>,
-    is_root: bool,
-    lockfile: &'a Lockfile,
-    credentials: &'a Arc<Credentials>,
-    cache: &'a Cache,
-    preserve_mtime: bool,
-    base_path: &'a PathBuf,
+    /// Map of package names to their metadata
+    pub nodes: MetadataMap,
 }
 
 impl DependencyGraph {
-    /// Recursively resolves dependencies from the manifest to build a dependency graph
-    pub async fn from_manifest(
+    /// Build a dependency graph from a manifest
+    ///
+    /// Downloads remote packages to discover their transitive dependencies
+    pub async fn build(
         manifest: &Manifest,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-        preserve_mtime: bool,
         base_path: &PathBuf,
+        credentials: &Credentials,
     ) -> miette::Result<Self> {
-        let parent_package_type = manifest.clone().package.map(|p| p.kind);
+        let mut builder = GraphBuilder::new(base_path.clone(), credentials);
 
-        let name = manifest
-            .package
-            .as_ref()
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| PackageName::unchecked("."));
+        // Get the parent package type from the manifest
+        let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
 
-        let mut entries = HashMap::new();
-
+        // Add root dependencies
         for dependency in manifest.dependencies.iter().flatten() {
-            Self::process_dependency(
-                &mut entries,
-                ProcessDependency {
+            builder
+                .add_dependency(dependency, parent_package_type)
+                .await?;
+        }
+
+        Ok(Self {
+            nodes: builder.nodes,
+        })
+    }
+
+    /// Returns dependencies in topological order (dependencies before dependents)
+    ///
+    /// This is a convenience method that combines topological_sort with node lookup
+    pub fn ordered_dependencies(&self) -> Result<Vec<DependencyDetails>, DependencyError> {
+        let sorted_names = self.topological_sort()?;
+        Ok(sorted_names
+            .into_iter()
+            .filter_map(|name| {
+                self.nodes.get(&name).map(|node| DependencyDetails {
                     name: name.clone(),
-                    dependency: dependency.clone(),
-                    parent_package_type,
-                    is_root: true,
-                    lockfile,
-                    credentials,
-                    cache,
-                    preserve_mtime,
-                    base_path,
-                },
-            )
-            .await?;
-        }
-
-        Ok(Self { entries })
+                    node: node.clone(),
+                })
+            })
+            .collect())
     }
 
-    async fn process_dependency(
-        entries: &mut HashMap<PackageName, ResolvedDependency>,
-        params: ProcessDependency<'_>,
-    ) -> miette::Result<()> {
-        let ProcessDependency {
-            name,
-            dependency,
-            parent_package_type,
-            is_root,
-            lockfile,
-            credentials,
-            cache,
-            preserve_mtime,
-            base_path,
-        } = params;
-        match dependency.manifest {
-            DependencyManifest::Remote(manifest) => {
-                Self::process_remote_dependency(
-                    entries,
-                    ProcessRemoteDependency {
-                        name: name.clone(),
-                        dependency: RemoteDependency {
-                            package: dependency.package,
-                            manifest,
-                        },
-                        parent_package_type,
-                        is_root,
-                        lockfile,
-                        credentials,
-                        cache,
-                        preserve_mtime,
-                        base_path,
-                    },
-                )
-                .await?;
-            }
-            DependencyManifest::Local(manifest) => {
-                Self::process_local_dependency(
-                    entries,
-                    ProcessLocalDependency {
-                        name: name.clone(),
-                        dependency: LocalDependency {
-                            package: dependency.package,
-                            manifest,
-                        },
-                        parent_package_type,
-                        is_root,
-                        lockfile,
-                        credentials,
-                        cache,
-                        preserve_mtime,
-                        base_path,
-                    },
-                )
-                .await?;
+    /// Perform topological sort on the dependency graph
+    ///
+    /// Returns packages in installation order (dependencies before dependents)
+    /// Detects cycles and returns an error if found
+    ///
+    /// Implements Kahn's algorithm
+    pub fn topological_sort(&self) -> Result<Vec<PackageName>, DependencyError> {
+        let mut in_degree: HashMap<PackageName, usize> = HashMap::new();
+        let mut adj_list: HashMap<PackageName, Vec<PackageName>> = HashMap::new();
+
+        // Initialize in-degree and adjacency list
+        // For topological sort: process dependencies before dependents
+        // in_degree[A] = number of packages A depends on
+        // adj_list[A] = list of packages that depend on A
+        for (name, node) in &self.nodes {
+            in_degree.entry(name.clone()).or_insert(0);
+
+            for dep in &node.dependencies {
+                // name depends on dep, so increment names in-degree
+                *in_degree.entry(name.clone()).or_insert(0) += 1;
+                // Add name to dep's dependents list
+                adj_list
+                    .entry(dep.clone())
+                    .or_insert_with(Vec::new)
+                    .push(name.clone());
             }
         }
 
-        Ok(())
-    }
+        // Initialize queue with V that don't depend on any other node.
+        // At least one such E needs exist, otherwise a cycle exists
+        let mut queue: VecDeque<PackageName> = in_degree
+            .iter()
+            .filter(|&(_, degree)| *degree == 0)
+            .map(|(name, _)| name.clone())
+            .collect();
 
-    #[async_recursion]
-    async fn process_local_dependency<'a>(
-        entries: &'a mut HashMap<PackageName, ResolvedDependency>,
-        params: ProcessLocalDependency<'a>,
-    ) -> miette::Result<()> {
-        let ProcessLocalDependency {
-            name,
-            dependency,
-            parent_package_type,
-            is_root: _,
-            lockfile,
-            credentials,
-            cache,
-            preserve_mtime,
-            base_path,
-        } = params;
+        let mut sorted = Vec::new();
 
-        // Resolve the dependency path relative to the base path (package directory)
-        let resolved_path = base_path.join(&dependency.manifest.path);
+        // Process queue, add process V to sorted list
+        while let Some(node) = queue.pop_front() {
+            sorted.push(node.clone());
 
-        let path = resolved_path.join(MANIFEST_FILE);
+            if let Some(neighbors) = adj_list.get(&node) {
+                for neighbor in neighbors {
+                    if let Some(degree) = in_degree.get_mut(neighbor) {
+                        *degree -= 1;
 
-        let manifest = Manifest::try_read_from(&path).await.wrap_err({
-            miette::miette!(
-                "no `{}` for package {} found at path {}",
-                MANIFEST_FILE,
-                dependency.package,
-                path.display()
-            )
-        })?;
+                        let no_incoming_edges = *degree == 0;
+                        if no_incoming_edges {
+                            queue.push_back(neighbor.clone());
+                        }
+                    }
+                }
+            }
+        }
 
-        let store = PackageStore::open(&resolved_path).await?;
-        let package = store.release(&manifest, preserve_mtime).await?;
-        
-        let dependency_name = package.name().clone();
+        // Cycles should not happen since we check during graph constructon, but
+        if sorted.len() != self.nodes.len() {
+            let unprocessed: Vec<_> = self
+                .nodes
+                .keys()
+                .filter(|name| !sorted.contains(name))
+                .map(|n| n.to_string())
+                .collect();
 
-        let package_type = package.clone().manifest.package.map(|p| p.kind);
-
-        /// This check moved to resolver_2::DependencyError::InvalidPackageTypeDependency
-        if let (Some(PackageType::Lib), Some(PackageType::Api)) =
-            (parent_package_type, package_type)
-        {
-            return Err(miette!(
-                "A package of type lib can not be dependent on type api"
+            return Err(DependencyError::CircularDependency(
+                unprocessed.join(" -> "),
             ));
         }
 
-        /// Sub dependencies are handled by DependencyGraphV2::build()
-        let sub_dependencies = package.manifest.dependencies.clone();
-        let sub_dependency_names: Vec<_> = sub_dependencies
-            .iter()
-            .flatten()
-            .map(|sub_dependency| sub_dependency.package.clone())
-            .collect();
+        Ok(sorted)
+    }
 
-        entries.insert(
-            dependency_name.clone(),
-            ResolvedDependency::Local {
-                package,
-                path: resolved_path.clone(),
-                dependants: vec![Dependant {
-                    name,
-                    version_req: VersionReq::STAR,
-                }],
-                depends_on: sub_dependency_names,
-            },
-        );
+    /// Gets the number of packages that depend on a package
+    pub fn dependants_count_of(&self, package_name: &PackageName) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| node.dependencies.contains(&package_name))
+            .count()
+    }
+}
 
-        for sub_dependency in sub_dependencies.into_iter().flatten() {
-            Self::process_dependency(
-                entries,
-                ProcessDependency {
-                    name: dependency_name.clone(),
-                    dependency: sub_dependency,
-                    parent_package_type: package_type,
-                    is_root: false,
-                    lockfile,
-                    credentials,
-                    cache,
-                    preserve_mtime,
-                    base_path: &resolved_path,
-                },
-            )
-            .await?;
+/// Internal builder for constructing the dependency graph
+struct GraphBuilder<'a> {
+    nodes: HashMap<PackageName, DependencyNode>,
+    base_path: PathBuf,
+    /// Track which packages we're currently visiting to detect cycles during construction
+    visiting: HashSet<PackageName>,
+    credentials: &'a Credentials,
+}
+
+impl<'a> GraphBuilder<'a> {
+    fn new(base_path: PathBuf, credentials: &'a Credentials) -> Self {
+        Self {
+            nodes: HashMap::new(),
+            base_path,
+            visiting: HashSet::new(),
+            credentials,
         }
-
-        Ok(())
     }
 
     #[async_recursion]
-    async fn process_remote_dependency<'a>(
-        entries: &'a mut HashMap<PackageName, ResolvedDependency>,
-        params: ProcessRemoteDependency<'a>,
+    async fn add_dependency(
+        &mut self,
+        dependency: &Dependency,
+        parent_type: Option<PackageType>,
     ) -> miette::Result<()> {
-        let ProcessRemoteDependency {
-            name,
-            dependency,
-            parent_package_type,
-            is_root,
-            lockfile,
-            credentials,
-            cache,
-            preserve_mtime,
-            base_path,
-        } = params;
-        let version_req = dependency.manifest.version.clone();
+        let package_name = &dependency.package;
 
-        if let Some(entry) = entries.get_mut(&dependency.package) {
-            match entry {
-                ResolvedDependency::Local {
-                    path, dependants, ..
-                } => {
-                    bail!(
-                        "a dependency of your project requires {}@{} which collides with a local dependency for {}@{} required by {:?}",
-                        dependency.package,
-                        dependency.manifest.version,
-                        dependency.package,
-                        path.display(),
-                        dependants[0].name.clone(),
-                    );
-                }
-                ResolvedDependency::Remote {
-                    package,
-                    dependants,
-                    ..
-                } => {
-                    ensure!(
-                        version_req.matches(package.version()),
-                        "a dependency of your project requires {}@{} which collides with {}@{} required by {:?}",
-                        dependency.package,
-                        dependency.manifest.version,
-                        package.name(),
-                        package.version(),
-                        dependants[0].name.clone(),
-                    );
+        // Check for cycle during traversal
+        if self.visiting.contains(package_name) {
+            bail!(DependencyError::CircularDependency(format!(
+                "detected while processing {}",
+                package_name
+            )));
+        }
 
-                    dependants.push(Dependant { name, version_req });
-                }
+        // If already processed, just validate compatibility
+        if let Some(existing) = self.nodes.get(package_name) {
+            self.validate_compatibility(dependency, existing)?;
+            return Ok(());
+        }
+
+        // Mark as visiting
+        self.visiting.insert(package_name.clone());
+
+        match &dependency.manifest {
+            DependencyManifest::Local(local) => {
+                self.add_local_dependency(dependency, local, parent_type)
+                    .await?;
             }
-        } else {
-            let dependency_pkg =
-                Self::resolve(dependency.clone(), is_root, lockfile, credentials, cache).await?;
-
-            let package_type = dependency_pkg.clone().manifest.package.map(|p| p.kind);
-
-            if let (Some(PackageType::Lib), Some(PackageType::Api)) =
-                (parent_package_type, package_type)
-            {
-                return Err(miette!(
-                    "A package of type lib can not be dependent on type api"
-                ));
+            DependencyManifest::Remote(remote) => {
+                self.add_remote_dependency(dependency, remote, parent_type)
+                    .await?;
             }
+        }
 
-            let dependency_name = dependency_pkg.name().clone();
-            let sub_dependencies = dependency_pkg.manifest.dependencies.clone();
-            let sub_dependency_names: Vec<_> = sub_dependencies
-                .iter()
-                .flatten()
-                .map(|sub_dependency| sub_dependency.package.clone())
-                .collect();
+        // Unmark as visiting
+        self.visiting.remove(package_name);
 
-            entries.insert(
-                dependency_name.clone(),
-                ResolvedDependency::Remote {
-                    package: dependency_pkg,
-                    registry: dependency.manifest.registry,
-                    repository: dependency.manifest.repository,
-                    dependants: vec![Dependant { name, version_req }],
-                    depends_on: sub_dependency_names,
+        Ok(())
+    }
+
+    async fn add_local_dependency(
+        &mut self,
+        dependency: &Dependency,
+        local_manifest: &LocalDependencyManifest,
+        parent_type: Option<PackageType>,
+    ) -> miette::Result<()> {
+        let resolved_path = self.base_path.join(&local_manifest.path);
+        let manifest_path = resolved_path.join(MANIFEST_FILE);
+
+        let manifest = Manifest::try_read_from(&manifest_path).await?;
+        let package_type = manifest.package.as_ref().map(|p| p.kind);
+
+        // Validate package type constraint
+        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
+            bail!(DependencyError::InvalidPackageTypeDependency {
+                parent: PackageName::unchecked("parent"), // TODO: thread parent name
+                dependency: dependency.package.clone(),
+            });
+        }
+
+        let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
+
+        // Add node
+        self.nodes.insert(
+            dependency.package.clone(),
+            DependencyNode {
+                name: dependency.package.clone(),
+                package_type,
+                source: DependencySource::Local {
+                    path: resolved_path.clone(),
                 },
-            );
+                dependencies: sub_dependencies.clone(),
+                version: VersionReq::STAR,
+            },
+        );
 
-            for sub_dependency in sub_dependencies.into_iter().flatten() {
-                Self::process_dependency(
-                    entries,
-                    ProcessDependency {
-                        name: dependency_name.clone(),
-                        dependency: sub_dependency,
-                        parent_package_type: package_type,
-                        is_root: false,
-                        lockfile,
-                        credentials,
-                        cache,
-                        preserve_mtime,
-                        base_path,
-                    },
-                )
-                .await?;
+        // Recursively process dependencies with the new base path
+        for sub_dep in manifest.dependencies.unwrap_or_default() {
+            // We need to update the base path for sub-dependencies
+            let old_base = self.base_path.clone();
+            self.base_path = resolved_path.clone();
+            self.add_dependency(&sub_dep, package_type).await?;
+            self.base_path = old_base;
+        }
+
+        Ok(())
+    }
+
+    async fn add_remote_dependency(
+        &mut self,
+        dependency: &Dependency,
+        remote_manifest: &crate::manifest::RemoteDependencyManifest,
+        parent_type: Option<PackageType>,
+    ) -> miette::Result<()> {
+        let package_name = &dependency.package;
+        let registry = &remote_manifest.registry;
+        let repository = &remote_manifest.repository;
+        let version = &remote_manifest.version;
+
+        // Download the package to read its manifest and discover dependencies
+        let artifactory = Artifactory::new(registry.clone(), self.credentials)
+            .wrap_err(miette!("failed to initialize registry {}", registry))?;
+
+        let downloaded_package = artifactory.download(dependency.clone()).await?;
+
+        // Read the package manifest to discover dependencies and package type
+        let manifest = downloaded_package.manifest;
+        let package_type = manifest.package.as_ref().map(|p| p.kind);
+
+        // Validate package type constraint
+        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
+            bail!(DependencyError::InvalidPackageTypeDependency {
+                parent: PackageName::unchecked("parent"), // TODO: thread parent name
+                dependency: package_name.clone(),
+            });
+        }
+
+        let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
+
+        // Add node with discovered metadata
+        self.nodes.insert(
+            package_name.clone(),
+            DependencyNode {
+                name: package_name.clone(),
+                package_type,
+                source: DependencySource::Remote {
+                    registry: registry.clone(),
+                    repository: repository.clone(),
+                },
+                dependencies: sub_dependencies.clone(),
+                version: version.clone(),
+            },
+        );
+
+        // Recursively process transitive dependencies
+        for sub_dep in manifest.dependencies.unwrap_or_default() {
+            self.add_dependency(&sub_dep, package_type).await?;
+        }
+
+        Ok(())
+    }
+
+    fn validate_compatibility(
+        &self,
+        dependency: &Dependency,
+        existing: &DependencyNode,
+    ) -> miette::Result<()> {
+        // Check for local/remote conflicts
+        self.validate_manifest_conflicts(dependency, existing)?;
+
+        // Check for version conflicts on remote dependencies
+        self.validate_version_compatibility(dependency, existing)?;
+
+        Ok(())
+    }
+
+    /// Validates that version requirements are compatible when the same package is requested multiple times
+    fn validate_version_compatibility(
+        &self,
+        dependency: &Dependency,
+        existing: &DependencyNode,
+    ) -> miette::Result<()> {
+        // Only check version compatibility for remote dependencies
+        if let (DependencyManifest::Remote(new_remote), DependencySource::Remote { .. }) =
+            (&dependency.manifest, &existing.source)
+        {
+            // For now, buffrs only supports pinned versions (see TODO #205)
+            // We check if the version requirements are equal since they should be exact pins
+            // In the future with dynamic version resolution, this would need to check for compatibility
+            if new_remote.version != existing.version {
+                bail!(DependencyError::VersionConflict {
+                    package: dependency.package.clone(),
+                    requester: PackageName::unchecked("unknown"), // TODO: thread parent package name
+                    required_version: new_remote.version.clone(),
+                    existing_version: existing.version.clone(),
+                });
             }
         }
 
         Ok(())
     }
 
-    /// Resolves and downloads a remote dependency package
-    ///
-    /// This function implements a multi-tier resolution strategy:
-    /// 1. Checks the lockfile for a pinned version
-    /// 2. Validates registry consistency across the dependency tree
-    /// 3. Attempts to retrieve from cache if version matches lockfile
-    /// 4. Downloads from registry if not cached or not in lockfile
-    /// 5. Caches newly downloaded packages for future use
-    ///
-    /// # Arguments
-    ///
-    /// * `dependency` - The remote dependency to resolve
-    /// * `is_root` - Whether this is a root-level dependency (allows registry mismatches)
-    /// * `lockfile` - The lockfile containing pinned versions
-    /// * `credentials` - Registry authentication credentials
-    /// * `cache` - Local package cache
-    ///
-    /// # Returns
-    ///
-    /// The resolved package ready for installation
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Registry mismatch detected between manifest and lockfile (non-root dependencies)
-    /// - Failed to initialize registry connection
-    /// - Failed to download package from registry
-    /// - Lockfile validation fails for cached package
-    async fn resolve(
-        dependency: RemoteDependency,
-        is_root: bool,
-        lockfile: &Lockfile,
-        credentials: &Arc<Credentials>,
-        cache: &Cache,
-    ) -> miette::Result<Package> {
-        if let Some(local_locked) = lockfile.get(&dependency.package) {
-            ensure!(
-                is_root || dependency.manifest.registry == local_locked.registry,
-                "mismatched registry detected for dependency {} - requested {} but lockfile requires {}",
-                dependency.package,
-                dependency.manifest.registry,
-                local_locked.registry,
-            );
-
-            // For now we should only check cache if locked package matches manifest,
-            // but theoretically we should be able to still look into cache when freshly installing
-            // a dependency.
-            if dependency.manifest.version.matches(&local_locked.version) {
-                if let Some(cached) = cache.get(local_locked.into()).await? {
-                    local_locked.validate(&cached)?;
-                    return Ok(cached);
-                }
+    /// Checks for conflicting dependencies betweel local / remote deps in the dependency tree
+    fn validate_manifest_conflicts(
+        &self,
+        dependency: &Dependency,
+        existing: &DependencyNode,
+    ) -> miette::Result<()> {
+        match (&dependency.manifest, &existing.source) {
+            (DependencyManifest::Local(_), DependencySource::Remote { .. }) => {
+                bail!(DependencyError::LocalRemoteConflict {
+                    local_pkg: dependency.package.clone(),
+                    requester: PackageName::unchecked("unknown"), // TODO: thread requester
+                });
             }
-
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            let package = registry
-                // TODO(#205): This works now because buffrs only supports pinned versions.
-                // This logic has to change once we implement dynamic version resolution.
-                .download(dependency.clone().into())
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })?;
-
-            let file_requirement = FileRequirement::from(local_locked);
-            cache
-                .put(file_requirement.into(), package.tgz.clone())
-                .await
-                .ok();
-
-            Ok(package)
-        } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
-                .wrap_err(DownloadError {
-                    name: dependency.package.clone(),
-                    version: dependency.manifest.version.clone(),
-                })?;
-
-            let package = registry
-                .download(dependency.clone().into())
-                .await
-                .wrap_err(DownloadError {
-                    name: dependency.package,
-                    version: dependency.manifest.version,
-                })?;
-
-            let key = Entry::from(&package);
-            let content = package.tgz.clone();
-            cache.put(key, content).await.ok();
-
-            Ok(package)
+            (DependencyManifest::Remote(_), DependencySource::Local { .. }) => {
+                bail!(DependencyError::LocalRemoteConflict {
+                    local_pkg: dependency.package.clone(),
+                    requester: PackageName::unchecked("unknown"),
+                });
+            }
+            _ => {}
         }
-    }
 
-    /// Locates and returns a reference to a resolved dependency package by its name
-    pub fn get(&self, name: &PackageName) -> Option<&ResolvedDependency> {
-        self.entries.get(name)
+        Ok(())
     }
 }
 
-impl IntoIterator for DependencyGraph {
-    type Item = ResolvedDependency;
-    type IntoIter = std::collections::hash_map::IntoValues<PackageName, ResolvedDependency>;
+/// Errors that can occur during dependency resolution
+#[derive(Error, Diagnostic, Debug)]
+pub enum DependencyError {
+    /// A local dependency conflicts with a remote dependency
+    #[error(
+        "local dependency {local_pkg} conflicts with remote dependency required by {requester}"
+    )]
+    LocalRemoteConflict {
+        /// The package that is declared as local
+        local_pkg: PackageName,
+        /// The package that requires it as remote
+        requester: PackageName,
+    },
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.entries.into_values()
-    }
+    /// A lib package cannot depend on an api package
+    #[error("package of type lib cannot depend on package of type api: {parent} -> {dependency}")]
+    InvalidPackageTypeDependency {
+        /// The parent lib package
+        parent: PackageName,
+        /// The api package being depended on
+        dependency: PackageName,
+    },
+
+    /// A circular dependency was detected in the dependency graph
+    #[error("circular dependency detected: {0}")]
+    CircularDependency(String),
+
+    /// Version conflict between multiple dependants
+    #[error(
+        "version conflict for {package}: {requester} requires {required_version} but already resolved to {existing_version}"
+    )]
+    VersionConflict {
+        /// The package with conflicting versions
+        package: PackageName,
+        /// The package requesting the conflicting version
+        requester: PackageName,
+        /// The version requirement that conflicts
+        required_version: VersionReq,
+        /// The version already resolved in the graph
+        existing_version: VersionReq,
+    },
+
+    /// Failed to download a dependency from the registry
+    #[error("failed to download dependency {name}@{version} from the registry")]
+    DownloadError {
+        /// Package name
+        name: PackageName,
+        /// Version requirement
+        version: VersionReq,
+    },
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::manifest::{Manifest, PackageManifest};
-    use semver::Version;
-    use std::sync::Arc;
-    use tempfile::TempDir;
-
-    fn create_test_manifest(
-        name: &str,
-        package_type: PackageType,
-        dependencies: Vec<Dependency>,
-    ) -> Manifest {
-        Manifest::builder()
-            .package(PackageManifest {
-                kind: package_type,
-                name: name.parse().unwrap(),
-                version: Version::new(0, 1, 0),
-                description: None,
-            })
-            .dependencies(dependencies)
-            .build()
-    }
-
-    #[tokio::test]
-    async fn test_lib_cannot_depend_on_api() {
-        let temp_dir = TempDir::new().unwrap();
-        let api_dir = temp_dir.path().join("api-package");
-        std::fs::create_dir(&api_dir).unwrap();
-
-        // Create an API package
-        let api_manifest = create_test_manifest("api-package", PackageType::Api, vec![]);
-        api_manifest.write_at(&api_dir).await.unwrap();
-
-        // Create proto directory for API package
-        std::fs::create_dir_all(api_dir.join("proto")).unwrap();
-
-        // Create a lib package that tries to depend on the API package
-        let lib_manifest = Manifest::builder()
-            .package(PackageManifest {
-                kind: PackageType::Lib,
-                name: "lib-package".parse().unwrap(),
-                version: Version::new(0, 1, 0),
-                description: None,
-            })
-            .dependencies(vec![Dependency {
-                package: "api-package".parse().unwrap(),
-                manifest: LocalDependencyManifest {
-                    path: api_dir.clone(),
-                }
-                .into(),
-            }])
-            .build();
-
-        let lockfile = Lockfile::default();
-        let credentials = Arc::new(Credentials::default());
-        let cache = Cache::open().await.unwrap();
-
-        let result = DependencyGraph::from_manifest(
-            &lib_manifest,
-            &lockfile,
-            &credentials,
-            &cache,
-            false,
-            &temp_dir.path().to_path_buf(),
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("lib can not be dependent on type api")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_api_can_depend_on_lib() {
-        let temp_dir = TempDir::new().unwrap();
-        let lib_dir = temp_dir.path().join("lib-package");
-        std::fs::create_dir(&lib_dir).unwrap();
-
-        // Create a lib package
-        let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
-        lib_manifest.write_at(&lib_dir).await.unwrap();
-
-        // Create proto directory for lib package
-        std::fs::create_dir_all(lib_dir.join("proto")).unwrap();
-
-        // Create an API package that depends on the lib package (should work)
-        let api_manifest = Manifest::builder()
-            .package(PackageManifest {
-                kind: PackageType::Api,
-                name: "api-package".parse().unwrap(),
-                version: Version::new(0, 1, 0),
-                description: None,
-            })
-            .dependencies(vec![Dependency {
-                package: "lib-package".parse().unwrap(),
-                manifest: LocalDependencyManifest {
-                    path: lib_dir.clone(),
-                }
-                .into(),
-            }])
-            .build();
-
-        let lockfile = Lockfile::default();
-        let credentials = Arc::new(Credentials::default());
-        let cache = Cache::open().await.unwrap();
-
-        let result = DependencyGraph::from_manifest(
-            &api_manifest,
-            &lockfile,
-            &credentials,
-            &cache,
-            false,
-            &temp_dir.path().to_path_buf(),
-        )
-        .await;
-
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_empty_dependencies_graph() {
-        let manifest = create_test_manifest("test-package", PackageType::Lib, vec![]);
-        let lockfile = Lockfile::default();
-        let credentials = Arc::new(Credentials::default());
-        let cache = Cache::open().await.unwrap();
-        let temp_dir = TempDir::new().unwrap();
-
-        let graph = DependencyGraph::from_manifest(
-            &manifest,
-            &lockfile,
-            &credentials,
-            &cache,
-            false,
-            &temp_dir.path().to_path_buf(),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(graph.entries.len(), 0);
-    }
-}
+// tests moves to ./tests/resolver_v2_tests.rs

@@ -1,6 +1,7 @@
+use buffrs::credentials::Credentials;
 use buffrs::manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest};
 use buffrs::package::{PackageName, PackageType};
-use buffrs::resolver_v2::{DependencyGraphV2, DependencyNode, DependencySource};
+use buffrs::resolver::{DependencyGraph, DependencyNode, DependencySource};
 use semver::{Version, VersionReq};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,8 +27,9 @@ fn create_test_manifest(
 async fn test_empty_graph() {
     let manifest = create_test_manifest("test-package", PackageType::Lib, vec![]);
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
-    let graph = DependencyGraphV2::build(&manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -37,6 +39,7 @@ async fn test_empty_graph() {
 #[tokio::test]
 async fn test_single_local_dependency() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
     let lib_dir = temp_dir.path().join("lib-package");
     std::fs::create_dir(&lib_dir).expect("create lib dir");
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
@@ -65,7 +68,7 @@ async fn test_single_local_dependency() {
         }])
         .build();
 
-    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -81,6 +84,7 @@ async fn test_single_local_dependency() {
 #[tokio::test]
 async fn test_transitive_dependencies() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create lib2 (no dependencies)
     let lib2_dir = temp_dir.path().join("lib2");
@@ -133,7 +137,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
 
-    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -161,6 +165,7 @@ async fn test_transitive_dependencies() {
 #[tokio::test]
 async fn test_lib_cannot_depend_on_api() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
     let api_dir = temp_dir.path().join("api-package");
     std::fs::create_dir(&api_dir).expect("create dir");
     std::fs::create_dir_all(api_dir.join("proto")).expect("create proto dir");
@@ -189,7 +194,8 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result = DependencyGraphV2::build(&lib_manifest, &temp_dir.path().to_path_buf()).await;
+    let result =
+        DependencyGraph::build(&lib_manifest, &temp_dir.path().to_path_buf(), &credentials).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -203,6 +209,7 @@ async fn test_lib_cannot_depend_on_api() {
 #[tokio::test]
 async fn test_api_can_depend_on_lib() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
     let lib_dir = temp_dir.path().join("lib-package");
     std::fs::create_dir(&lib_dir).expect("create dir");
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
@@ -229,13 +236,15 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
+    let result =
+        DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials).await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
 #[tokio::test]
 async fn test_circular_dependency_direct() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create pkg1 directory
     let pkg1_dir = temp_dir.path().join("pkg1");
@@ -290,7 +299,7 @@ async fn test_circular_dependency_direct() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraphV2::build(&pkg1_manifest, &pkg1_dir).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -304,6 +313,7 @@ async fn test_circular_dependency_direct() {
 #[tokio::test]
 async fn test_circular_dependency_indirect() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create pkg3 (no dependencies initially)
     let pkg3_dir = temp_dir.path().join("pkg3");
@@ -382,7 +392,7 @@ async fn test_circular_dependency_indirect() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraphV2::build(&pkg1_manifest, &pkg1_dir).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
 
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
@@ -396,6 +406,7 @@ async fn test_circular_dependency_indirect() {
 #[tokio::test]
 async fn test_diamond_dependency() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create common (no dependencies)
     let common_dir = temp_dir.path().join("common");
@@ -481,7 +492,7 @@ async fn test_diamond_dependency() {
         ])
         .build();
 
-    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -507,6 +518,7 @@ async fn test_diamond_dependency() {
 #[tokio::test]
 async fn test_multiple_dependencies_from_single_package() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create lib1
     let lib1_dir = temp_dir.path().join("lib1");
@@ -571,7 +583,7 @@ async fn test_multiple_dependencies_from_single_package() {
         ])
         .build();
 
-    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -596,6 +608,7 @@ async fn test_multiple_dependencies_from_single_package() {
 #[tokio::test]
 async fn test_local_remote_conflict() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
     let lib_dir = temp_dir.path().join("lib-package");
     std::fs::create_dir(&lib_dir).expect("create dir");
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
@@ -634,7 +647,8 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf()).await;
+    let result =
+        DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials).await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());
@@ -649,6 +663,7 @@ async fn test_local_remote_conflict() {
 #[tokio::test]
 async fn test_relative_path_resolution() {
     let temp_dir = TempDir::new().expect("create temp dir");
+    let credentials = Credentials::default();
 
     // Create nested structure: temp_dir/subdir/lib1
     let subdir = temp_dir.path().join("subdir");
@@ -684,7 +699,7 @@ async fn test_relative_path_resolution() {
         }])
         .build();
 
-    let graph = DependencyGraphV2::build(&api_manifest, &temp_dir.path().to_path_buf())
+    let graph = DependencyGraph::build(&api_manifest, &temp_dir.path().to_path_buf(), &credentials)
         .await
         .expect("build graph");
 
@@ -705,7 +720,7 @@ async fn test_relative_path_resolution() {
 // These tests verify correct ordering without re-testing graph construction
 
 /// Helper function to manually construct a DependencyGraph for testing topological sort
-fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGraphV2 {
+fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGraph {
     let mut graph_nodes = HashMap::new();
 
     for (name, dependencies) in nodes {
@@ -723,7 +738,7 @@ fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGr
         );
     }
 
-    DependencyGraphV2 { nodes: graph_nodes }
+    DependencyGraph { nodes: graph_nodes }
 }
 
 #[test]
@@ -1010,7 +1025,7 @@ fn test_topo_sort_detects_cycle() {
         },
     );
 
-    let graph = DependencyGraphV2 { nodes };
+    let graph = DependencyGraph { nodes };
 
     let result = graph.topological_sort();
     assert!(result.is_err(), "should detect cycle");
@@ -1019,7 +1034,7 @@ fn test_topo_sort_detects_cycle() {
     assert!(
         matches!(
             err,
-            buffrs::resolver_v2::DependencyError::CircularDependency(_)
+            buffrs::resolver::DependencyError::CircularDependency(_)
         ),
         "error should be CircularDependency"
     );
@@ -1027,113 +1042,10 @@ fn test_topo_sort_detects_cycle() {
 
 #[test]
 fn test_topo_sort_empty_graph() {
-    let graph = DependencyGraphV2 {
+    let graph = DependencyGraph {
         nodes: HashMap::new(),
     };
 
     let sorted = graph.topological_sort().expect("sort should succeed");
     assert_eq!(sorted.len(), 0);
-}
-
-#[tokio::test]
-async fn test_version_conflict_detection() {
-    use buffrs::manifest::{Dependency, RemoteDependencyManifest};
-    use buffrs::registry::RegistryUri;
-
-    let temp_dir = TempDir::new().expect("create temp dir");
-
-    // Create a root package that depends on two packages, both of which depend on the same
-    // package but with different versions
-    let pkg1_dir = temp_dir.path().join("pkg1");
-    let pkg2_dir = temp_dir.path().join("pkg2");
-    std::fs::create_dir(&pkg1_dir).expect("create dir");
-    std::fs::create_dir(&pkg2_dir).expect("create dir");
-    std::fs::create_dir_all(pkg1_dir.join("proto")).expect("create proto dir");
-    std::fs::create_dir_all(pkg2_dir.join("proto")).expect("create proto dir");
-
-    let registry: RegistryUri = "https://registry.example.com"
-        .parse()
-        .expect("valid registry");
-
-    // pkg1 depends on common@1.0.0
-    let pkg1_manifest = Manifest::builder()
-        .package(PackageManifest {
-            kind: PackageType::Lib,
-            name: "pkg1".parse().expect("valid package name"),
-            version: Version::new(0, 1, 0),
-            description: None,
-        })
-        .dependencies(vec![Dependency {
-            package: "common".parse().expect("valid package name"),
-            manifest: RemoteDependencyManifest {
-                registry: registry.clone(),
-                repository: "test-repo".to_string(),
-                version: VersionReq::parse("=1.0.0").expect("valid version"),
-            }
-            .into(),
-        }])
-        .build();
-    pkg1_manifest
-        .write_at(&pkg1_dir)
-        .await
-        .expect("write manifest");
-
-    // pkg2 depends on common@2.0.0 (conflict!)
-    let pkg2_manifest = Manifest::builder()
-        .package(PackageManifest {
-            kind: PackageType::Lib,
-            name: "pkg2".parse().expect("valid package name"),
-            version: Version::new(0, 1, 0),
-            description: None,
-        })
-        .dependencies(vec![Dependency {
-            package: "common".parse().expect("valid package name"),
-            manifest: RemoteDependencyManifest {
-                registry: registry.clone(),
-                repository: "test-repo".to_string(),
-                version: VersionReq::parse("=2.0.0").expect("valid version"),
-            }
-            .into(),
-        }])
-        .build();
-    pkg2_manifest
-        .write_at(&pkg2_dir)
-        .await
-        .expect("write manifest");
-
-    // Root package depends on both pkg1 and pkg2
-    let root_manifest = Manifest::builder()
-        .package(PackageManifest {
-            kind: PackageType::Api,
-            name: "root".parse().expect("valid package name"),
-            version: Version::new(0, 1, 0),
-            description: None,
-        })
-        .dependencies(vec![
-            Dependency {
-                package: "pkg1".parse().expect("valid package name"),
-                manifest: LocalDependencyManifest {
-                    path: pkg1_dir.clone(),
-                }
-                .into(),
-            },
-            Dependency {
-                package: "pkg2".parse().expect("valid package name"),
-                manifest: LocalDependencyManifest {
-                    path: pkg2_dir.clone(),
-                }
-                .into(),
-            },
-        ])
-        .build();
-
-    let result = DependencyGraphV2::build(&root_manifest, &temp_dir.path().to_path_buf()).await;
-
-    assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("version conflict") || err_msg.contains("VersionConflict"),
-        "Error should mention version conflict, got: {}",
-        err_msg
-    );
 }

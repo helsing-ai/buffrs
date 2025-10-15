@@ -17,15 +17,14 @@ use crate::{
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
-    package::{PackageName, PackageStore, PackageType},
+    package::{Package, PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver::{DependencyGraph, ResolvedDependency},
-    resolver_v2,
+    resolver,
 };
 
 use crate::lock::LOCKFILE;
 use crate::manifest::{DependencyManifest, ManifestType, RemoteDependencyManifest};
-use crate::resolver_v2::DependencySource;
+use crate::resolver::DependencySource;
 use async_recursion::async_recursion;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
@@ -446,7 +445,16 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
             let current_path = env::current_dir()
                 .into_diagnostic()
                 .wrap_err("current dir could not be retrieved")?;
-            install_package(preserve_mtime, &manifest, &lockfile, &store, &current_path, &cache).await
+
+            install_package(
+                preserve_mtime,
+                &manifest,
+                &lockfile,
+                &store,
+                &current_path,
+                &cache,
+            )
+            .await
         }
         ManifestType::Workspace => install_workspace(preserve_mtime, &manifest).await,
     }
@@ -494,13 +502,43 @@ async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette:
     Ok(())
 }
 
+/// Downloads a package from the registry and caches it
+async fn download_and_cache(
+    artifactory: &Artifactory,
+    package_name: &PackageName,
+    registry: &RegistryUri,
+    repository: &str,
+    version: &VersionReq,
+    cache: &Cache,
+) -> miette::Result<Package> {
+    let dependency = Dependency {
+        package: package_name.clone(),
+        manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+            registry: registry.clone(),
+            repository: repository.to_string(),
+            version: version.clone(),
+        }),
+    };
+
+    let downloaded_package = artifactory.download(dependency).await?;
+
+    // Cache the downloaded package for future installs
+    let cache_key = CacheEntry::from(&downloaded_package);
+    cache
+        .put(cache_key, downloaded_package.tgz.clone())
+        .await
+        .ok();
+
+    Ok(downloaded_package)
+}
+
 /// Installs dependencies of a package
 ///
 /// if [preserve_mtime] is true, local dependencies will keep their modification time
 async fn install_package(
     preserve_mtime: bool,
     manifest: &Manifest,
-    _lockfile: &Lockfile,
+    lockfile: &Lockfile,
     store: &PackageStore,
     package_path: &PathBuf,
     cache: &Cache,
@@ -515,7 +553,7 @@ async fn install_package(
         tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
     }
 
-    let graph_v2 = resolver_v2::DependencyGraphV2::build(manifest, package_path).await?;
+    let graph_v2 = resolver::DependencyGraph::build(manifest, package_path, &credentials).await?;
     let dependencies = graph_v2.ordered_dependencies()?;
 
     let mut locked = Vec::new();
@@ -537,30 +575,62 @@ async fn install_package(
                 repository,
                 registry,
             } => {
-                // For remote dependencies, download and add to lockfile
-                let artifactory = Artifactory::new(registry.clone(), &credentials)
-                    .wrap_err(miette!("failed to initialize registry {}", registry))?;
+                let package_name = &dependency_node.node.name;
+                let version = &dependency_node.node.version;
 
-                let dependency = Dependency {
-                    package: dependency_node.node.name.clone(),
-                    manifest: DependencyManifest::Remote(RemoteDependencyManifest {
-                        registry: registry.clone(),
-                        repository: repository.clone(),
-                        version: dependency_node.node.version.clone(),
-                    }),
+                // Try to use cached package if available in lockfile
+                let mut resolved_package = None;
+                if let Some(locked_entry) = lockfile.get(package_name) {
+                    // Validate registry consistency
+                    ensure!(
+                        registry == locked_entry.registry,
+                        "registry mismatch for {}: manifest specifies {} but lockfile requires {}",
+                        package_name,
+                        registry,
+                        locked_entry.registry
+                    );
+
+                    // Try to retrieve from cache if version matches lockfile
+                    if version.matches(&locked_entry.version) {
+                        if let Some(cached) = cache.get(locked_entry.into()).await? {
+                            // Validate the cached package digest
+                            locked_entry.validate(&cached)?;
+
+                            tracing::debug!(
+                                ":: using cached package for {}@{}",
+                                package_name,
+                                cached.version()
+                            );
+
+                            resolved_package = Some(cached);
+                        }
+                    }
+                }
+
+                // Download from registry if not cached
+                let resolved_package = match resolved_package {
+                    Some(pkg) => pkg,
+                    None => {
+                        let artifactory = Artifactory::new(registry.clone(), &credentials)
+                            .wrap_err(miette!("failed to initialize registry {}", registry))?;
+
+                        download_and_cache(
+                            &artifactory,
+                            package_name,
+                            &registry,
+                            &repository,
+                            version,
+                            cache,
+                        )
+                        .await?
+                    }
                 };
 
-                let downloaded_package = artifactory.download(dependency).await?;
+                // Add to new lockfile
+                let dependants_count = graph_v2.dependants_count_of(package_name);
+                locked.push(resolved_package.lock(registry, repository, dependants_count));
 
-                // Cache the downloaded package for future installs
-                let cache_key = CacheEntry::from(&downloaded_package);
-                cache.put(cache_key, downloaded_package.tgz.clone()).await.ok();
-
-                // Add to lockfile - count dependants from the graph
-                let dependants_count = graph_v2.dependants_count_of(&dependency_node.name);
-                locked.push(downloaded_package.lock(registry, repository, dependants_count));
-
-                downloaded_package
+                resolved_package
             }
         };
 
@@ -577,106 +647,6 @@ async fn install_package(
     }
 
     // Write lockfile
-    Lockfile::from_iter(locked.into_iter())
-        .write(package_path)
-        .await
-}
-
-pub async fn install_package_old(
-    preserve_mtime: bool,
-    manifest: &Manifest,
-    lockfile: &Lockfile,
-    store: &PackageStore,
-    package_path: &PathBuf,
-) -> miette::Result<()> {
-    let credentials = Credentials::load().await?;
-    let cache = Cache::open().await?;
-
-    store.clear().await?;
-
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-
-        tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
-    }
-
-    let dependency_graph = DependencyGraph::from_manifest(
-        &manifest,
-        &lockfile,
-        &credentials.into(),
-        &cache,
-        preserve_mtime,
-        package_path,
-    )
-    .await
-    .wrap_err(miette!("dependency resolution failed"))?;
-
-    let mut locked = Vec::new();
-
-    #[async_recursion]
-    async fn traverse_and_install(
-        name: &PackageName,
-        graph: &DependencyGraph,
-        store: &PackageStore,
-        locked: &mut Vec<LockedPackage>,
-        prefix: String,
-    ) -> miette::Result<()> {
-        let resolved = graph.get(name).ok_or(miette!(
-            "unexpected error: missing dependency in dependency graph"
-        ))?;
-
-        store.unpack(resolved.package()).await.wrap_err(miette!(
-            "failed to unpack package {}",
-            &resolved.package().name()
-        ))?;
-
-        tracing::info!(
-            "{} installed {}@{}",
-            if prefix.is_empty() { "::" } else { &prefix },
-            name,
-            resolved.package().version()
-        );
-
-        if let ResolvedDependency::Remote {
-            package,
-            registry,
-            repository,
-            dependants,
-            ..
-        } = &resolved
-        {
-            locked.push(package.lock(registry.clone(), repository.clone(), dependants.len()));
-        }
-
-        for (index, dependency) in resolved.depends_on().iter().enumerate() {
-            let tree_char = if index + 1 == resolved.depends_on().len() {
-                '┗'
-            } else {
-                '┣'
-            };
-
-            let new_prefix = format!(
-                "{} {tree_char}",
-                if prefix.is_empty() { "  " } else { &prefix }
-            );
-
-            traverse_and_install(dependency, graph, store, locked, new_prefix).await?;
-        }
-
-        Ok(())
-    }
-
-    for dependency in manifest.dependencies.iter().flatten() {
-        traverse_and_install(
-            &dependency.package,
-            &dependency_graph,
-            &store,
-            &mut locked,
-            String::new(),
-        )
-        .await?;
-    }
-
     Lockfile::from_iter(locked.into_iter())
         .write(package_path)
         .await
