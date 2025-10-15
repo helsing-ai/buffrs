@@ -327,6 +327,7 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Get package names of dependencies
     pub fn get_dependency_package_names(&self) -> Vec<PackageName> {
         self.dependencies
             .clone()

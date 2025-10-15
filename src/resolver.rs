@@ -278,10 +278,12 @@ impl DependencyGraph {
 
         let store = PackageStore::open(&resolved_path).await?;
         let package = store.release(&manifest, preserve_mtime).await?;
+        
         let dependency_name = package.name().clone();
 
         let package_type = package.clone().manifest.package.map(|p| p.kind);
 
+        /// This check moved to resolver_2::DependencyError::InvalidPackageTypeDependency
         if let (Some(PackageType::Lib), Some(PackageType::Api)) =
             (parent_package_type, package_type)
         {
@@ -290,6 +292,7 @@ impl DependencyGraph {
             ));
         }
 
+        /// Sub dependencies are handled by DependencyGraphV2::build()
         let sub_dependencies = package.manifest.dependencies.clone();
         let sub_dependency_names: Vec<_> = sub_dependencies
             .iter()
@@ -436,6 +439,34 @@ impl DependencyGraph {
         Ok(())
     }
 
+    /// Resolves and downloads a remote dependency package
+    ///
+    /// This function implements a multi-tier resolution strategy:
+    /// 1. Checks the lockfile for a pinned version
+    /// 2. Validates registry consistency across the dependency tree
+    /// 3. Attempts to retrieve from cache if version matches lockfile
+    /// 4. Downloads from registry if not cached or not in lockfile
+    /// 5. Caches newly downloaded packages for future use
+    ///
+    /// # Arguments
+    ///
+    /// * `dependency` - The remote dependency to resolve
+    /// * `is_root` - Whether this is a root-level dependency (allows registry mismatches)
+    /// * `lockfile` - The lockfile containing pinned versions
+    /// * `credentials` - Registry authentication credentials
+    /// * `cache` - Local package cache
+    ///
+    /// # Returns
+    ///
+    /// The resolved package ready for installation
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Registry mismatch detected between manifest and lockfile (non-root dependencies)
+    /// - Failed to initialize registry connection
+    /// - Failed to download package from registry
+    /// - Lockfile validation fails for cached package
     async fn resolve(
         dependency: RemoteDependency,
         is_root: bool,

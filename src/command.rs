@@ -513,21 +513,21 @@ async fn install_package(
     let graph_v2 = resolver_v2::DependencyGraphV2::build(manifest, package_path).await?;
     let dependencies = graph_v2.ordered_dependencies()?;
 
-    let human_friendly_str: Vec<String> = dependencies
-        .iter()
-        .map(|dep| dep.name.to_string())
-        .collect();
-
     let mut locked = Vec::new();
 
     for dependency_node in dependencies {
         // Iterate through the dependencies in order and install them
         let package = match dependency_node.node.source {
+            /// corresponds to process_local_dependency in resolver.rs:
+            /// Key logic is: Read manifest, create directory structures via PackageStore::open, initialize package via store.release
             DependencySource::Local { path } => {
-                // For local dependencies, read manifest and release it
+                // For local dependencies, create a store at the dependency path and release it
                 let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
-                store.release(&dep_manifest, preserve_mtime).await?
+                let dep_store = PackageStore::open(&path).await?;
+                dep_store.release(&dep_manifest, preserve_mtime).await?
             }
+
+            /// corresponds to process_remote_dependency in resolver.rs:
             DependencySource::Remote {
                 repository,
                 registry,
@@ -548,12 +548,7 @@ async fn install_package(
                 let downloaded_package = artifactory.download(dependency).await?;
 
                 // Add to lockfile - count dependants from the graph
-                let dependants_count = graph_v2
-                    .nodes
-                    .values()
-                    .filter(|node| node.dependencies.contains(&dependency_node.name))
-                    .count();
-
+                let dependants_count = graph_v2.dependants_count_of(&dependency_node.name);
                 locked.push(downloaded_package.lock(registry, repository, dependants_count));
 
                 downloaded_package
