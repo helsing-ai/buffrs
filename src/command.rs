@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::{
-    cache::Cache,
+    cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
@@ -442,10 +442,11 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
         ManifestType::Package => {
             let lockfile = Lockfile::read_or_default().await?;
             let store = PackageStore::current().await?;
+            let cache = Cache::open().await?;
             let current_path = env::current_dir()
                 .into_diagnostic()
                 .wrap_err("current dir could not be retrieved")?;
-            install_package(preserve_mtime, &manifest, &lockfile, &store, &current_path).await
+            install_package(preserve_mtime, &manifest, &lockfile, &store, &current_path, &cache).await
         }
         ManifestType::Workspace => install_workspace(preserve_mtime, &manifest).await,
     }
@@ -467,6 +468,8 @@ async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette:
         packages.len()
     );
 
+    let cache = Cache::open().await?;
+
     for package in packages {
         let canonical_name = fs::canonicalize(&package).await.into_diagnostic()?;
         let pkg_manifest = Manifest::try_read_from(package.join(MANIFEST_FILE)).await?;
@@ -483,6 +486,7 @@ async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette:
             &pkg_lockfile,
             &store,
             &package,
+            &cache,
         )
         .await?
     }
@@ -499,6 +503,7 @@ async fn install_package(
     _lockfile: &Lockfile,
     store: &PackageStore,
     package_path: &PathBuf,
+    cache: &Cache,
 ) -> miette::Result<()> {
     let credentials = Credentials::load().await?;
 
@@ -518,8 +523,8 @@ async fn install_package(
     for dependency_node in dependencies {
         // Iterate through the dependencies in order and install them
         let package = match dependency_node.node.source {
-            /// corresponds to process_local_dependency in resolver.rs:
-            /// Key logic is: Read manifest, create directory structures via PackageStore::open, initialize package via store.release
+            // corresponds to process_local_dependency in resolver.rs:
+            // Key logic is: Read manifest, create directory structures via PackageStore::open, initialize package via store.release
             DependencySource::Local { path } => {
                 // For local dependencies, create a store at the dependency path and release it
                 let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
@@ -527,7 +532,7 @@ async fn install_package(
                 dep_store.release(&dep_manifest, preserve_mtime).await?
             }
 
-            /// corresponds to process_remote_dependency in resolver.rs:
+            // corresponds to process_remote_dependency in resolver.rs:
             DependencySource::Remote {
                 repository,
                 registry,
@@ -546,6 +551,10 @@ async fn install_package(
                 };
 
                 let downloaded_package = artifactory.download(dependency).await?;
+
+                // Cache the downloaded package for future installs
+                let cache_key = CacheEntry::from(&downloaded_package);
+                cache.put(cache_key, downloaded_package.tgz.clone()).await.ok();
 
                 // Add to lockfile - count dependants from the graph
                 let dependants_count = graph_v2.dependants_count_of(&dependency_node.name);
