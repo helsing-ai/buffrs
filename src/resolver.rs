@@ -8,7 +8,7 @@ use async_recursion::async_recursion;
 use miette::{Context as _, Diagnostic, bail, miette};
 use semver::VersionReq;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Models the source of a dependency
@@ -67,10 +67,10 @@ impl DependencyGraph {
     /// Downloads remote packages to discover their transitive dependencies
     pub async fn build(
         manifest: &Manifest,
-        base_path: &PathBuf,
+        base_path: &Path,
         credentials: &Credentials,
     ) -> miette::Result<Self> {
-        let mut builder = GraphBuilder::new(base_path.clone(), credentials);
+        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -124,10 +124,7 @@ impl DependencyGraph {
                 // name depends on dep, so increment names in-degree
                 *in_degree.entry(name.clone()).or_insert(0) += 1;
                 // Add name to dep's dependents list
-                adj_list
-                    .entry(dep.clone())
-                    .or_insert_with(Vec::new)
-                    .push(name.clone());
+                adj_list.entry(dep.clone()).or_default().push(name.clone());
             }
         }
 
@@ -180,7 +177,7 @@ impl DependencyGraph {
     pub fn dependants_count_of(&self, package_name: &PackageName) -> usize {
         self.nodes
             .values()
-            .filter(|node| node.dependencies.contains(&package_name))
+            .filter(|node| node.dependencies.contains(package_name))
             .count()
     }
 }

@@ -507,7 +507,7 @@ impl TryFrom<RawManifest> for Manifest {
 
     fn try_from(raw: RawManifest) -> Result<Manifest, Self::Error> {
         let dependencies = raw.dependencies().map(|deps| {
-            deps.into_iter()
+            deps.iter()
                 .map(|(package, manifest)| Dependency {
                     package: package.to_owned(),
                     manifest: manifest.to_owned(),
@@ -536,7 +536,7 @@ impl FromStr for Manifest {
         input
             .parse::<RawManifest>()
             .map_err(|_| DeserializationError(ManagedFile::Manifest))
-            .map(|a| Manifest::try_from(a))?
+            .map(Manifest::try_from)?
     }
 }
 

@@ -15,7 +15,7 @@
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{LockedPackage, Lockfile},
+    lock::Lockfile,
     manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
     package::{Package, PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
@@ -25,7 +25,6 @@ use crate::{
 use crate::lock::LOCKFILE;
 use crate::manifest::{DependencyManifest, ManifestType, RemoteDependencyManifest};
 use crate::resolver::DependencySource;
-use async_recursion::async_recursion;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use std::{
@@ -251,12 +250,12 @@ pub async fn package(
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
+    if let Some(version) = version
+        && let Some(ref mut package) = manifest.package
+    {
+        tracing::info!(":: modified version in published manifest to {version}");
 
-            package.version = version;
-        }
+        package.version = version;
     }
 
     if let Some(ref pkg) = manifest.package {
@@ -381,21 +380,22 @@ async fn publish_package(
     }
 
     #[cfg(feature = "git")]
-    if let Ok(statuses) = git_statuses().await {
-        if !allow_dirty && !statuses.is_empty() {
-            tracing::error!(
-                "{} files in the working directory contain changes that were not yet committed into git:\n",
-                statuses.len()
-            );
+    if let Ok(statuses) = git_statuses().await
+        && !allow_dirty
+        && !statuses.is_empty()
+    {
+        tracing::error!(
+            "{} files in the working directory contain changes that were not yet committed into git:\n",
+            statuses.len()
+        );
 
-            statuses.iter().for_each(|s| tracing::error!("{}", s));
+        statuses.iter().for_each(|s| tracing::error!("{}", s));
 
-            tracing::error!(
-                "\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n"
-            );
+        tracing::error!(
+            "\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n"
+        );
 
-            bail!("attempted to publish a dirty repository");
-        }
+        bail!("attempted to publish a dirty repository");
     }
 
     let mut manifest = Manifest::read().await?;
@@ -403,12 +403,12 @@ async fn publish_package(
     let store = PackageStore::current().await?;
     let artifactory = Artifactory::new(registry, &credentials)?;
 
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
+    if let Some(version) = version
+        && let Some(ref mut package) = manifest.package
+    {
+        tracing::info!(":: modified version in published manifest to {version}");
 
-            package.version = version;
-        }
+        package.version = version;
     }
 
     if let Some(ref pkg) = manifest.package {
@@ -591,19 +591,19 @@ async fn install_package(
                     );
 
                     // Try to retrieve from cache if version matches lockfile
-                    if version.matches(&locked_entry.version) {
-                        if let Some(cached) = cache.get(locked_entry.into()).await? {
-                            // Validate the cached package digest
-                            locked_entry.validate(&cached)?;
+                    if version.matches(&locked_entry.version)
+                        && let Some(cached) = cache.get(locked_entry.into()).await?
+                    {
+                        // Validate the cached package digest
+                        locked_entry.validate(&cached)?;
 
-                            tracing::debug!(
-                                ":: using cached package for {}@{}",
-                                package_name,
-                                cached.version()
-                            );
+                        tracing::debug!(
+                            ":: using cached package for {}@{}",
+                            package_name,
+                            cached.version()
+                        );
 
-                            resolved_package = Some(cached);
-                        }
+                        resolved_package = Some(cached);
                     }
                 }
 
