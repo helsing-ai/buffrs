@@ -701,7 +701,7 @@ mod tests {
         }
     }
     mod manifest_tests {
-        use crate::manifest::{Edition, Manifest, ManifestBuilder, RawManifest};
+        use crate::manifest::{Edition, Manifest, RawManifest};
         use std::str::FromStr;
 
         #[test]
@@ -743,7 +743,6 @@ mod tests {
             "#;
 
             let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
-            let package = manifest.clone().package.expect("should have valid package");
 
             assert_eq!(manifest.edition, Edition::Canary);
             assert!(manifest.workspace.is_none());
@@ -752,7 +751,6 @@ mod tests {
             assert_eq!(manifest.edition, manifest_clone.edition);
         }
 
-        /// TODO(mz): Clarify correct behavior for reserialization of manifests
         #[test]
         fn test_add_edition_attribute() {
             let manifest = r#"
@@ -765,7 +763,8 @@ mod tests {
             "#;
 
             let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
-            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
+
+            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
                 .expect("should be convertable to str");
 
             // assert!(raw_manifest_str.contains("edition"))
