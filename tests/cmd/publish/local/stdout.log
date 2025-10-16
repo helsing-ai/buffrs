@@ -1,2 +1,4 @@
-:: packaged my-api@0.1.0
 :: packaged some-local-lib@0.1.0
+:: published my-repository/some-local-lib@0.1.0
+:: packaged my-api@0.1.0
+:: published my-repository/my-api@0.1.0
