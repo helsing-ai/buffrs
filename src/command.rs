@@ -23,10 +23,13 @@ use crate::{
 };
 
 use crate::lock::LOCKFILE;
-use crate::manifest::{DependencyManifest, ManifestType, RemoteDependencyManifest};
-use crate::resolver::DependencySource;
+use crate::manifest::{
+    DependencyManifest, LocalDependencyManifest, ManifestType, RemoteDependencyManifest,
+};
+use crate::resolver::{DependencyDetails, DependencySource};
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
+use std::collections::HashMap;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -292,6 +295,9 @@ pub async fn publish(
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
+    let current_path = env::current_dir()
+        .into_diagnostic()
+        .wrap_err("current dir could not be retrieved")?;
 
     match manifest.manifest_type {
         ManifestType::Package => {
@@ -301,6 +307,7 @@ pub async fn publish(
                 allow_dirty,
                 dry_run,
                 version,
+                &current_path,
                 preserve_mtime,
             )
             .await
@@ -312,6 +319,7 @@ pub async fn publish(
                 allow_dirty,
                 dry_run,
                 version,
+                &current_path,
                 preserve_mtime,
             )
             .await
@@ -325,6 +333,7 @@ async fn publish_workspace(
     _allow_dirty: bool,
     _dry_run: bool,
     _version: Option<Version>,
+    _package_path: &PathBuf,
     _preserve_mtime: bool,
 ) -> miette::Result<()> {
     tracing::warn!("buffrs publish not implemented yet");
@@ -338,6 +347,7 @@ async fn publish_package(
     allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
+    package_path: &PathBuf,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
@@ -351,11 +361,8 @@ async fn publish_package(
             .output()
             .await;
 
-        let output = match output {
-            Ok(output) => output,
-            Err(_) => {
-                return Ok(Vec::new());
-            }
+        let Ok(output) = output else {
+            return Ok(Vec::new());
         };
 
         if !output.status.success() {
@@ -398,31 +405,92 @@ async fn publish_package(
         bail!("attempted to publish a dirty repository");
     }
 
-    let mut manifest = Manifest::read().await?;
+    let mut root_manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
     let store = PackageStore::current().await?;
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    let artifactory = Artifactory::new(registry.clone(), &credentials)?;
 
     if let Some(version) = version
-        && let Some(ref mut package) = manifest.package
+        && let Some(ref mut package) = root_manifest.package
     {
         tracing::info!(":: modified version in published manifest to {version}");
 
         package.version = version;
     }
 
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-    }
-
-    let package = store.release(&manifest, preserve_mtime).await?;
-
     if dry_run {
         tracing::warn!(":: aborting upload due to dry run");
         return Ok(());
     }
 
-    artifactory.publish(package, repository).await
+    // ### Logic starts here. ###
+
+    // 1. Build graph
+    let graph_v2 =
+        resolver::DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
+
+    // 2. Topo sort
+    let ordered_dependencies = graph_v2.ordered_dependencies()?;
+
+    // 3. Initialize mapping M to store the remote location of published local packages
+    let mut remote_manifests: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
+        HashMap::new();
+
+    // 3. Iterate through dependency D
+
+    for dependency in ordered_dependencies {
+        match dependency.node.source {
+            // Only local packages get published
+            DependencySource::Local { path } => {
+                let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
+
+                if let Some(ref pkg) = dep_manifest.package {
+                    store.populate(pkg).await?;
+                }
+
+                // Manifest may contain references to other local dependencies that need to be replaced by their remote locations
+                // Sorting dependencies in topological order guarantees that all dependant packages have been published at this point
+                let remote_dependencies: Vec<Dependency> = dep_manifest.get_remote_dependencies();
+                let local_dependencies: Vec<Dependency> = dep_manifest.get_local_dependencies();
+
+                for local_dep in local_dependencies {
+                    match local_dep.manifest {
+                        DependencyManifest::Remote(_) => {}
+                        DependencyManifest::Local(local_manifest) => {
+                            let rem_manifest = remote_manifests
+                                .get(&local_manifest)
+                                .wrap_err("local dependency {} of {} should have been made available during publish, but is not found")?;
+                        }
+                    }
+                }
+
+                let remote_deps_manifest = dep_manifest.clone();
+
+                let package = store.release(&remote_deps_manifest, preserve_mtime).await?;
+
+                // Cloned package where local dependencies have been updated with their remote locations in the manifest
+                //
+
+                artifactory
+                    .publish(package.clone(), repository.clone())
+                    .await?;
+
+                let local_manifest = LocalDependencyManifest { path };
+
+                let package_version = VersionReq::from_str(package.version().to_string().as_str())
+                    .into_diagnostic()?;
+                let remote_manifest = RemoteDependencyManifest {
+                    version: package_version,
+                    registry: registry.clone(),
+                    repository: repository.clone(),
+                };
+
+                remote_manifests.insert(local_manifest, remote_manifest);
+            }
+            DependencySource::Remote { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 /// Installs dependencies for the current project
@@ -500,36 +568,6 @@ async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette:
     }
 
     Ok(())
-}
-
-/// Downloads a package from the registry and caches it
-async fn download_and_cache(
-    artifactory: &Artifactory,
-    package_name: &PackageName,
-    registry: &RegistryUri,
-    repository: &str,
-    version: &VersionReq,
-    cache: &Cache,
-) -> miette::Result<Package> {
-    let dependency = Dependency {
-        package: package_name.clone(),
-        manifest: DependencyManifest::Remote(RemoteDependencyManifest {
-            registry: registry.clone(),
-            repository: repository.to_string(),
-            version: version.clone(),
-        }),
-    };
-
-    let downloaded_package = artifactory.download(dependency).await?;
-
-    // Cache the downloaded package for future installs
-    let cache_key = CacheEntry::from(&downloaded_package);
-    cache
-        .put(cache_key, downloaded_package.tgz.clone())
-        .await
-        .ok();
-
-    Ok(downloaded_package)
 }
 
 /// Installs dependencies of a package
@@ -652,6 +690,36 @@ async fn install_package(
         .await
 }
 
+/// Downloads a package from the registry and caches it
+async fn download_and_cache(
+    artifactory: &Artifactory,
+    package_name: &PackageName,
+    registry: &RegistryUri,
+    repository: &str,
+    version: &VersionReq,
+    cache: &Cache,
+) -> miette::Result<Package> {
+    let dependency = Dependency {
+        package: package_name.clone(),
+        manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+            registry: registry.clone(),
+            repository: repository.to_string(),
+            version: version.clone(),
+        }),
+    };
+
+    let downloaded_package = artifactory.download(dependency).await?;
+
+    // Cache the downloaded package for future installs
+    let cache_key = CacheEntry::from(&downloaded_package);
+    cache
+        .put(cache_key, downloaded_package.tgz.clone())
+        .await
+        .ok();
+
+    Ok(downloaded_package)
+}
+
 /// Uninstalls dependencies
 pub async fn uninstall() -> miette::Result<()> {
     PackageStore::current().await?.clear().await
@@ -702,7 +770,6 @@ pub async fn lint() -> miette::Result<()> {
     ))?;
 
     store.populate(&pkg).await?;
-
     let violations = store.validate(&pkg).await?;
 
     violations

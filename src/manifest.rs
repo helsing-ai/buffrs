@@ -327,6 +327,26 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Gets a list of all local dependencies
+    pub fn get_local_dependencies(&self) -> Vec<Dependency> {
+        self.get_dependencies_of_type(|d| d.manifest.is_local())
+    }
+
+    /// Gets a list of all local dependencies
+    pub fn get_remote_dependencies(&self) -> Vec<Dependency> {
+        self.get_dependencies_of_type(|d| !d.manifest.is_local())
+    }
+
+    /// Gets a list of all dependencies
+    fn get_dependencies_of_type(&self, x: fn(d: &Dependency) -> bool) -> Vec<Dependency> {
+        self.clone()
+            .dependencies
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|d| d.manifest.is_local())
+            .collect()
+    }
+
     /// Get package names of dependencies
     pub fn get_dependency_package_names(&self) -> Vec<PackageName> {
         self.dependencies
@@ -763,6 +783,7 @@ mod tests {
             "#;
 
             let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
+
 
             let raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
                 .expect("should be convertable to str");
