@@ -304,6 +304,7 @@ pub async fn publish(
             publish_package(
                 registry,
                 repository,
+                #[cfg(feature = "git")]
                 allow_dirty,
                 dry_run,
                 version,
@@ -316,6 +317,7 @@ pub async fn publish(
             publish_workspace(
                 registry,
                 repository,
+                #[cfg(feature = "git")]
                 allow_dirty,
                 dry_run,
                 version,
@@ -330,7 +332,7 @@ pub async fn publish(
 async fn publish_workspace(
     _registry: RegistryUri,
     _repository: String,
-    _allow_dirty: bool,
+    #[cfg(feature = "git")] _allow_dirty: bool,
     _dry_run: bool,
     _version: Option<Version>,
     _package_path: &PathBuf,
@@ -344,7 +346,7 @@ async fn publish_workspace(
 async fn publish_package(
     registry: RegistryUri,
     repository: String,
-    allow_dirty: bool,
+    #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
     package_path: &PathBuf,
@@ -436,12 +438,17 @@ async fn publish_package(
     let mut manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
         HashMap::new();
 
-    // 3. Iterate through dependency D
+    // 3. Iterate through dependency D and publish local dependencies
     for dependency in ordered_dependencies {
         match dependency.node.source {
             // Only local packages get published
             DependencySource::Local { path } => {
-                let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
+                let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE))
+                    .await
+                    .wrap_err(miette!(
+                        "Failed to read manifest file at {}",
+                        path.display()
+                    ))?;
 
                 if let Some(ref pkg) = dep_manifest.package {
                     store.populate(pkg).await?;
@@ -474,10 +481,29 @@ async fn publish_package(
                 manifest_mappings.insert(local_manifest, remote_manifest);
             }
             DependencySource::Remote { .. } => {
-                bail!("remote dependency found at an unexpected place")
+                // Remote dependencies don't need to be published, skip them
+                continue;
             }
         }
     }
+
+    // 4. Publish the root package itself with updated dependencies
+    if let Some(ref pkg) = root_manifest.package {
+        store.populate(pkg).await?;
+    }
+
+    let root_remote_dependencies =
+        replace_local_with_remote_dependencies(&mut manifest_mappings, &root_manifest)?;
+
+    let root_manifest_with_remote_deps =
+        root_manifest.clone_with_different_dependencies(root_remote_dependencies);
+    let root_package = store.release(&root_manifest_with_remote_deps, preserve_mtime).await?;
+
+    artifactory
+        .publish(root_package.clone(), repository.clone())
+        .await
+        .wrap_err(miette!("publishing of package {} failed", root_package.name()))?;
+
     Ok(())
 }
 
@@ -495,13 +521,14 @@ fn replace_local_with_remote_dependencies(
     for local_dep in local_dependencies {
         match local_dep.manifest {
             DependencyManifest::Local(local_manifest) => {
-                let rem_manifest = remote_manifests
+                let remote_manifest = remote_manifests
                     .get(&local_manifest)
-                    .wrap_err("local dependency {} of {} should have been made available during publish, but is not found")?;
+                    .wrap_err(miette!("local dependency {} should have been made available during publish, but is not found",
+                    &local_dep.package))?;
 
                 let remote_dependency = Dependency {
                     package: local_dep.package.clone(),
-                    manifest: DependencyManifest::Remote(rem_manifest.clone()),
+                    manifest: DependencyManifest::Remote(remote_manifest.clone()),
                 };
                 remote_dependencies.push(remote_dependency)
             }
