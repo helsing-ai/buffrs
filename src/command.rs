@@ -27,7 +27,7 @@ use crate::manifest::{
     DependencyManifest, LocalDependencyManifest, ManifestType, RemoteDependencyManifest,
 };
 use crate::resolver::{DependencyDetails, DependencySource};
-use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
+use miette::{Context as _, IntoDiagnostic, Report, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use std::collections::HashMap;
 use std::{
@@ -433,11 +433,10 @@ async fn publish_package(
     let ordered_dependencies = graph_v2.ordered_dependencies()?;
 
     // 3. Initialize mapping M to store the remote location of published local packages
-    let mut remote_manifests: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
+    let mut manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
         HashMap::new();
 
     // 3. Iterate through dependency D
-
     for dependency in ordered_dependencies {
         match dependency.node.source {
             // Only local packages get published
@@ -448,49 +447,68 @@ async fn publish_package(
                     store.populate(pkg).await?;
                 }
 
-                // Manifest may contain references to other local dependencies that need to be replaced by their remote locations
-                // Sorting dependencies in topological order guarantees that all dependant packages have been published at this point
-                let remote_dependencies: Vec<Dependency> = dep_manifest.get_remote_dependencies();
-                let local_dependencies: Vec<Dependency> = dep_manifest.get_local_dependencies();
-
-                for local_dep in local_dependencies {
-                    match local_dep.manifest {
-                        DependencyManifest::Remote(_) => {}
-                        DependencyManifest::Local(local_manifest) => {
-                            let rem_manifest = remote_manifests
-                                .get(&local_manifest)
-                                .wrap_err("local dependency {} of {} should have been made available during publish, but is not found")?;
-                        }
-                    }
-                }
-
-                let remote_deps_manifest = dep_manifest.clone();
-
-                let package = store.release(&remote_deps_manifest, preserve_mtime).await?;
+                let remote_dependencies =
+                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest)?;
 
                 // Cloned package where local dependencies have been updated with their remote locations in the manifest
-                //
+                let remote_deps_manifest =
+                    dep_manifest.clone_with_different_dependencies(remote_dependencies);
+                let package = store.release(&remote_deps_manifest, preserve_mtime).await?;
 
                 artifactory
                     .publish(package.clone(), repository.clone())
-                    .await?;
+                    .await
+                    .wrap_err(miette!("publishing of package {} failed", package.name()))?;
 
                 let local_manifest = LocalDependencyManifest { path };
 
                 let package_version = VersionReq::from_str(package.version().to_string().as_str())
                     .into_diagnostic()?;
+
                 let remote_manifest = RemoteDependencyManifest {
                     version: package_version,
                     registry: registry.clone(),
                     repository: repository.clone(),
                 };
 
-                remote_manifests.insert(local_manifest, remote_manifest);
+                manifest_mappings.insert(local_manifest, remote_manifest);
             }
-            DependencySource::Remote { .. } => {}
+            DependencySource::Remote { .. } => {
+                bail!("remote dependency found at an unexpected place")
+            }
         }
     }
     Ok(())
+}
+
+fn replace_local_with_remote_dependencies(
+    remote_manifests: &mut HashMap<LocalDependencyManifest, RemoteDependencyManifest>,
+    manifest: &Manifest,
+) -> Result<Vec<Dependency>, Report> {
+    // Manifest may contain references to other local dependencies that need to be replaced by their remote locations
+    // The topological order of `ordered_dependencies` guarantees that all dependant packages have been published at this point
+    // Keep remote dependencies
+    let mut remote_dependencies: Vec<Dependency> = manifest.get_remote_dependencies();
+    let local_dependencies: Vec<Dependency> = manifest.get_local_dependencies();
+
+    // Replace all local dependencies with the corresponding remote manifests created as part of their own processing
+    for local_dep in local_dependencies {
+        match local_dep.manifest {
+            DependencyManifest::Local(local_manifest) => {
+                let rem_manifest = remote_manifests
+                    .get(&local_manifest)
+                    .wrap_err("local dependency {} of {} should have been made available during publish, but is not found")?;
+
+                let remote_dependency = Dependency {
+                    package: local_dep.package.clone(),
+                    manifest: DependencyManifest::Remote(rem_manifest.clone()),
+                };
+                remote_dependencies.push(remote_dependency)
+            }
+            _ => bail!("remote dependency manifest found at an unexpected place"),
+        }
+    }
+    Ok(remote_dependencies)
 }
 
 /// Installs dependencies for the current project

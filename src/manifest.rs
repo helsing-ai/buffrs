@@ -327,6 +327,14 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Clones the Manifest but replaces the dependencies with a given Vec
+    pub fn clone_with_different_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
+        Self {
+            dependencies: Some(dependencies),
+            ..self.clone()
+        }
+    }
+
     /// Gets a list of all local dependencies
     pub fn get_local_dependencies(&self) -> Vec<Dependency> {
         self.get_dependencies_of_type(|d| d.manifest.is_local())
@@ -789,6 +797,58 @@ mod tests {
                 .expect("should be convertable to str");
 
             // assert!(raw_manifest_str.contains("edition"))
+        }
+
+        #[test]
+        fn test_clone_with_different_dependencies() {
+            use crate::manifest::{Dependency, PackageName, RegistryUri};
+            use semver::VersionReq;
+            use std::str::FromStr;
+
+            // Create original manifest with initial dependencies
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "test-package"
+            version = "1.0.0"
+
+            [dependencies.test-dependency]
+            version = "1.0.0"
+            registry = "https://registry.example.com"
+            repository = "original-repo"
+            "#;
+
+            let original_manifest = Manifest::from_str(manifest).expect("should be valid manifest");
+
+            // Create new dependencies
+            let new_deps = vec![
+                Dependency::new(
+                    RegistryUri::from_str("https://new-registry.example.com").unwrap(),
+                    "new-repo".to_string(),
+                    PackageName::from_str("new-dep-1").unwrap(),
+                    VersionReq::from_str("2.0.0").unwrap(),
+                ),
+                Dependency::new(
+                    RegistryUri::from_str("https://another-registry.example.com").unwrap(),
+                    "another-repo".to_string(),
+                    PackageName::from_str("new-dep-2").unwrap(),
+                    VersionReq::from_str("3.0.0").unwrap(),
+                ),
+            ];
+
+            // Clone with different dependencies
+            let cloned_manifest = original_manifest.clone_with_different_dependencies(new_deps.clone());
+
+            // Verify the dependencies were replaced
+            assert_eq!(cloned_manifest.dependencies, Some(new_deps));
+
+            // Verify other fields remain unchanged
+            assert_eq!(cloned_manifest.edition, original_manifest.edition);
+            assert_eq!(cloned_manifest.package, original_manifest.package);
+            assert_eq!(cloned_manifest.workspace, original_manifest.workspace);
+            assert_eq!(cloned_manifest.manifest_type, original_manifest.manifest_type);
         }
 
         #[test]
