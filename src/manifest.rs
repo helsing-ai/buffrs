@@ -346,12 +346,12 @@ impl Manifest {
     }
 
     /// Gets a list of all dependencies
-    fn get_dependencies_of_type(&self, x: fn(d: &Dependency) -> bool) -> Vec<Dependency> {
+    fn get_dependencies_of_type(&self, predicate: fn(d: &Dependency) -> bool) -> Vec<Dependency> {
         self.clone()
             .dependencies
             .unwrap_or_default()
             .into_iter()
-            .filter(|d| d.manifest.is_local())
+            .filter(predicate)
             .collect()
     }
 
