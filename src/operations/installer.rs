@@ -14,10 +14,9 @@
 
 use crate::cache::{Cache, Entry as CacheEntry};
 use crate::credentials::Credentials;
-use crate::lock::{Lockfile, LOCKFILE};
+use crate::lock::{LOCKFILE, Lockfile};
 use crate::manifest::{
-    Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
-    RemoteDependencyManifest,
+    Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType, RemoteDependencyManifest,
 };
 use crate::package::{Package, PackageStore};
 use crate::registry::{Artifactory, RegistryUri};
@@ -131,9 +130,7 @@ impl Installer {
         for dependency_node in dependencies {
             // Iterate through the dependencies in order and install them
             let package = match dependency_node.node.source {
-                DependencySource::Local { path } => {
-                    self.install_local_dependency(&path).await?
-                }
+                DependencySource::Local { path } => self.install_local_dependency(&path).await?,
                 DependencySource::Remote {
                     repository,
                     registry,
@@ -262,5 +259,212 @@ impl Installer {
             .ok();
 
         Ok(downloaded_package)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lock::LockedPackage;
+    use crate::manifest::PackageManifest;
+    use crate::package::PackageType;
+    use semver::Version;
+    use std::collections::HashMap;
+    use std::str::FromStr;
+    use tempfile::TempDir;
+    use tokio::fs;
+
+    // Helper to create test lockfile with a package
+    fn create_lockfile_with_package(
+        package_name: &str,
+        version: &str,
+        registry: &str,
+        repository: &str,
+    ) -> Lockfile {
+        let locked_pkg = LockedPackage {
+            name: PackageName::unchecked(package_name),
+            version: Version::parse(version).unwrap(),
+            registry: RegistryUri::from_str(registry).unwrap(),
+            repository: repository.to_string(),
+            digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .parse()
+                .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+        Lockfile::from_iter(vec![locked_pkg])
+    }
+
+    #[tokio::test]
+    async fn test_registry_mismatch_fails() {
+        let _temp_dir = TempDir::new().unwrap();
+        let cache = Cache::open().await.unwrap();
+
+        // Create lockfile with registry A
+        let lockfile =
+            create_lockfile_with_package("test-pkg", "1.0.0", "https://registry-a.com", "repo");
+
+        let installer = Installer {
+            preserve_mtime: false,
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache,
+        };
+
+        let pkg_name = PackageName::unchecked("test-pkg");
+        // Try to install with registry B (different from lockfile)
+        let registry_b = RegistryUri::from_str("https://registry-b.com").unwrap();
+        let version = VersionReq::parse("1.0.0").unwrap();
+
+        let result = installer
+            .install_remote_dependency(&pkg_name, &registry_b, "repo", &version, &lockfile)
+            .await;
+
+        // Should fail with registry mismatch error
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("registry mismatch"));
+        assert!(err_msg.contains("test-pkg"));
+    }
+
+    #[tokio::test]
+    async fn test_version_mismatch_skips_cache() {
+        let _temp_dir = TempDir::new().unwrap();
+        let cache = Cache::open().await.unwrap();
+
+        // Create lockfile with version 1.0.0
+        let lockfile =
+            create_lockfile_with_package("test-pkg", "1.0.0", "https://registry.com", "repo");
+
+        let installer = Installer {
+            preserve_mtime: false,
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache,
+        };
+
+        let pkg_name = PackageName::unchecked("test-pkg");
+        let registry = RegistryUri::from_str("https://registry.com").unwrap();
+        // Request version 2.0.0 (doesn't match lockfile's 1.0.0)
+        let version = VersionReq::parse("2.0.0").unwrap();
+
+        let result = installer
+            .install_remote_dependency(&pkg_name, &registry, "repo", &version, &lockfile)
+            .await;
+
+        // Should try to download (will fail because no actual registry)
+        // but the important thing is it doesn't try to use the cached version
+        assert!(result.is_err());
+        // Error should be about downloading, not about version mismatch validation
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(!err_msg.contains("registry mismatch"));
+    }
+
+    #[tokio::test]
+    async fn test_missing_lockfile_entry_requires_download() {
+        let _temp_dir = TempDir::new().unwrap();
+        let cache = Cache::open().await.unwrap();
+
+        // Empty lockfile
+        let lockfile = Lockfile::default();
+
+        let installer = Installer {
+            preserve_mtime: false,
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache,
+        };
+
+        let pkg_name = PackageName::unchecked("new-pkg");
+        let registry = RegistryUri::from_str("https://registry.com").unwrap();
+        let version = VersionReq::parse("1.0.0").unwrap();
+
+        let result = installer
+            .install_remote_dependency(&pkg_name, &registry, "repo", &version, &lockfile)
+            .await;
+
+        // Should try to download (will fail because no actual registry)
+        assert!(result.is_err());
+        // Error should be about downloading
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(!err_msg.contains("registry mismatch"));
+    }
+
+    #[tokio::test]
+    async fn test_install_local_dependency() {
+        let temp_dir = TempDir::new().unwrap();
+        let dep_dir = temp_dir.path().join("local-dep");
+        fs::create_dir_all(&dep_dir).await.unwrap();
+
+        // Create a minimal manifest for the local dependency
+        let manifest = Manifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::unchecked("local-lib"),
+                version: Version::new(1, 0, 0),
+                description: None,
+            })
+            .dependencies(vec![])
+            .build();
+
+        manifest.write_at(&dep_dir).await.unwrap();
+
+        // Create proto directory structure
+        PackageStore::open(&dep_dir).await.unwrap();
+
+        let cache = Cache::open().await.unwrap();
+        let installer = Installer {
+            preserve_mtime: false,
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache,
+        };
+
+        // Install the local dependency
+        let result = installer.install_local_dependency(&dep_dir).await;
+
+        assert!(result.is_ok());
+        let package = result.unwrap();
+        assert_eq!(package.name(), &PackageName::unchecked("local-lib"));
+        assert_eq!(package.version(), &Version::new(1, 0, 0));
+    }
+
+    #[tokio::test]
+    async fn test_install_local_dependency_preserve_mtime() {
+        let temp_dir = TempDir::new().unwrap();
+        let dep_dir = temp_dir.path().join("local-dep");
+        fs::create_dir_all(&dep_dir).await.unwrap();
+
+        let manifest = Manifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::unchecked("local-lib"),
+                version: Version::new(1, 0, 0),
+                description: None,
+            })
+            .dependencies(vec![])
+            .build();
+
+        manifest.write_at(&dep_dir).await.unwrap();
+        PackageStore::open(&dep_dir).await.unwrap();
+
+        let cache = Cache::open().await.unwrap();
+        // Test with preserve_mtime = true
+        let installer = Installer {
+            preserve_mtime: true, // <-- Important
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache,
+        };
+
+        let result = installer.install_local_dependency(&dep_dir).await;
+
+        // Should succeed (actual mtime preservation is tested in PackageStore tests)
+        assert!(result.is_ok());
     }
 }
