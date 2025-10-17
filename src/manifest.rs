@@ -729,7 +729,7 @@ mod tests {
         }
     }
     mod manifest_tests {
-        use crate::manifest::{Edition, Manifest, RawManifest};
+        use crate::manifest::{Edition, Manifest};
         use std::str::FromStr;
 
         #[test]
@@ -780,26 +780,6 @@ mod tests {
         }
 
         #[test]
-        fn test_add_edition_attribute() {
-            let manifest = r#"
-            [package]
-            type = "lib"
-            name = "lib"
-            version = "0.0.1"
-
-            [dependencies]
-            "#;
-
-            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
-
-
-            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
-                .expect("should be convertable to str");
-
-            // assert!(raw_manifest_str.contains("edition"))
-        }
-
-        #[test]
         fn test_clone_with_different_dependencies() {
             use crate::manifest::{Dependency, PackageName, RegistryUri};
             use semver::VersionReq;
@@ -839,7 +819,8 @@ mod tests {
             ];
 
             // Clone with different dependencies
-            let cloned_manifest = original_manifest.clone_with_different_dependencies(new_deps.clone());
+            let cloned_manifest =
+                original_manifest.clone_with_different_dependencies(new_deps.clone());
 
             // Verify the dependencies were replaced
             assert_eq!(cloned_manifest.dependencies, Some(new_deps));
@@ -848,7 +829,10 @@ mod tests {
             assert_eq!(cloned_manifest.edition, original_manifest.edition);
             assert_eq!(cloned_manifest.package, original_manifest.package);
             assert_eq!(cloned_manifest.workspace, original_manifest.workspace);
-            assert_eq!(cloned_manifest.manifest_type, original_manifest.manifest_type);
+            assert_eq!(
+                cloned_manifest.manifest_type,
+                original_manifest.manifest_type
+            );
         }
 
         #[test]

@@ -1,4 +1,4 @@
-use crate::{with_test_registry, VirtualFileSystem};
+use crate::{VirtualFileSystem, with_test_registry};
 
 #[test]
 fn fixture() {

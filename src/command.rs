@@ -21,6 +21,8 @@ use crate::{
     resolver,
 };
 
+use crate::operations::installer::Installer;
+use crate::operations::publisher::Publisher;
 use crate::resolver::DependencySource;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
@@ -33,8 +35,6 @@ use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
 };
-use crate::operations::installer::Installer;
-use crate::operations::publisher::Publisher;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -345,7 +345,7 @@ async fn publish_package(
     #[cfg(feature = "git")] allow_dirty: bool,
     dry_run: bool,
     version: Option<Version>,
-    package_path: &PathBuf,
+    package_path: &Path,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
@@ -382,7 +382,9 @@ async fn publish_package(
     // 4. Iterate through dependencies and publish local ones
     for dependency in ordered_dependencies {
         match dependency.node.source {
-            DependencySource::Local { path: absolute_path } => {
+            DependencySource::Local {
+                path: absolute_path,
+            } => {
                 publisher.publish_package(&absolute_path).await?;
             }
             DependencySource::Remote { .. } => {
