@@ -12,17 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::credentials::Credentials;
 use crate::manifest::{
     Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-    RemoteDependencyManifest,
+    ManifestType, RemoteDependencyManifest,
 };
 use crate::package::PackageStore;
 use crate::registry::{Artifactory, RegistryUri};
+use crate::resolver::{DependencyGraph, DependencySource};
 use miette::{Context as _, IntoDiagnostic, bail, miette};
-use semver::VersionReq;
+use semver::{Version, VersionReq};
 use std::collections::HashMap;
+use std::env;
 use std::path::Path;
 use std::str::FromStr;
+use tokio::fs;
 
 #[cfg(feature = "git")]
 use std::process::Stdio;
@@ -39,19 +43,21 @@ pub struct Publisher {
 
 impl Publisher {
     /// Creates a new Publisher instance
-    pub fn new(
+    pub async fn new(
         registry: RegistryUri,
         repository: String,
-        artifactory: Artifactory,
         preserve_mtime: bool,
-    ) -> Self {
-        Self {
+    ) -> miette::Result<Self> {
+        let credentials = Credentials::load().await?;
+        let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+
+        Ok(Self {
             registry,
             repository,
             artifactory,
             preserve_mtime,
             manifest_mappings: HashMap::new(),
-        }
+        })
     }
 
     /// Checks git status and ensures repository is clean before publishing
@@ -114,16 +120,159 @@ impl Publisher {
         Ok(lines.unwrap_or_default())
     }
 
+    /// Main entry point for publishing
+    ///
+    /// Dispatches to either package or workspace publishing based on manifest type
+    pub async fn publish(
+        &mut self,
+        manifest: &Manifest,
+        package_path: &Path,
+        version: Option<Version>,
+        dry_run: bool,
+    ) -> miette::Result<()> {
+        if dry_run {
+            tracing::warn!(":: aborting upload due to dry run");
+            return Ok(());
+        }
+
+        match manifest.manifest_type {
+            ManifestType::Package => {
+                self.publish_package_from_manifest(manifest, package_path, version)
+                    .await
+            }
+            ManifestType::Workspace => {
+                self.publish_workspace_from_manifest(manifest, package_path, version)
+                    .await
+            }
+        }
+    }
+
+    /// Publishes a single package from its manifest
+    async fn publish_package_from_manifest(
+        &mut self,
+        manifest: &Manifest,
+        package_path: &Path,
+        version: Option<Version>,
+    ) -> miette::Result<()> {
+        let mut root_manifest = manifest.clone();
+        let store = PackageStore::current().await?;
+
+        if let Some(version) = version
+            && let Some(ref mut package) = root_manifest.package
+        {
+            tracing::info!(":: modified version in published manifest to {version}");
+            package.version = version;
+        }
+
+        // Build dependency graph
+        let credentials = Credentials::load().await?;
+        let graph =
+            DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
+        let ordered_dependencies = graph.ordered_dependencies()?;
+
+        // Publish local dependencies first
+        for dependency in ordered_dependencies {
+            if let DependencySource::Local { path: absolute_path } = dependency.node.source {
+                self.publish_package_at_path(&absolute_path).await?;
+            }
+        }
+
+        // Populate and publish the root package
+        if let Some(ref pkg) = root_manifest.package {
+            store.populate(pkg).await?;
+        }
+
+        self.publish_package_at_path(package_path).await?;
+
+        Ok(())
+    }
+
+    /// Publishes all packages in a workspace
+    async fn publish_workspace_from_manifest(
+        &mut self,
+        manifest: &Manifest,
+        _package_path: &Path,
+        version: Option<Version>,
+    ) -> miette::Result<()> {
+        let workspace = manifest.workspace.as_ref().ok_or_else(|| {
+            miette!("publish_workspace called on manifest that does not define a workspace")
+        })?;
+
+        if version.is_some() {
+            tracing::warn!(":: version flag is ignored for workspace publishes");
+        }
+
+        let root_path = env::current_dir()
+            .into_diagnostic()
+            .wrap_err("current dir could not be retrieved")?;
+        let packages = workspace.resolve_members(root_path)?;
+
+        tracing::info!(
+            ":: workspace found. publishing {} packages in workspace",
+            packages.len()
+        );
+
+        let credentials = Credentials::load().await?;
+
+        // Iterate through each workspace member
+        for member_path in packages {
+            let canonical_name = fs::canonicalize(&member_path).await.into_diagnostic()?;
+            tracing::info!(
+                ":: processing workspace member: {}",
+                canonical_name.to_str().unwrap()
+            );
+
+            let member_manifest =
+                Manifest::try_read_from(member_path.join(MANIFEST_FILE)).await?;
+
+            // Build dependency graph for this member
+            let graph =
+                DependencyGraph::build(&member_manifest, &member_path, &credentials).await?;
+            let dependencies = graph.ordered_dependencies()?;
+
+            // Publish local dependencies first
+            for dependency in dependencies {
+                if let DependencySource::Local { path: absolute_path } = dependency.node.source {
+                    self.publish_package_at_path(&absolute_path).await?;
+                }
+            }
+
+            // Populate and publish the member itself
+            if let Some(ref pkg) = member_manifest.package {
+                let member_store = PackageStore::open(&member_path).await?;
+                member_store.populate(pkg).await?;
+            }
+
+            self.publish_package_at_path(&member_path).await?;
+        }
+
+        Ok(())
+    }
+
     /// Publishes a local package at the given path
     ///
     /// This method:
-    /// 1. Reads the package manifest
-    /// 2. Replaces local dependencies with their published remote versions
-    /// 3. Creates a package with the updated manifest
-    /// 4. Publishes to the registry
-    /// 5. Records the mapping of local path to remote location
-    pub async fn publish_package(&mut self, package_path: &Path) -> miette::Result<()> {
+    /// 1. Checks if already published (idempotent)
+    /// 2. Reads the package manifest
+    /// 3. Replaces local dependencies with their published remote versions
+    /// 4. Creates a package with the updated manifest
+    /// 5. Publishes to the registry
+    /// 6. Records the mapping of local path to remote location
+    async fn publish_package_at_path(&mut self, package_path: &Path) -> miette::Result<()> {
         let manifest_path = package_path.join(MANIFEST_FILE);
+
+        // Check if this package has already been published (idempotent)
+        let local_manifest = LocalDependencyManifest {
+            path: manifest_path.clone(),
+        };
+        if self.manifest_mappings.contains_key(&local_manifest) {
+            tracing::debug!(
+                ":: package at {} already published, skipping",
+                package_path.display()
+            );
+            return Ok(());
+        }
+
         let manifest = Manifest::try_read_from(&manifest_path)
             .await
             .wrap_err(miette!(
@@ -218,18 +367,20 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
 
-    fn create_test_artifactory() -> Artifactory {
+    fn create_test_publisher() -> Publisher {
         let registry = RegistryUri::from_str("https://test.registry.com").unwrap();
         let credentials = Credentials {
             registry_tokens: HashMap::new(),
         };
-        Artifactory::new(registry, &credentials).unwrap()
-    }
+        let artifactory = Artifactory::new(registry.clone(), &credentials).unwrap();
 
-    fn create_test_publisher() -> Publisher {
-        let registry = RegistryUri::from_str("https://test.registry.com").unwrap();
-        let artifactory = create_test_artifactory();
-        Publisher::new(registry, "test-repo".to_string(), artifactory, false)
+        Publisher {
+            registry,
+            repository: "test-repo".to_string(),
+            artifactory,
+            preserve_mtime: false,
+            manifest_mappings: HashMap::new(),
+        }
     }
 
     #[test]

@@ -15,15 +15,13 @@
 use crate::{
     credentials::Credentials,
     lock::Lockfile,
-    manifest::{Dependency, MANIFEST_FILE, Manifest, ManifestType, PackageManifest},
+    manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver,
 };
 
 use crate::operations::installer::Installer;
 use crate::operations::publisher::Publisher;
-use crate::resolver::DependencySource;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use std::{
@@ -290,117 +288,18 @@ pub async fn publish(
     version: Option<Version>,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
+    #[cfg(feature = "git")]
+    Publisher::check_git_status(allow_dirty).await?;
+
     let manifest = Manifest::read().await?;
     let current_path = env::current_dir()
         .into_diagnostic()
         .wrap_err("current dir could not be retrieved")?;
 
-    match manifest.manifest_type {
-        ManifestType::Package => {
-            publish_package(
-                registry,
-                repository,
-                #[cfg(feature = "git")]
-                allow_dirty,
-                dry_run,
-                version,
-                &current_path,
-                preserve_mtime,
-            )
-            .await
-        }
-        ManifestType::Workspace => {
-            publish_workspace(
-                registry,
-                repository,
-                #[cfg(feature = "git")]
-                allow_dirty,
-                dry_run,
-                version,
-                &current_path,
-                preserve_mtime,
-            )
-            .await
-        }
-    }
-}
-
-async fn publish_workspace(
-    _registry: RegistryUri,
-    _repository: String,
-    #[cfg(feature = "git")] _allow_dirty: bool,
-    _dry_run: bool,
-    _version: Option<Version>,
-    _package_path: &PathBuf,
-    _preserve_mtime: bool,
-) -> miette::Result<()> {
-    tracing::warn!("buffrs publish not implemented yet");
-    Ok(())
-}
-
-/// Publishes the api package to the registry
-async fn publish_package(
-    registry: RegistryUri,
-    repository: String,
-    #[cfg(feature = "git")] allow_dirty: bool,
-    dry_run: bool,
-    version: Option<Version>,
-    package_path: &Path,
-    preserve_mtime: bool,
-) -> miette::Result<()> {
-    #[cfg(feature = "git")]
-    Publisher::check_git_status(allow_dirty).await?;
-
-    let mut root_manifest = Manifest::read().await?;
-    let credentials = Credentials::load().await?;
-    let store = PackageStore::current().await?;
-    let artifactory = Artifactory::new(registry.clone(), &credentials)?;
-
-    if let Some(version) = version
-        && let Some(ref mut package) = root_manifest.package
-    {
-        tracing::info!(":: modified version in published manifest to {version}");
-
-        package.version = version;
-    }
-
-    if dry_run {
-        tracing::warn!(":: aborting upload due to dry run");
-        return Ok(());
-    }
-
-    // 1. Build graph
-    let graph_v2 =
-        resolver::DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
-
-    // 2. Topo sort
-    let ordered_dependencies = graph_v2.ordered_dependencies()?;
-
-    // 3. Create publisher instance
-    let mut publisher = Publisher::new(registry, repository, artifactory, preserve_mtime);
-
-    // 4. Iterate through dependencies and publish local ones
-    for dependency in ordered_dependencies {
-        match dependency.node.source {
-            DependencySource::Local {
-                path: absolute_path,
-            } => {
-                publisher.publish_package(&absolute_path).await?;
-            }
-            DependencySource::Remote { .. } => {
-                // Remote dependencies don't need to be published, skip them
-            }
-        }
-    }
-
-    // 5. Publish the root package itself with updated dependencies
-    if let Some(ref pkg) = root_manifest.package {
-        store.populate(pkg).await?;
-    }
-
-    publisher.publish_package(package_path).await?;
-
-    Ok(())
+    let mut publisher = Publisher::new(registry, repository, preserve_mtime).await?;
+    publisher
+        .publish(&manifest, &current_path, version, dry_run)
+        .await
 }
 
 /// Installs dependencies for the current project
