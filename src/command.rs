@@ -425,8 +425,6 @@ async fn publish_package(
         return Ok(());
     }
 
-    // ### Logic starts here. ###
-
     // 1. Build graph
     let graph_v2 =
         resolver::DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
@@ -437,9 +435,6 @@ async fn publish_package(
     // 3. Initialize mapping M to store the remote location of published local packages
     let mut manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
         HashMap::new();
-
-    // tracing::info!("{:?}", ordered_dependencies);
-    // tracing::info!("{:?}", manifest_mappings);
 
     // 3. Iterate through dependency D and publish local dependencies
     for dependency in ordered_dependencies {
@@ -453,19 +448,17 @@ async fn publish_package(
                         absolute_path.display()
                     ))?;
 
-                if let Some(ref pkg) = dep_manifest.package {
-                    store.populate(pkg).await?;
-                }
+                // Create a store at the dependency's path, not the root package's path
+                let dep_store = PackageStore::open(&absolute_path).await?;
 
                 let remote_dependencies =
-                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest, package_path)?;
+                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest, &absolute_path)?;
 
                 // Cloned package where local dependencies have been updated with their remote locations in the manifest
                 let remote_deps_manifest =
                     dep_manifest.clone_with_different_dependencies(remote_dependencies);
 
-                let package = store.release(&remote_deps_manifest, preserve_mtime).await?;
-                // tracing::info!("0");
+                let package = dep_store.release(&remote_deps_manifest, preserve_mtime).await?;
 
                 artifactory
                     .publish(package.clone(), repository.clone())
@@ -476,12 +469,9 @@ async fn publish_package(
                 let local_manifest = LocalDependencyManifest {
                     path: abs_manifest_path
                 };
-                // tracing::info!("Local: {:?}", local_manifest);
 
                 let package_version = VersionReq::from_str(package.version().to_string().as_str())
                     .into_diagnostic()?;
-
-                // tracing::info!("B");
 
                 let remote_manifest = RemoteDependencyManifest {
                     version: package_version,
@@ -489,14 +479,11 @@ async fn publish_package(
                     repository: repository.clone(),
                 };
 
-                // tracing::info!("C");
-
                 manifest_mappings.insert(local_manifest, remote_manifest);
             }
             // Only local packages get published
             DependencySource::Remote { .. } => {
                 // Remote dependencies don't need to be published, skip them
-                continue;
             }
         }
     }
@@ -543,8 +530,6 @@ fn replace_local_with_remote_dependencies(
                     path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
                 };
 
-                // tracing::info!("Key: {:?}", absolute_path_manifest);
-                // tracing::info!("HashMap: {:?}", remote_manifests);
                 let remote_manifest = remote_manifests
                     .get(&absolute_path_manifest)
                     .wrap_err(miette!("local dependency {} should have been made available during publish, but is not found",
