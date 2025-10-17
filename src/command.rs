@@ -350,8 +350,46 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
 }
 
 /// Uninstalls dependencies
+///
+/// Behavior depends on the manifest type:
+/// - **Package**: Clears the package's vendor directory
+/// - **Workspace**: Clears vendor directories for all workspace members
 pub async fn uninstall() -> miette::Result<()> {
-    PackageStore::current().await?.clear().await
+    let manifest = Manifest::read().await?;
+
+    match manifest.manifest_type {
+        ManifestType::Package => {
+            PackageStore::current().await?.clear().await
+        }
+        ManifestType::Workspace => {
+            let workspace = manifest.workspace.as_ref().ok_or_else(|| {
+                miette!("uninstall called on manifest that does not define a workspace")
+            })?;
+
+            let root_path = env::current_dir()
+                .into_diagnostic()
+                .wrap_err("current dir could not be retrieved")?;
+            let packages = workspace.resolve_members(root_path)?;
+
+            tracing::info!(
+                ":: workspace found. uninstalling dependencies for {} packages in workspace",
+                packages.len()
+            );
+
+            for package_path in packages {
+                let canonical_name = fs::canonicalize(&package_path).await.into_diagnostic()?;
+                tracing::info!(
+                    ":: uninstalling dependencies for package: {}",
+                    canonical_name.to_str().unwrap()
+                );
+
+                let store = PackageStore::open(&package_path).await?;
+                store.clear().await?;
+            }
+
+            Ok(())
+        }
+    }
 }
 
 /// Lists all protobuf files managed by Buffrs to stdout
