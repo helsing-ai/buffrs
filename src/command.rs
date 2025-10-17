@@ -24,12 +24,11 @@ use crate::{
 
 use crate::lock::LOCKFILE;
 use crate::manifest::{
-    DependencyManifest, LocalDependencyManifest, ManifestType, RemoteDependencyManifest,
+    DependencyManifest, ManifestType, RemoteDependencyManifest,
 };
-use crate::resolver::{DependencyDetails, DependencySource};
-use miette::{Context as _, IntoDiagnostic, Report, bail, ensure, miette};
+use crate::resolver::DependencySource;
+use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
-use std::collections::HashMap;
 use std::{
     env,
     path::{Path, PathBuf},
@@ -39,6 +38,7 @@ use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
 };
+use crate::operations::publisher::Publisher;
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -353,59 +353,7 @@ async fn publish_package(
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    async fn git_statuses() -> miette::Result<Vec<String>> {
-        use std::process::Stdio;
-
-        let output = tokio::process::Command::new("git")
-            .arg("status")
-            .arg("--porcelain")
-            .stderr(Stdio::null())
-            .output()
-            .await;
-
-        let Ok(output) = output else {
-            return Ok(Vec::new());
-        };
-
-        if !output.status.success() {
-            return Ok(Vec::new());
-        }
-
-        let stdout = String::from_utf8(output.stdout)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the output of `git status`"
-            ))?;
-
-        let lines: Option<Vec<_>> = stdout
-            .lines()
-            .map(|line| {
-                line.split_once(' ')
-                    .map(|(_, filename)| filename.to_string())
-            })
-            .collect();
-
-        Ok(lines.unwrap_or_default())
-    }
-
-    #[cfg(feature = "git")]
-    if let Ok(statuses) = git_statuses().await
-        && !allow_dirty
-        && !statuses.is_empty()
-    {
-        tracing::error!(
-            "{} files in the working directory contain changes that were not yet committed into git:\n",
-            statuses.len()
-        );
-
-        statuses.iter().for_each(|s| tracing::error!("{}", s));
-
-        tracing::error!(
-            "\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n"
-        );
-
-        bail!("attempted to publish a dirty repository");
-    }
+    Publisher::check_git_status(allow_dirty).await?;
 
     let mut root_manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
@@ -432,119 +380,29 @@ async fn publish_package(
     // 2. Topo sort
     let ordered_dependencies = graph_v2.ordered_dependencies()?;
 
-    // 3. Initialize mapping M to store the remote location of published local packages
-    let mut manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
-        HashMap::new();
+    // 3. Create publisher instance
+    let mut publisher = Publisher::new(registry, repository, artifactory, preserve_mtime);
 
-    // 3. Iterate through dependency D and publish local dependencies
+    // 4. Iterate through dependencies and publish local ones
     for dependency in ordered_dependencies {
         match dependency.node.source {
             DependencySource::Local { path: absolute_path } => {
-                let abs_manifest_path = absolute_path.join(MANIFEST_FILE);
-                let dep_manifest = Manifest::try_read_from(&abs_manifest_path)
-                    .await
-                    .wrap_err(miette!(
-                        "Failed to read manifest file at {}",
-                        absolute_path.display()
-                    ))?;
-
-                // Create a store at the dependency's path, not the root package's path
-                let dep_store = PackageStore::open(&absolute_path).await?;
-
-                let remote_dependencies =
-                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest, &absolute_path)?;
-
-                // Cloned package where local dependencies have been updated with their remote locations in the manifest
-                let remote_deps_manifest =
-                    dep_manifest.clone_with_different_dependencies(remote_dependencies);
-
-                let package = dep_store.release(&remote_deps_manifest, preserve_mtime).await?;
-
-                artifactory
-                    .publish(package.clone(), repository.clone())
-                    .await
-                    .wrap_err(miette!("publishing of package {} failed", package.name()))?;
-
-
-                let local_manifest = LocalDependencyManifest {
-                    path: abs_manifest_path
-                };
-
-                let package_version = VersionReq::from_str(package.version().to_string().as_str())
-                    .into_diagnostic()?;
-
-                let remote_manifest = RemoteDependencyManifest {
-                    version: package_version,
-                    registry: registry.clone(),
-                    repository: repository.clone(),
-                };
-
-                manifest_mappings.insert(local_manifest, remote_manifest);
+                publisher.publish_package(&absolute_path).await?;
             }
-            // Only local packages get published
             DependencySource::Remote { .. } => {
                 // Remote dependencies don't need to be published, skip them
             }
         }
     }
 
-
-
-    // 4. Publish the root package itself with updated dependencies
+    // 5. Publish the root package itself with updated dependencies
     if let Some(ref pkg) = root_manifest.package {
         store.populate(pkg).await?;
     }
 
-    let root_remote_dependencies =
-        replace_local_with_remote_dependencies(&mut manifest_mappings, &root_manifest, package_path)?;
-
-    let root_manifest_with_remote_deps =
-        root_manifest.clone_with_different_dependencies(root_remote_dependencies);
-    let root_package = store.release(&root_manifest_with_remote_deps, preserve_mtime).await?;
-
-    artifactory
-        .publish(root_package.clone(), repository.clone())
-        .await
-        .wrap_err(miette!("publishing of package {} failed", root_package.name()))?;
+    publisher.publish_package(package_path).await?;
 
     Ok(())
-}
-
-fn replace_local_with_remote_dependencies(
-    remote_manifests: &mut HashMap<LocalDependencyManifest, RemoteDependencyManifest>,
-    manifest: &Manifest,
-    base_path: &Path,
-) -> Result<Vec<Dependency>, Report> {
-    // Manifest may contain references to other local dependencies that need to be replaced by their remote locations
-    // The topological order of `ordered_dependencies` guarantees that all dependant packages have been published at this point
-    // Keep remote dependencies
-    let mut remote_dependencies: Vec<Dependency> = manifest.get_remote_dependencies();
-    let local_dependencies: Vec<Dependency> = manifest.get_local_dependencies();
-
-    // Replace all local dependencies with the corresponding remote manifests created as part of their own processing
-    for local_dep in local_dependencies {
-        match local_dep.manifest {
-            DependencyManifest::Local(local_manifest) => {
-                // Paths in the manifest are relative and need to be converted to absolute paths to be used as unique keys
-                let absolute_path_manifest = LocalDependencyManifest {
-                    path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
-                };
-
-                let remote_manifest = remote_manifests
-                    .get(&absolute_path_manifest)
-                    .wrap_err(miette!("local dependency {} should have been made available during publish, but is not found",
-                    &local_dep.package))?;
-
-                let remote_dependency = Dependency {
-                    package: local_dep.package.clone(),
-                    manifest: DependencyManifest::Remote(remote_manifest.clone()),
-                };
-                remote_dependencies.push(remote_dependency)
-            }
-            _ => bail!("remote dependency manifest found at an unexpected place"),
-        }
-    }
-    Ok(remote_dependencies)
 }
 
 /// Installs dependencies for the current project

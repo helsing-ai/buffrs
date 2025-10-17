@@ -33,6 +33,11 @@ pub mod lock;
 pub mod manifest;
 /// Packages formats and utilities
 pub mod package;
+/// Dedicated helpers to deal with more complicated CLI operations
+pub mod operations {
+    /// Publisher helper to handle logic related to publishing
+    pub mod publisher;
+}
 /// Supported registries
 pub mod registry;
 /// Resolve package dependencies (v2)
