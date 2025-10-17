@@ -87,10 +87,20 @@ This enables you to:
 - Independently publish `mono-api` using `buffrs publish` / `buffrs package`
 - Independently declare dependencies for `mono-server`
 
-#### Caveats
+#### Publishing with Local Dependencies
 
-Please note that projects containing any local dependencies can not be
-published anymore. The ability to declare local filesystem dependencies is
-mainly useful for the above scenario where you want to install buffrs packages
-for your server from different locations on the filesystem (monorepo, git
-submodules etc).
+Since version 0.12, buffrs automatically handles publishing packages with local dependencies:
+
+```bash
+cd mono-server
+buffrs publish --registry http://... --repository my-repo
+```
+
+Buffrs will:
+1. Recursively resolve all local dependencies (and their transitive dependencies)
+2. Publish each local dependency in topological order
+3. Rewrite local references in the published manifest to point to the registry
+
+For example, if `mono-server` depends on `mono-api` (local), buffrs first publishes `mono-api` to the registry, then publishes `mono-server` with the dependency updated to reference the registry location instead of the local path.
+
+This makes it seamless to develop locally while maintaining publishable packages.

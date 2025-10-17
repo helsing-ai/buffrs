@@ -22,6 +22,11 @@ Layout](../guide/project-layout.md) for more information). Only one version of
 each package can be installed, so if there is a conflicting requirement,
 installation will fail.
 
+Since version 0.12, `buffrs install` supports [local dependencies](../guide/local-dependencies.md)
+and [workspaces](../guide/workspaces.md):
+- **Local dependencies**: Dependencies specified with `path = "..."` are recursively resolved and installed
+- **Workspaces**: When run from a workspace root, installs dependencies for all workspace members
+
 Once installation has completed, the resolved packages versions will be frozen
 and captured in a `Proto.lock` file, which ensures that future installations
 (local or performed in another machine) will install the exact same dependency
