@@ -35,6 +35,8 @@ pub mod manifest;
 pub mod package;
 /// Dedicated helpers to deal with more complicated CLI operations
 pub mod operations {
+    /// Installer helper to handle logic related to installing dependencies
+    pub mod installer;
     /// Publisher helper to handle logic related to publishing
     pub mod publisher;
 }
