@@ -182,7 +182,6 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-
     let manifest = if Manifest::exists().await? {
         Some(Manifest::read().await?)
     } else {
@@ -235,6 +234,7 @@ async fn main() -> miette::Result<()> {
             .wrap_err(miette!(
                 "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
             )),
+
         Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
         )),

@@ -327,6 +327,44 @@ pub struct Manifest {
 }
 
 impl Manifest {
+    /// Clones the Manifest but replaces the dependencies with a given Vec
+    pub fn clone_with_different_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
+        Self {
+            dependencies: Some(dependencies),
+            ..self.clone()
+        }
+    }
+
+    /// Gets a list of all local dependencies
+    pub fn get_local_dependencies(&self) -> Vec<Dependency> {
+        self.get_dependencies_of_type(|d| d.manifest.is_local())
+    }
+
+    /// Gets a list of all local dependencies
+    pub fn get_remote_dependencies(&self) -> Vec<Dependency> {
+        self.get_dependencies_of_type(|d| !d.manifest.is_local())
+    }
+
+    /// Gets a list of all dependencies
+    fn get_dependencies_of_type(&self, predicate: fn(d: &Dependency) -> bool) -> Vec<Dependency> {
+        self.clone()
+            .dependencies
+            .unwrap_or_default()
+            .into_iter()
+            .filter(predicate)
+            .collect()
+    }
+
+    /// Get package names of dependencies
+    pub fn get_dependency_package_names(&self) -> Vec<PackageName> {
+        self.dependencies
+            .clone()
+            .unwrap_or_default()
+            .iter()
+            .map(|d| d.package.clone())
+            .collect()
+    }
+
     /// Determine the ManifestType based on dependencies and workspace
     fn get_manifest_type(
         dependencies: &Option<Vec<Dependency>>,
@@ -497,7 +535,7 @@ impl TryFrom<RawManifest> for Manifest {
 
     fn try_from(raw: RawManifest) -> Result<Manifest, Self::Error> {
         let dependencies = raw.dependencies().map(|deps| {
-            deps.into_iter()
+            deps.iter()
                 .map(|(package, manifest)| Dependency {
                     package: package.to_owned(),
                     manifest: manifest.to_owned(),
@@ -526,7 +564,7 @@ impl FromStr for Manifest {
         input
             .parse::<RawManifest>()
             .map_err(|_| DeserializationError(ManagedFile::Manifest))
-            .map(|a| Manifest::try_from(a))?
+            .map(Manifest::try_from)?
     }
 }
 
@@ -691,7 +729,7 @@ mod tests {
         }
     }
     mod manifest_tests {
-        use crate::manifest::{Edition, Manifest, ManifestBuilder, RawManifest};
+        use crate::manifest::{Edition, Manifest};
         use std::str::FromStr;
 
         #[test]
@@ -733,7 +771,6 @@ mod tests {
             "#;
 
             let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
-            let package = manifest.clone().package.expect("should have valid package");
 
             assert_eq!(manifest.edition, Edition::Canary);
             assert!(manifest.workspace.is_none());
@@ -742,23 +779,60 @@ mod tests {
             assert_eq!(manifest.edition, manifest_clone.edition);
         }
 
-        /// TODO(mz): Clarify correct behavior for reserialization of manifests
         #[test]
-        fn test_add_edition_attribute() {
+        fn test_clone_with_different_dependencies() {
+            use crate::manifest::{Dependency, PackageName, RegistryUri};
+            use semver::VersionReq;
+            use std::str::FromStr;
+
+            // Create original manifest with initial dependencies
             let manifest = r#"
+            edition = "0.12"
+
             [package]
             type = "lib"
-            name = "lib"
-            version = "0.0.1"
+            name = "test-package"
+            version = "1.0.0"
 
-            [dependencies]
+            [dependencies.test-dependency]
+            version = "1.0.0"
+            registry = "https://registry.example.com"
+            repository = "original-repo"
             "#;
 
-            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
-            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
-                .expect("should be convertable to str");
+            let original_manifest = Manifest::from_str(manifest).expect("should be valid manifest");
 
-            // assert!(raw_manifest_str.contains("edition"))
+            // Create new dependencies
+            let new_deps = vec![
+                Dependency::new(
+                    RegistryUri::from_str("https://new-registry.example.com").unwrap(),
+                    "new-repo".to_string(),
+                    PackageName::from_str("new-dep-1").unwrap(),
+                    VersionReq::from_str("2.0.0").unwrap(),
+                ),
+                Dependency::new(
+                    RegistryUri::from_str("https://another-registry.example.com").unwrap(),
+                    "another-repo".to_string(),
+                    PackageName::from_str("new-dep-2").unwrap(),
+                    VersionReq::from_str("3.0.0").unwrap(),
+                ),
+            ];
+
+            // Clone with different dependencies
+            let cloned_manifest =
+                original_manifest.clone_with_different_dependencies(new_deps.clone());
+
+            // Verify the dependencies were replaced
+            assert_eq!(cloned_manifest.dependencies, Some(new_deps));
+
+            // Verify other fields remain unchanged
+            assert_eq!(cloned_manifest.edition, original_manifest.edition);
+            assert_eq!(cloned_manifest.package, original_manifest.package);
+            assert_eq!(cloned_manifest.workspace, original_manifest.workspace);
+            assert_eq!(
+                cloned_manifest.manifest_type,
+                original_manifest.manifest_type
+            );
         }
 
         #[test]

@@ -13,18 +13,15 @@
 // limitations under the License.
 
 use crate::{
-    cache::Cache,
     credentials::Credentials,
-    lock::{LockedPackage, Lockfile},
-    manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
+    lock::Lockfile,
+    manifest::{Dependency, MANIFEST_FILE, Manifest, ManifestType, PackageManifest},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
-    resolver::{DependencyGraph, ResolvedDependency},
 };
 
-use crate::lock::LOCKFILE;
-use crate::manifest::ManifestType;
-use async_recursion::async_recursion;
+use crate::operations::installer::Installer;
+use crate::operations::publisher::Publisher;
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use std::{
@@ -39,6 +36,32 @@ use tokio::{
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
+
+/// Ensures the current directory contains a package manifest, not a workspace
+///
+/// Returns an error if the manifest is a workspace manifest.
+/// Use this at the beginning of commands that don't support workspaces.
+///
+/// # Example
+/// ```ignore
+/// pub async fn some_command() -> miette::Result<()> {
+///     ensure_package_manifest("some_command").await?;
+///     // ... rest of command implementation
+/// }
+/// ```
+async fn ensure_package_manifest(command_name: &str) -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+
+    if let ManifestType::Workspace = manifest.manifest_type {
+        bail!(
+            "The `{}` command is not supported for workspaces.\n\
+             Please run this command from a package directory within the workspace.",
+            command_name
+        );
+    }
+
+    Ok(())
+}
 
 /// Initializes the project
 pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miette::Result<()> {
@@ -184,6 +207,8 @@ impl FromStr for DependencyLocator {
 
 /// Adds a dependency to this project
 pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
+    ensure_package_manifest("add").await?;
+
     let mut manifest = Manifest::read().await?;
 
     let DependencyLocator {
@@ -220,6 +245,8 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> miette::Result<()> {
+    ensure_package_manifest("remove").await?;
+
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
@@ -247,15 +274,17 @@ pub async fn package(
     version: Option<Version>,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
+    ensure_package_manifest("package").await?;
+
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
+    if let Some(version) = version
+        && let Some(ref mut package) = manifest.package
+    {
+        tracing::info!(":: modified version in published manifest to {version}");
 
-            package.version = version;
-        }
+        package.version = version;
     }
 
     if let Some(ref pkg) = manifest.package {
@@ -292,87 +321,17 @@ pub async fn publish(
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     #[cfg(feature = "git")]
-    async fn git_statuses() -> miette::Result<Vec<String>> {
-        use std::process::Stdio;
+    Publisher::check_git_status(allow_dirty).await?;
 
-        let output = tokio::process::Command::new("git")
-            .arg("status")
-            .arg("--porcelain")
-            .stderr(Stdio::null())
-            .output()
-            .await;
+    let manifest = Manifest::read().await?;
+    let current_path = env::current_dir()
+        .into_diagnostic()
+        .wrap_err("current dir could not be retrieved")?;
 
-        let output = match output {
-            Ok(output) => output,
-            Err(_) => {
-                return Ok(Vec::new());
-            }
-        };
-
-        if !output.status.success() {
-            return Ok(Vec::new());
-        }
-
-        let stdout = String::from_utf8(output.stdout)
-            .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the output of `git status`"
-            ))?;
-
-        let lines: Option<Vec<_>> = stdout
-            .lines()
-            .map(|line| {
-                line.split_once(' ')
-                    .map(|(_, filename)| filename.to_string())
-            })
-            .collect();
-
-        Ok(lines.unwrap_or_default())
-    }
-
-    #[cfg(feature = "git")]
-    if let Ok(statuses) = git_statuses().await {
-        if !allow_dirty && !statuses.is_empty() {
-            tracing::error!(
-                "{} files in the working directory contain changes that were not yet committed into git:\n",
-                statuses.len()
-            );
-
-            statuses.iter().for_each(|s| tracing::error!("{}", s));
-
-            tracing::error!(
-                "\nTo proceed with publishing despite the uncommitted changes, pass the `--allow-dirty` flag\n"
-            );
-
-            bail!("attempted to publish a dirty repository");
-        }
-    }
-
-    let mut manifest = Manifest::read().await?;
-    let credentials = Credentials::load().await?;
-    let store = PackageStore::current().await?;
-    let artifactory = Artifactory::new(registry, &credentials)?;
-
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
-
-            package.version = version;
-        }
-    }
-
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-    }
-
-    let package = store.release(&manifest, preserve_mtime).await?;
-
-    if dry_run {
-        tracing::warn!(":: aborting upload due to dry run");
-        return Ok(());
-    }
-
-    artifactory.publish(package, repository).await
+    let mut publisher = Publisher::new(registry, repository, preserve_mtime).await?;
+    publisher
+        .publish(&manifest, &current_path, version, dry_run)
+        .await
 }
 
 /// Installs dependencies for the current project
@@ -386,169 +345,57 @@ pub async fn publish(
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
 pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
     let manifest = Manifest::read().await?;
-
-    match manifest.manifest_type {
-        ManifestType::Package => {
-            let lockfile = Lockfile::read_or_default().await?;
-            let store = PackageStore::current().await?;
-            let current_path = env::current_dir()
-                .into_diagnostic()
-                .wrap_err("current dir could not be retrieved")?;
-            install_package(preserve_mtime, &manifest, &lockfile, &store, &current_path).await
-        }
-        ManifestType::Workspace => install_workspace(preserve_mtime, &manifest).await,
-    }
-}
-
-/// Installs dependencies for a workspace (not yet implemented)
-async fn install_workspace(preserve_mtime: bool, manifest: &Manifest) -> miette::Result<()> {
-    let root_path = env::current_dir()
-        .into_diagnostic()
-        .wrap_err("current dir could not be retrieved")?;
-    let workspace = manifest.workspace.as_ref().ok_or_else(|| {
-        miette!(
-            "buffers install for workspaces executed on manifest that does not define a workspace."
-        )
-    })?;
-    let packages = workspace.resolve_members(root_path)?;
-    tracing::info!(
-        ":: workspace found. running install for {} packages in workspace",
-        packages.len()
-    );
-
-    for package in packages {
-        let canonical_name = fs::canonicalize(&package).await.into_diagnostic()?;
-        let pkg_manifest = Manifest::try_read_from(package.join(MANIFEST_FILE)).await?;
-        let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
-        let store = PackageStore::open(&package).await?;
-
-        tracing::info!(
-            ":: running install for package: {}",
-            canonical_name.to_str().unwrap()
-        );
-        install_package(
-            preserve_mtime,
-            &pkg_manifest,
-            &pkg_lockfile,
-            &store,
-            &package,
-        )
-        .await?
-    }
-
-    Ok(())
-}
-
-/// Installs dependencies of a package
-///
-/// if [preserve_mtime] is true, local dependencies will keep their modification time
-async fn install_package(
-    preserve_mtime: bool,
-    manifest: &Manifest,
-    lockfile: &Lockfile,
-    store: &PackageStore,
-    package_path: &PathBuf,
-) -> miette::Result<()> {
-    let credentials = Credentials::load().await?;
-    let cache = Cache::open().await?;
-
-    store.clear().await?;
-
-    if let Some(ref pkg) = manifest.package {
-        store.populate(pkg).await?;
-
-        tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
-    }
-
-    let dependency_graph = DependencyGraph::from_manifest(
-        &manifest,
-        &lockfile,
-        &credentials.into(),
-        &cache,
-        preserve_mtime,
-        package_path,
-    )
-    .await
-    .wrap_err(miette!("dependency resolution failed"))?;
-
-    let mut locked = Vec::new();
-
-    #[async_recursion]
-    async fn traverse_and_install(
-        name: &PackageName,
-        graph: &DependencyGraph,
-        store: &PackageStore,
-        locked: &mut Vec<LockedPackage>,
-        prefix: String,
-    ) -> miette::Result<()> {
-        let resolved = graph.get(name).ok_or(miette!(
-            "unexpected error: missing dependency in dependency graph"
-        ))?;
-
-        store.unpack(resolved.package()).await.wrap_err(miette!(
-            "failed to unpack package {}",
-            &resolved.package().name()
-        ))?;
-
-        tracing::info!(
-            "{} installed {}@{}",
-            if prefix.is_empty() { "::" } else { &prefix },
-            name,
-            resolved.package().version()
-        );
-
-        if let ResolvedDependency::Remote {
-            package,
-            registry,
-            repository,
-            dependants,
-            ..
-        } = &resolved
-        {
-            locked.push(package.lock(registry.clone(), repository.clone(), dependants.len()));
-        }
-
-        for (index, dependency) in resolved.depends_on().iter().enumerate() {
-            let tree_char = if index + 1 == resolved.depends_on().len() {
-                '┗'
-            } else {
-                '┣'
-            };
-
-            let new_prefix = format!(
-                "{} {tree_char}",
-                if prefix.is_empty() { "  " } else { &prefix }
-            );
-
-            traverse_and_install(dependency, graph, store, locked, new_prefix).await?;
-        }
-
-        Ok(())
-    }
-
-    for dependency in manifest.dependencies.iter().flatten() {
-        traverse_and_install(
-            &dependency.package,
-            &dependency_graph,
-            &store,
-            &mut locked,
-            String::new(),
-        )
-        .await?;
-    }
-
-    Lockfile::from_iter(locked.into_iter())
-        .write(package_path)
-        .await
+    let installer = Installer::new(preserve_mtime).await?;
+    installer.install(&manifest).await
 }
 
 /// Uninstalls dependencies
+///
+/// Behavior depends on the manifest type:
+/// - **Package**: Clears the package's vendor directory
+/// - **Workspace**: Clears vendor directories for all workspace members
 pub async fn uninstall() -> miette::Result<()> {
-    PackageStore::current().await?.clear().await
+    let manifest = Manifest::read().await?;
+
+    match manifest.manifest_type {
+        ManifestType::Package => {
+            PackageStore::current().await?.clear().await
+        }
+        ManifestType::Workspace => {
+            let workspace = manifest.workspace.as_ref().ok_or_else(|| {
+                miette!("uninstall called on manifest that does not define a workspace")
+            })?;
+
+            let root_path = env::current_dir()
+                .into_diagnostic()
+                .wrap_err("current dir could not be retrieved")?;
+            let packages = workspace.resolve_members(root_path)?;
+
+            tracing::info!(
+                ":: workspace found. uninstalling dependencies for {} packages in workspace",
+                packages.len()
+            );
+
+            for package_path in packages {
+                let canonical_name = fs::canonicalize(&package_path).await.into_diagnostic()?;
+                tracing::info!(
+                    ":: uninstalling dependencies for package: {}",
+                    canonical_name.to_str().unwrap()
+                );
+
+                let store = PackageStore::open(&package_path).await?;
+                store.clear().await?;
+            }
+
+            Ok(())
+        }
+    }
 }
 
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
+    ensure_package_manifest("list").await?;
+
     let store = PackageStore::current().await?;
     let manifest = Manifest::read().await?;
 
@@ -584,6 +431,8 @@ pub async fn list() -> miette::Result<()> {
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
 pub async fn lint() -> miette::Result<()> {
+    ensure_package_manifest("lint").await?;
+
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
@@ -592,7 +441,6 @@ pub async fn lint() -> miette::Result<()> {
     ))?;
 
     store.populate(&pkg).await?;
-
     let violations = store.validate(&pkg).await?;
 
     violations

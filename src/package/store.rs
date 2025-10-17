@@ -319,8 +319,7 @@ impl PackageStore {
     /// # Arguments
     ///
     /// * `path` - The root directory to search
-    /// * `vendored` - If `false`, excludes files from `proto/vendor/` (for collecting source files only)
-    ///                If `true`, includes all `.proto` files regardless of location
+    /// * `vendored` - If `false`, excludes files from `proto/vendor/` (for collecting source files only), if `true`, includes all `.proto` files regardless of location
     ///
     /// # Returns
     ///

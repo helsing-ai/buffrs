@@ -39,7 +39,7 @@ impl Workspace {
         // Default to ["*"] if members is not specified
         let default_members = vec!["*".to_string()];
         let member_patterns = self.members.as_ref().unwrap_or(&default_members);
-        let exclude_patterns = self.exclude.as_ref().map(|e| e.as_slice()).unwrap_or(&[]);
+        let exclude_patterns = self.exclude.as_deref().unwrap_or(&[]);
 
         let mut resolved_members = BTreeSet::new();
 
@@ -62,12 +62,12 @@ impl Workspace {
                         .wrap_err_with(|| miette::miette!("failed to read directory entry"))?;
 
                     let path = entry.path();
-                    if path.is_dir() {
-                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                            if pattern_matcher.matches(name) && path.join(MANIFEST_FILE).exists() {
-                                resolved_members.insert(PathBuf::from(name));
-                            }
-                        }
+                    if path.is_dir()
+                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && pattern_matcher.matches(name)
+                        && path.join(MANIFEST_FILE).exists()
+                    {
+                        resolved_members.insert(PathBuf::from(name));
                     }
                 }
             } else {

@@ -1,4 +1,4 @@
-// Copyright 2023 Helsing GmbH
+// Copyright 2025 Helsing GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,9 +33,16 @@ pub mod lock;
 pub mod manifest;
 /// Packages formats and utilities
 pub mod package;
+/// Dedicated helpers to deal with more complicated CLI operations
+pub mod operations {
+    /// Installer helper to handle logic related to installing dependencies
+    pub mod installer;
+    /// Publisher helper to handle logic related to publishing
+    pub mod publisher;
+}
 /// Supported registries
 pub mod registry;
-/// Resolve package dependencies.
+/// Resolve package dependencies
 pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
