@@ -438,16 +438,19 @@ async fn publish_package(
     let mut manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest> =
         HashMap::new();
 
+    // tracing::info!("{:?}", ordered_dependencies);
+    // tracing::info!("{:?}", manifest_mappings);
+
     // 3. Iterate through dependency D and publish local dependencies
     for dependency in ordered_dependencies {
         match dependency.node.source {
-            // Only local packages get published
-            DependencySource::Local { path } => {
-                let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE))
+            DependencySource::Local { path: absolute_path } => {
+                let abs_manifest_path = absolute_path.join(MANIFEST_FILE);
+                let dep_manifest = Manifest::try_read_from(&abs_manifest_path)
                     .await
                     .wrap_err(miette!(
                         "Failed to read manifest file at {}",
-                        path.display()
+                        absolute_path.display()
                     ))?;
 
                 if let Some(ref pkg) = dep_manifest.package {
@@ -455,22 +458,30 @@ async fn publish_package(
                 }
 
                 let remote_dependencies =
-                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest)?;
+                    replace_local_with_remote_dependencies(&mut manifest_mappings, &dep_manifest, package_path)?;
 
                 // Cloned package where local dependencies have been updated with their remote locations in the manifest
                 let remote_deps_manifest =
                     dep_manifest.clone_with_different_dependencies(remote_dependencies);
+
                 let package = store.release(&remote_deps_manifest, preserve_mtime).await?;
+                // tracing::info!("0");
 
                 artifactory
                     .publish(package.clone(), repository.clone())
                     .await
                     .wrap_err(miette!("publishing of package {} failed", package.name()))?;
 
-                let local_manifest = LocalDependencyManifest { path };
+
+                let local_manifest = LocalDependencyManifest {
+                    path: abs_manifest_path
+                };
+                // tracing::info!("Local: {:?}", local_manifest);
 
                 let package_version = VersionReq::from_str(package.version().to_string().as_str())
                     .into_diagnostic()?;
+
+                // tracing::info!("B");
 
                 let remote_manifest = RemoteDependencyManifest {
                     version: package_version,
@@ -478,8 +489,11 @@ async fn publish_package(
                     repository: repository.clone(),
                 };
 
+                // tracing::info!("C");
+
                 manifest_mappings.insert(local_manifest, remote_manifest);
             }
+            // Only local packages get published
             DependencySource::Remote { .. } => {
                 // Remote dependencies don't need to be published, skip them
                 continue;
@@ -487,13 +501,15 @@ async fn publish_package(
         }
     }
 
+
+
     // 4. Publish the root package itself with updated dependencies
     if let Some(ref pkg) = root_manifest.package {
         store.populate(pkg).await?;
     }
 
     let root_remote_dependencies =
-        replace_local_with_remote_dependencies(&mut manifest_mappings, &root_manifest)?;
+        replace_local_with_remote_dependencies(&mut manifest_mappings, &root_manifest, package_path)?;
 
     let root_manifest_with_remote_deps =
         root_manifest.clone_with_different_dependencies(root_remote_dependencies);
@@ -510,6 +526,7 @@ async fn publish_package(
 fn replace_local_with_remote_dependencies(
     remote_manifests: &mut HashMap<LocalDependencyManifest, RemoteDependencyManifest>,
     manifest: &Manifest,
+    base_path: &Path,
 ) -> Result<Vec<Dependency>, Report> {
     // Manifest may contain references to other local dependencies that need to be replaced by their remote locations
     // The topological order of `ordered_dependencies` guarantees that all dependant packages have been published at this point
@@ -521,8 +538,15 @@ fn replace_local_with_remote_dependencies(
     for local_dep in local_dependencies {
         match local_dep.manifest {
             DependencyManifest::Local(local_manifest) => {
+                // Paths in the manifest are relative and need to be converted to absolute paths to be used as unique keys
+                let absolute_path_manifest = LocalDependencyManifest {
+                    path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
+                };
+
+                // tracing::info!("Key: {:?}", absolute_path_manifest);
+                // tracing::info!("HashMap: {:?}", remote_manifests);
                 let remote_manifest = remote_manifests
-                    .get(&local_manifest)
+                    .get(&absolute_path_manifest)
                     .wrap_err(miette!("local dependency {} should have been made available during publish, but is not found",
                     &local_dep.package))?;
 

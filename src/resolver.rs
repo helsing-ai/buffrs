@@ -47,6 +47,7 @@ pub struct DependencyNode {
 pub type MetadataMap = HashMap<PackageName, DependencyNode>;
 
 /// Represents a resolved dependency with its name and metadata
+#[derive(Debug)]
 pub struct DependencyDetails {
     /// The package name
     pub name: PackageName,
