@@ -358,9 +358,7 @@ pub async fn uninstall() -> miette::Result<()> {
     let manifest = Manifest::read().await?;
 
     match manifest.manifest_type {
-        ManifestType::Package => {
-            PackageStore::current().await?.clear().await
-        }
+        ManifestType::Package => PackageStore::current().await?.clear().await,
         ManifestType::Workspace => {
             let workspace = manifest.workspace.as_ref().ok_or_else(|| {
                 miette!("uninstall called on manifest that does not define a workspace")

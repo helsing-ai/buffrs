@@ -14,8 +14,8 @@
 
 use crate::credentials::Credentials;
 use crate::manifest::{
-    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-    ManifestType, RemoteDependencyManifest,
+    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
+    RemoteDependencyManifest,
 };
 use crate::package::PackageStore;
 use crate::registry::{Artifactory, RegistryUri};
@@ -166,13 +166,15 @@ impl Publisher {
 
         // Build dependency graph
         let credentials = Credentials::load().await?;
-        let graph =
-            DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
+        let graph = DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
         let ordered_dependencies = graph.ordered_dependencies()?;
 
         // Publish local dependencies first
         for dependency in ordered_dependencies {
-            if let DependencySource::Local { path: absolute_path } = dependency.node.source {
+            if let DependencySource::Local {
+                path: absolute_path,
+            } = dependency.node.source
+            {
                 self.publish_package_at_path(&absolute_path).await?;
             }
         }
@@ -222,8 +224,7 @@ impl Publisher {
                 canonical_name.to_str().unwrap()
             );
 
-            let member_manifest =
-                Manifest::try_read_from(member_path.join(MANIFEST_FILE)).await?;
+            let member_manifest = Manifest::try_read_from(member_path.join(MANIFEST_FILE)).await?;
 
             // Build dependency graph for this member
             let graph =
@@ -232,7 +233,10 @@ impl Publisher {
 
             // Publish local dependencies first
             for dependency in dependencies {
-                if let DependencySource::Local { path: absolute_path } = dependency.node.source {
+                if let DependencySource::Local {
+                    path: absolute_path,
+                } = dependency.node.source
+                {
                     self.publish_package_at_path(&absolute_path).await?;
                 }
             }
