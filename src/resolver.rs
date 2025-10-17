@@ -256,13 +256,7 @@ impl<'a> GraphBuilder<'a> {
         let manifest = Manifest::try_read_from(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
-        // Validate package type constraint
-        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
-            bail!(DependencyError::InvalidPackageTypeDependency {
-                parent: PackageName::unchecked("parent"), // TODO: thread parent name
-                dependency: dependency.package.clone(),
-            });
-        }
+        Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
 
         let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
 
@@ -292,6 +286,23 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
+    /// Ensures that a lib package doesn't depend on an api package
+    fn ensure_lib_not_depends_on_api(
+        dependency: &Dependency,
+        parent_type: Option<PackageType>,
+        package_type: Option<PackageType>,
+    ) -> miette::Result<()> {
+        // Validate package type constraint
+        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
+            bail!(DependencyError::InvalidPackageTypeDependency {
+                parent: PackageName::unchecked("parent"), // TODO: thread parent name
+                dependency: dependency.package.clone(),
+            });
+        }
+
+        Ok(())
+    }
+
     async fn add_remote_dependency(
         &mut self,
         dependency: &Dependency,
@@ -313,13 +324,7 @@ impl<'a> GraphBuilder<'a> {
         let manifest = downloaded_package.manifest;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
-        // Validate package type constraint
-        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
-            bail!(DependencyError::InvalidPackageTypeDependency {
-                parent: PackageName::unchecked("parent"), // TODO: thread parent name
-                dependency: package_name.clone(),
-            });
-        }
+        Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
 
         let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
 
