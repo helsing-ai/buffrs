@@ -42,7 +42,7 @@ pub mod operations {
 }
 /// Supported registries
 pub mod registry;
-/// Resolve package dependencies (v2)
+/// Resolve package dependencies
 pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
