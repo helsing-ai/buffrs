@@ -15,7 +15,7 @@
 use crate::{
     credentials::Credentials,
     lock::Lockfile,
-    manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
+    manifest::{Dependency, MANIFEST_FILE, Manifest, ManifestType, PackageManifest},
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -36,6 +36,32 @@ use tokio::{
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
+
+/// Ensures the current directory contains a package manifest, not a workspace
+///
+/// Returns an error if the manifest is a workspace manifest.
+/// Use this at the beginning of commands that don't support workspaces.
+///
+/// # Example
+/// ```ignore
+/// pub async fn some_command() -> miette::Result<()> {
+///     ensure_package_manifest("some_command").await?;
+///     // ... rest of command implementation
+/// }
+/// ```
+async fn ensure_package_manifest(command_name: &str) -> miette::Result<()> {
+    let manifest = Manifest::read().await?;
+
+    if let ManifestType::Workspace = manifest.manifest_type {
+        bail!(
+            "The `{}` command is not supported for workspaces.\n\
+             Please run this command from a package directory within the workspace.",
+            command_name
+        );
+    }
+
+    Ok(())
+}
 
 /// Initializes the project
 pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miette::Result<()> {
@@ -181,6 +207,8 @@ impl FromStr for DependencyLocator {
 
 /// Adds a dependency to this project
 pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
+    ensure_package_manifest("add").await?;
+
     let mut manifest = Manifest::read().await?;
 
     let DependencyLocator {
@@ -217,6 +245,8 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> miette::Result<()> {
+    ensure_package_manifest("remove").await?;
+
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
@@ -244,6 +274,8 @@ pub async fn package(
     version: Option<Version>,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
+    ensure_package_manifest("package").await?;
+
     let mut manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
@@ -324,6 +356,8 @@ pub async fn uninstall() -> miette::Result<()> {
 
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
+    ensure_package_manifest("list").await?;
+
     let store = PackageStore::current().await?;
     let manifest = Manifest::read().await?;
 
@@ -359,6 +393,8 @@ pub async fn list() -> miette::Result<()> {
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
 pub async fn lint() -> miette::Result<()> {
+    ensure_package_manifest("lint").await?;
+
     let manifest = Manifest::read().await?;
     let store = PackageStore::current().await?;
 
