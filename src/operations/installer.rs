@@ -97,7 +97,7 @@ impl Installer {
 
             tracing::info!(
                 ":: running install for package: {}",
-                canonical_name.to_str().unwrap()
+                canonical_name.display()
             );
             self.install_package(&pkg_manifest, &pkg_lockfile, &store, &package)
                 .await?
@@ -159,7 +159,7 @@ impl Installer {
             store
                 .unpack(&package)
                 .await
-                .wrap_err(miette!("failed to unpack package {}", &package.name()))?;
+                .wrap_err_with(|| format!("failed to unpack package {}", package.name()))?;
 
             tracing::info!(
                 ":: installed {}@{}",
@@ -238,7 +238,7 @@ impl Installer {
         version: &VersionReq,
     ) -> miette::Result<Package> {
         let artifactory = Artifactory::new(registry.clone(), &self.credentials)
-            .wrap_err(miette!("failed to initialize registry {}", registry))?;
+            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let dependency = Dependency {
             package: package_name.clone(),

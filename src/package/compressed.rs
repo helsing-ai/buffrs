@@ -20,7 +20,7 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use miette::{Context, IntoDiagnostic, miette};
+use miette::{Context, IntoDiagnostic, bail, miette};
 use semver::Version;
 use tokio::fs;
 
@@ -64,17 +64,13 @@ impl Package {
                 (Some(deps), None) => builder.dependencies(deps).build(),
                 (None, Some(ws)) => builder.workspace(ws).build(),
                 _ => {
-                    return Err(miette!(
-                        "manifest must have either dependencies or workspace"
-                    ));
+                    bail!("manifest must have either dependencies or workspace")
                 }
             };
         }
 
         if manifest.package.is_none() {
-            return Err(miette!(
-                "failed to create package, manifest doesnt contain a package declaration"
-            ));
+            bail!("failed to create package, manifest doesnt contain a package declaration")
         }
 
         let mut archive = tar::Builder::new(Vec::new());

@@ -105,7 +105,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .await
-        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+        .wrap_err("failed to create buffrs `proto` directories")?;
 
     Ok(())
 }
@@ -117,10 +117,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
     fs::create_dir(&package_dir)
         .await
         .into_diagnostic()
-        .wrap_err(miette!(
-            "failed to create {} directory",
-            package_dir.display()
-        ))?;
+        .wrap_err_with(|| format!("failed to create {} directory", package_dir.display()))?;
 
     let package = kind
         .map(|kind| -> miette::Result<PackageManifest> {
@@ -142,7 +139,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
 
     PackageStore::open(&package_dir)
         .await
-        .wrap_err(miette!("failed to create buffrs `proto` directories"))?;
+        .wrap_err("failed to create buffrs `proto` directories")?;
 
     Ok(())
 }
@@ -185,14 +182,14 @@ impl FromStr for DependencyLocator {
 
         let package = package
             .parse::<PackageName>()
-            .wrap_err(miette!("invalid package name: {package}"))?;
+            .wrap_err_with(|| format!("invalid package name: {package}"))?;
 
         let version = match version {
             Some("latest") | None => DependencyLocatorVersion::Latest,
             Some(version_str) => {
                 let parsed_version = VersionReq::parse(version_str)
                     .into_diagnostic()
-                    .wrap_err(miette!("not a valid version requirement: {version_str}"))?;
+                    .wrap_err_with(|| format!("not a valid version requirement: {version_str}"))?;
                 DependencyLocatorVersion::Version(parsed_version)
             }
         };
@@ -240,7 +237,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     manifest
         .write()
         .await
-        .wrap_err(miette!("failed to write `{MANIFEST_FILE}`"))
+        .wrap_err_with(|| format!("failed to write `{MANIFEST_FILE}`"))
 }
 
 /// Removes a dependency from this project
@@ -306,9 +303,7 @@ pub async fn package(
     fs::write(path, package.tgz)
         .await
         .into_diagnostic()
-        .wrap_err(miette!(
-            "failed to write package release to the current directory"
-        ))
+        .wrap_err("failed to write package release to the current directory")
 }
 
 /// Publishes the api package to the registry
@@ -378,7 +373,7 @@ pub async fn uninstall() -> miette::Result<()> {
                 let canonical_name = fs::canonicalize(&package_path).await.into_diagnostic()?;
                 tracing::info!(
                     ":: uninstalling dependencies for package: {}",
-                    canonical_name.to_str().unwrap()
+                    canonical_name.display()
                 );
 
                 let store = PackageStore::open(&package_path).await?;
@@ -406,19 +401,19 @@ pub async fn list() -> miette::Result<()> {
     let cwd = {
         let cwd = std::env::current_dir()
             .into_diagnostic()
-            .wrap_err(miette!("failed to get current directory"))?;
+            .wrap_err("failed to get current directory")?;
 
         fs::canonicalize(cwd)
             .await
             .into_diagnostic()
-            .wrap_err(miette!("failed to canonicalize current directory"))?
+            .wrap_err("failed to canonicalize current directory")?
     };
 
     for proto in protos.iter() {
         let rel = proto
             .strip_prefix(&cwd)
             .into_diagnostic()
-            .wrap_err(miette!("failed to transform protobuf path"))?;
+            .wrap_err("failed to transform protobuf path")?;
 
         print!("{} ", rel.display())
     }
@@ -463,7 +458,7 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
             .read_line(&mut raw)
             .await
             .into_diagnostic()
-            .wrap_err(miette!("failed to read the token from the user"))?;
+            .wrap_err("failed to read the token from the user")?;
 
         raw.trim().into()
     };
@@ -474,7 +469,7 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
         Artifactory::new(registry, &credentials)?
             .ping()
             .await
-            .wrap_err(miette!("failed to validate token"))?;
+            .wrap_err("failed to validate token")?;
     }
 
     credentials.write().await

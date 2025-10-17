@@ -5,7 +5,7 @@ use crate::manifest::{
 use crate::package::{PackageName, PackageType};
 use crate::registry::{Artifactory, RegistryUri};
 use async_recursion::async_recursion;
-use miette::{Context as _, Diagnostic, bail, miette};
+use miette::{Context as _, Diagnostic, bail};
 use semver::VersionReq;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -305,7 +305,7 @@ impl<'a> GraphBuilder<'a> {
 
         // Download the package to read its manifest and discover dependencies
         let artifactory = Artifactory::new(registry.clone(), self.credentials)
-            .wrap_err(miette!("failed to initialize registry {}", registry))?;
+            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let downloaded_package = artifactory.download(dependency.clone()).await?;
 
@@ -386,7 +386,7 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
-    /// Checks for conflicting dependencies betweel local / remote deps in the dependency tree
+    /// Checks for conflicting dependencies between local / remote deps in the dependency tree
     fn validate_manifest_conflicts(
         &self,
         dependency: &Dependency,

@@ -105,9 +105,7 @@ impl Publisher {
 
         let stdout = String::from_utf8(output.stdout)
             .into_diagnostic()
-            .wrap_err(miette!(
-                "invalid utf-8 character in the output of `git status`"
-            ))?;
+            .wrap_err("invalid utf-8 character in the output of `git status`")?;
 
         let lines: Option<Vec<_>> = stdout
             .lines()
@@ -221,7 +219,7 @@ impl Publisher {
             let canonical_name = fs::canonicalize(&member_path).await.into_diagnostic()?;
             tracing::info!(
                 ":: processing workspace member: {}",
-                canonical_name.to_str().unwrap()
+                canonical_name.display()
             );
 
             let member_manifest = Manifest::try_read_from(member_path.join(MANIFEST_FILE)).await?;
@@ -279,10 +277,9 @@ impl Publisher {
 
         let manifest = Manifest::try_read_from(&manifest_path)
             .await
-            .wrap_err(miette!(
-                "Failed to read manifest file at {}",
-                package_path.display()
-            ))?;
+            .wrap_err_with(|| {
+                format!("failed to read manifest file at {}", package_path.display())
+            })?;
 
         // Create a store at the package's path
         let package_store = PackageStore::open(package_path).await?;
@@ -299,15 +296,11 @@ impl Publisher {
         self.artifactory
             .publish(package.clone(), self.repository.clone())
             .await
-            .wrap_err(miette!("publishing of package {} failed", package.name()))?;
+            .wrap_err_with(|| format!("publishing of package {} failed", package.name()))?;
 
         // Store the mapping for this package
-        let local_manifest = LocalDependencyManifest {
-            path: manifest_path,
-        };
-
         let package_version =
-            VersionReq::from_str(package.version().to_string().as_str()).into_diagnostic()?;
+            VersionReq::from_str(&package.version().to_string()).into_diagnostic()?;
 
         let remote_manifest = RemoteDependencyManifest {
             version: package_version,
@@ -342,10 +335,15 @@ impl Publisher {
                         path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
                     };
 
-                    let remote_manifest = self.manifest_mappings
+                    let remote_manifest = self
+                        .manifest_mappings
                         .get(&absolute_path_manifest)
-                        .wrap_err(miette!("local dependency {} should have been made available during publish, but is not found",
-                        &local_dep.package))?;
+                        .ok_or_else(|| {
+                            miette!(
+                                "local dependency {} should have been made available during publish, but is not found",
+                                local_dep.package
+                            )
+                        })?;
 
                     let remote_dependency = Dependency {
                         package: local_dep.package.clone(),
