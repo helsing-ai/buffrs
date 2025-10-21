@@ -11,13 +11,13 @@ A workspace is a collection of buffrs packages that share a common root director
 To create a workspace, add a `[workspace]` section to your root `Proto.toml`:
 
 ```toml
-edition = "0.9"
+edition = "0.12"
 
 [workspace]
 members = [
   "packages/common",
-  "packages/api-v1",
-  "packages/api-v2",
+  "packages/api-one",
+  "packages/api-two",
 ]
 ```
 
@@ -35,11 +35,11 @@ my-workspace/
     │   ├── Proto.toml      # Package manifest
     │   └── proto/
     │       └── common.proto
-    ├── api-v1/
+    ├── api-one/
     │   ├── Proto.toml
     │   └── proto/
     │       └── api.proto
-    └── api-v2/
+    └── api-two/
         ├── Proto.toml
         └── proto/
             └── api.proto
@@ -86,21 +86,21 @@ Clears vendor directories for all workspace members.
 Workspace members can depend on each other using local path references:
 
 ```toml
-# packages/api-v2/Proto.toml
-edition = "0.9"
+# packages/api-two/Proto.toml
+edition = "0.12"
 
 [package]
 type = "api"
-name = "my-api-v2"
+name = "my-api-two"
 version = "2.0.0"
 
 [dependencies]
 "my-common" = { path = "../common" }
 ```
 
-When publishing the workspace, buffrs automatically publishes `my-common` first, then publishes `my-api-v2` with the dependency reference updated to point to the registry.
+When publishing the workspace, buffrs automatically publishes `my-common` first, then publishes `my-api-two` with the dependency reference updated to point to the registry.
 
-## Workspace-only Commands
+## Package-only Commands
 
 Some commands are designed for package-level operations and cannot run from a workspace root:
 
