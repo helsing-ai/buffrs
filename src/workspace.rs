@@ -1,6 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
+use miette::{IntoDiagnostic, WrapErr};
 use serde::{Deserialize, Serialize};
+
+use crate::manifest::MANIFEST_FILE;
 
 /// Workspace implementation that follows Cargo conventions
 ///
@@ -32,11 +39,6 @@ impl Workspace {
         &self,
         workspace_root: impl AsRef<Path>,
     ) -> miette::Result<Vec<PathBuf>> {
-        use crate::manifest::MANIFEST_FILE;
-        use miette::{IntoDiagnostic, WrapErr};
-        use std::collections::BTreeSet;
-        use std::fs;
-
         // Default to ["*"] if members is not specified
         let default_members = vec!["*".to_string()];
         let member_patterns = self.members.as_ref().unwrap_or(&default_members);
@@ -46,7 +48,7 @@ impl Workspace {
 
         // Process each member pattern
         for pattern in member_patterns {
-            if pattern.contains('*') || pattern.contains('?') || pattern.contains('[') {
+            if pattern.contains(['*', '?', '[']) {
                 // Glob pattern - only 1 level deep
                 let pattern_matcher = glob::Pattern::new(pattern)
                     .into_diagnostic()
