@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use miette::{IntoDiagnostic, WrapErr};
+use miette::{IntoDiagnostic, WrapErr, miette};
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::MANIFEST_FILE;
@@ -85,18 +85,28 @@ impl Workspace {
         // Filter out excluded patterns
         let final_members: Vec<PathBuf> = resolved_members
             .into_iter()
-            .filter(|member| {
-                let member_str = member.to_str().unwrap_or("");
+            .map(|member| {
+                let member_str = member.to_str().ok_or_else(|| {
+                    miette!(
+                        "workspace member path is not valid UTF-8: {}",
+                        member.display()
+                    )
+                })?;
 
-                // Check if this member matches any exclude pattern
-                !exclude_patterns.iter().any(|exclude_pattern| {
+                let is_excluded = exclude_patterns.iter().any(|exclude_pattern| {
                     if let Ok(glob_matcher) = glob::Pattern::new(exclude_pattern) {
                         glob_matcher.matches(member_str)
                     } else {
                         member_str == exclude_pattern
                     }
-                })
+                });
+
+                Ok((!is_excluded).then_some(member))
             })
+            // collecting Result<T, E> into Result<Vec<T>, E> short-circuit into Err on first Err in Vec
+            .collect::<miette::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
             .collect();
 
         Ok(final_members)
