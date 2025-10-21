@@ -53,7 +53,7 @@ impl Publisher {
     /// Returns an error if the repository has uncommitted changes and `allow_dirty` is false.
     #[cfg(feature = "git")]
     pub async fn check_git_status(allow_dirty: bool) -> miette::Result<()> {
-        let statuses = Self::get_git_statuses().await?;
+        let statuses = Self::get_uncommitted_files().await?;
 
         if !allow_dirty && !statuses.is_empty() {
             tracing::error!(
@@ -75,7 +75,7 @@ impl Publisher {
 
     /// Gets the list of files with uncommitted changes from git
     #[cfg(feature = "git")]
-    async fn get_git_statuses() -> miette::Result<Vec<String>> {
+    async fn get_uncommitted_files() -> miette::Result<Vec<String>> {
         let output = tokio::process::Command::new("git")
             .arg("status")
             .arg("--porcelain")

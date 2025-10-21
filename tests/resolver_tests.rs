@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use buffrs::{
-    manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest},
     credentials::Credentials,
+    manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest},
     package::{PackageName, PackageType},
-    resolver::{DependencyGraph, DependencyNode, DependencySource}
+    resolver::{DependencyGraph, DependencyNode, DependencySource},
 };
 use semver::{Version, VersionReq};
 use tempfile::TempDir;

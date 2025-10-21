@@ -7,7 +7,7 @@ use std::{
 };
 
 use glob::Pattern;
-use miette::{IntoDiagnostic, WrapErr, miette, Result};
+use miette::{IntoDiagnostic, Result, WrapErr, miette};
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::MANIFEST_FILE;
