@@ -253,7 +253,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     let dependency = manifest
         .dependencies
-        .get_or_insert_with(Vec::new)
+        .get_or_insert_default()
         .remove(dependency);
 
     store.uninstall(&dependency.package).await.ok();
