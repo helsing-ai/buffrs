@@ -1,3 +1,5 @@
+// (c) Copyright 2025 Helsing GmbH. All rights reserved.
+
 use std::{
     collections::BTreeSet,
     fs,

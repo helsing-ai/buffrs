@@ -1,3 +1,5 @@
+// (c) Copyright 2025 Helsing GmbH. All rights reserved.
+
 use buffrs::credentials::Credentials;
 use buffrs::manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest};
 use buffrs::package::{PackageName, PackageType};

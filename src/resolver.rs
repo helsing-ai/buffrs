@@ -1,3 +1,5 @@
+// (c) Copyright 2025 Helsing GmbH. All rights reserved.
+
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
