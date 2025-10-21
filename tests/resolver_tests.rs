@@ -1,12 +1,15 @@
 // (c) Copyright 2025 Helsing GmbH. All rights reserved.
 
-use buffrs::credentials::Credentials;
-use buffrs::manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest};
-use buffrs::package::{PackageName, PackageType};
-use buffrs::resolver::{DependencyGraph, DependencyNode, DependencySource};
-use semver::{Version, VersionReq};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+use buffrs::{
+    manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest},
+    credentials::Credentials,
+    package::{PackageName, PackageType},
+    resolver::{DependencyGraph, DependencyNode, DependencySource}
+};
+use semver::{Version, VersionReq};
 use tempfile::TempDir;
 
 fn create_test_manifest(
