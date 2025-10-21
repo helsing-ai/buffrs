@@ -206,7 +206,7 @@ impl Lockfile {
             packages,
         };
 
-        let lockfile_path = path.as_ref().to_path_buf().join(LOCKFILE);
+        let lockfile_path = path.as_ref().join(LOCKFILE);
 
         fs::write(
             lockfile_path,

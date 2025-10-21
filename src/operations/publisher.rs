@@ -21,7 +21,6 @@ use std::str::FromStr;
 
 use miette::{Context as _, IntoDiagnostic, bail, miette};
 use semver::{Version, VersionReq};
-use tokio::fs;
 
 use crate::credentials::Credentials;
 use crate::manifest::{
@@ -217,11 +216,7 @@ impl Publisher {
 
         // Iterate through each workspace member
         for member_path in packages {
-            let canonical_name = fs::canonicalize(&member_path).await.into_diagnostic()?;
-            tracing::info!(
-                ":: processing workspace member: {}",
-                canonical_name.display()
-            );
+            tracing::info!(":: processing workspace member: {}", member_path.display());
 
             let member_manifest = Manifest::try_read_from(member_path.join(MANIFEST_FILE)).await?;
 

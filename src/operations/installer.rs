@@ -19,7 +19,6 @@ use std::{
 
 use miette::{Context as _, IntoDiagnostic, ensure, miette};
 use semver::VersionReq;
-use tokio::fs;
 
 use crate::{
     cache::{Cache, Entry as CacheEntry},
@@ -95,15 +94,11 @@ impl Installer {
         );
 
         for package in packages {
-            let canonical_name = fs::canonicalize(&package).await.into_diagnostic()?;
             let pkg_manifest = Manifest::try_read_from(package.join(MANIFEST_FILE)).await?;
             let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
             let store = PackageStore::open(&package).await?;
 
-            tracing::info!(
-                ":: running install for package: {}",
-                canonical_name.display()
-            );
+            tracing::info!(":: running install for package: {}", package.display());
             self.install_package(&pkg_manifest, &pkg_lockfile, &store, &package)
                 .await?
         }

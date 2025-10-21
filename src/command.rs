@@ -50,7 +50,7 @@ const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 ///     // ... rest of command implementation
 /// }
 /// ```
-async fn ensure_package_manifest(command_name: &str) -> miette::Result<()> {
+async fn ensure_package_manifest(command_name: &str) -> miette::Result<Manifest> {
     let manifest = Manifest::read().await?;
 
     if let ManifestType::Workspace = manifest.manifest_type {
@@ -61,7 +61,7 @@ async fn ensure_package_manifest(command_name: &str) -> miette::Result<()> {
         );
     }
 
-    Ok(())
+    Ok(manifest)
 }
 
 /// Initializes the project
@@ -205,9 +205,7 @@ impl FromStr for DependencyLocator {
 
 /// Adds a dependency to this project
 pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
-    ensure_package_manifest("add").await?;
-
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = ensure_package_manifest("add").await?;
 
     let DependencyLocator {
         repository,
@@ -232,7 +230,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
     manifest
         .dependencies
-        .get_or_insert_with(Vec::new)
+        .get_or_insert_default()
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
@@ -371,10 +369,9 @@ pub async fn uninstall() -> miette::Result<()> {
             );
 
             for package_path in packages {
-                let canonical_name = fs::canonicalize(&package_path).await.into_diagnostic()?;
                 tracing::info!(
                     ":: uninstalling dependencies for package: {}",
-                    canonical_name.display()
+                    package_path.display()
                 );
 
                 let store = PackageStore::open(&package_path).await?;
