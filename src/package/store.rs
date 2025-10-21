@@ -84,10 +84,6 @@ impl PackageStore {
     /// - `proto/` - For source protobuf files
     /// - `proto/vendor/` - For installed dependencies
     ///
-    /// # Arguments
-    ///
-    /// * `path` - The root directory where the package store should be created
-    ///
     /// # Errors
     ///
     /// Returns an error if directory creation fails (e.g., due to permission issues)
@@ -135,10 +131,6 @@ impl PackageStore {
     /// Extracts the contents of a package (`.tgz` tarball) into `proto/vendor/<package_name>/`.
     /// This makes the package's protobuf files available for use as a dependency.
     ///
-    /// # Arguments
-    ///
-    /// * `package` - The package to unpack (contains the tarball data)
-    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -163,10 +155,6 @@ impl PackageStore {
     /// Uninstalls a package from the vendor directory
     ///
     /// Removes the package directory `proto/vendor/<package_name>/` and all its contents.
-    ///
-    /// # Arguments
-    ///
-    /// * `package` - The name of the package to uninstall
     ///
     /// # Errors
     ///
@@ -210,14 +198,6 @@ impl PackageStore {
     ///
     /// Runs validation rules on all `.proto` files in the package to ensure they
     /// conform to buffrs conventions (naming, package structure, etc.).
-    ///
-    /// # Arguments
-    ///
-    /// * `manifest` - The package manifest describing which package to validate
-    ///
-    /// # Returns
-    ///
-    /// Returns a collection of validation violations, if any were found.
     ///
     /// # Errors
     ///
@@ -300,10 +280,6 @@ impl PackageStore {
     /// Returns the path where a package is (or will be) installed in the vendor directory.
     /// The path format is `proto/vendor/<package_name>/`.
     ///
-    /// # Arguments
-    ///
-    /// * `package` - The package name to locate
-    ///
     /// # Note
     ///
     /// This method does not check if the package actually exists at this location.
@@ -320,10 +296,6 @@ impl PackageStore {
     ///
     /// * `path` - The root directory to search
     /// * `vendored` - If `false`, excludes files from `proto/vendor/` (for collecting source files only), if `true`, includes all `.proto` files regardless of location
-    ///
-    /// # Returns
-    ///
-    /// A sorted vector of absolute paths to all `.proto` files found.
     pub async fn collect(&self, path: &Path, vendored: bool) -> Vec<PathBuf> {
         let mut paths: Vec<_> = WalkDir::new(path)
             .into_iter()
@@ -360,10 +332,6 @@ impl PackageStore {
     /// 1. Removes the existing target directory if present
     /// 2. Collects all `.proto` files from `proto/` (excluding `proto/vendor/`)
     /// 3. Copies each file to `proto/vendor/<package_name>/` preserving directory structure
-    ///
-    /// # Arguments
-    ///
-    /// * `manifest` - The package manifest containing the package name
     ///
     /// # Errors
     ///
@@ -417,10 +385,6 @@ impl PackageStore {
     /// Gets the paths to all protobuf files in `proto/vendor/<package_name>/`.
     /// This is typically used after calling `populate()` to get the list of files
     /// that were synced.
-    ///
-    /// # Arguments
-    ///
-    /// * `manifest` - The package manifest to look up
     ///
     /// # Returns
     ///
