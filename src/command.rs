@@ -40,17 +40,17 @@ const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 
 /// Ensures the current directory contains a package manifest, not a workspace
 ///
-/// Returns an error if the manifest is a workspace manifest.
+/// Returns an error if the manifest is a workspace manifest, otherwise the package mannifest
 /// Use this at the beginning of commands that don't support workspaces.
 ///
 /// # Example
 /// ```ignore
 /// pub async fn some_command() -> miette::Result<()> {
-///     ensure_package_manifest("some_command").await?;
+///     let manifest = require_package_manifest("some_command").await?;
 ///     // ... rest of command implementation
 /// }
 /// ```
-async fn ensure_package_manifest(command_name: &str) -> miette::Result<Manifest> {
+async fn require_package_manifest(command_name: &str) -> miette::Result<Manifest> {
     let manifest = Manifest::read().await?;
 
     if let ManifestType::Workspace = manifest.manifest_type {
@@ -205,7 +205,7 @@ impl FromStr for DependencyLocator {
 
 /// Adds a dependency to this project
 pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
-    let mut manifest = ensure_package_manifest("add").await?;
+    let mut manifest = require_package_manifest("add").await?;
 
     let DependencyLocator {
         repository,
@@ -241,9 +241,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> miette::Result<()> {
-    ensure_package_manifest("remove").await?;
-
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = require_package_manifest("add").await?;
     let store = PackageStore::current().await?;
 
     let dependency = manifest
@@ -270,9 +268,7 @@ pub async fn package(
     version: Option<Version>,
     preserve_mtime: bool,
 ) -> miette::Result<()> {
-    ensure_package_manifest("package").await?;
-
-    let mut manifest = Manifest::read().await?;
+    let mut manifest = require_package_manifest("add").await?;
     let store = PackageStore::current().await?;
 
     if let Some(version) = version
@@ -385,10 +381,8 @@ pub async fn uninstall() -> miette::Result<()> {
 
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
-    ensure_package_manifest("list").await?;
-
+    let manifest = require_package_manifest("add").await?;
     let store = PackageStore::current().await?;
-    let manifest = Manifest::read().await?;
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;
@@ -422,9 +416,7 @@ pub async fn list() -> miette::Result<()> {
 /// Parses current package and validates rules.
 #[cfg(feature = "validation")]
 pub async fn lint() -> miette::Result<()> {
-    ensure_package_manifest("lint").await?;
-
-    let manifest = Manifest::read().await?;
+    let manifest = require_package_manifest("add").await?;
     let store = PackageStore::current().await?;
 
     let pkg = manifest.package.ok_or(miette!(
