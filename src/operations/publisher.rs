@@ -127,7 +127,7 @@ impl Publisher {
                     .await
             }
             ManifestType::Workspace => {
-                self.publish_workspace_from_manifest(manifest, package_path, version)
+                self.publish_workspace_from_manifest(manifest, version)
                     .await
             }
         }
@@ -179,7 +179,6 @@ impl Publisher {
     async fn publish_workspace_from_manifest(
         &mut self,
         manifest: &Manifest,
-        _package_path: &Path,
         version: Option<Version>,
     ) -> miette::Result<()> {
         let workspace = manifest.workspace.as_ref().ok_or_else(|| {
