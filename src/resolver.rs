@@ -1,15 +1,19 @@
-use crate::credentials::Credentials;
-use crate::manifest::{
-    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    path::{Path, PathBuf},
 };
-use crate::package::{PackageName, PackageType};
-use crate::registry::{Artifactory, RegistryUri};
+
 use async_recursion::async_recursion;
 use miette::{Context as _, Diagnostic, bail};
 use semver::VersionReq;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Path, PathBuf};
 use thiserror::Error;
+
+use crate::{
+    credentials::Credentials,
+    manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest},
+    package::{PackageName, PackageType},
+    registry::{Artifactory, RegistryUri},
+};
 
 /// Models the source of a dependency
 #[derive(Debug, Clone)]

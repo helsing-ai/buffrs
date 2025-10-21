@@ -1,11 +1,10 @@
-use buffrs::package::Package;
-
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
 use assert_fs::TempDir;
+use buffrs::package::Package;
 use bytes::Bytes;
 use fs_extra::dir::{CopyOptions, get_dir_content};
 use pretty_assertions::{assert_eq, assert_str_eq};

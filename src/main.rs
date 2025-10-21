@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::command;
-use buffrs::manifest::Manifest;
-use buffrs::package::{PackageName, PackageStore};
-use buffrs::registry::RegistryUri;
-use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
+use buffrs::{
+    command,
+    manifest::MANIFEST_FILE,
+    manifest::Manifest,
+    package::PackageType,
+    package::{PackageName, PackageStore},
+    registry::RegistryUri,
+};
 use clap::{Parser, Subcommand};
 use miette::{WrapErr, miette};
 use semver::Version;

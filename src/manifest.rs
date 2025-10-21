@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use miette::{Context, IntoDiagnostic, miette};
-use semver::{Version, VersionReq};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{self, Display},
     path::{Path, PathBuf},
     str::FromStr,
 };
+
+use miette::{Context, IntoDiagnostic, miette};
+use semver::{Version, VersionReq};
+use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::errors::InvalidManifestError;
-use crate::workspace::Workspace;
 use crate::{
     ManagedFile,
+    errors::InvalidManifestError,
     errors::{DeserializationError, FileExistsError, SerializationError, WriteError},
     package::{PackageName, PackageType},
     registry::RegistryUri,
+    workspace::Workspace,
 };
 
 /// The name of the manifest file

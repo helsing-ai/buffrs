@@ -12,26 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{
-    credentials::Credentials,
-    lock::Lockfile,
-    manifest::{Dependency, MANIFEST_FILE, Manifest, ManifestType, PackageManifest},
-    package::{PackageName, PackageStore, PackageType},
-    registry::{Artifactory, RegistryUri},
-};
-
-use crate::operations::installer::Installer;
-use crate::operations::publisher::Publisher;
-use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
-use semver::{Version, VersionReq};
 use std::{
     env,
     path::{Path, PathBuf},
     str::FromStr,
 };
+
+use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
+use semver::{Version, VersionReq};
 use tokio::{
     fs,
     io::{self, AsyncBufReadExt, BufReader},
+};
+
+use crate::{
+    credentials::Credentials,
+    lock::Lockfile,
+    manifest::{Dependency, MANIFEST_FILE, Manifest, ManifestType, PackageManifest},
+    operations::installer::Installer,
+    operations::publisher::Publisher,
+    package::{PackageName, PackageStore, PackageType},
+    registry::{Artifactory, RegistryUri},
 };
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);

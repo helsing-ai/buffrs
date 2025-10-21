@@ -12,22 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::cache::{Cache, Entry as CacheEntry};
-use crate::credentials::Credentials;
-use crate::lock::{LOCKFILE, Lockfile};
-use crate::manifest::{
-    Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType, RemoteDependencyManifest,
+use std::{
+    env,
+    path::{Path, PathBuf},
 };
-use crate::package::{Package, PackageStore};
-use crate::registry::{Artifactory, RegistryUri};
-use crate::resolver::{DependencyGraph, DependencySource};
+
 use miette::{Context as _, IntoDiagnostic, ensure, miette};
 use semver::VersionReq;
-use std::env;
-use std::path::{Path, PathBuf};
 use tokio::fs;
 
-use crate::package::PackageName;
+use crate::{
+    cache::{Cache, Entry as CacheEntry},
+    credentials::Credentials,
+    lock::{LOCKFILE, Lockfile},
+    manifest::{
+        Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
+        RemoteDependencyManifest,
+    },
+    package::{Package, PackageName, PackageStore},
+    registry::{Artifactory, RegistryUri},
+    resolver::{DependencyGraph, DependencySource},
+};
 
 /// Helper for installing package dependencies
 ///

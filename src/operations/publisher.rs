@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+use std::env;
+use std::path::Path;
+#[cfg(feature = "git")]
+use std::process::Stdio;
+use std::str::FromStr;
+
+use miette::{Context as _, IntoDiagnostic, bail, miette};
+use semver::{Version, VersionReq};
+use tokio::fs;
+
 use crate::credentials::Credentials;
 use crate::manifest::{
     Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
@@ -20,16 +31,6 @@ use crate::manifest::{
 use crate::package::PackageStore;
 use crate::registry::{Artifactory, RegistryUri};
 use crate::resolver::{DependencyGraph, DependencySource};
-use miette::{Context as _, IntoDiagnostic, bail, miette};
-use semver::{Version, VersionReq};
-use std::collections::HashMap;
-use std::env;
-use std::path::Path;
-use std::str::FromStr;
-use tokio::fs;
-
-#[cfg(feature = "git")]
-use std::process::Stdio;
 
 /// Handles publishing of local packages to a registry
 pub struct Publisher {

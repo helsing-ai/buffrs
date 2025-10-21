@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{collections::BTreeMap, path::Path};
+
 use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::path::Path;
 use thiserror::Error;
 use tokio::fs;
 use url::Url;

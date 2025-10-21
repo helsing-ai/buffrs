@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{collections::HashMap, io::ErrorKind, path::PathBuf};
+
 use miette::{Context, IntoDiagnostic};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::ErrorKind, path::PathBuf};
 use tokio::fs;
 
 use crate::{
