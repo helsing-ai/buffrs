@@ -4,7 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use miette::{IntoDiagnostic, WrapErr, miette};
+use glob::Pattern;
+use miette::{IntoDiagnostic, WrapErr, miette, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::MANIFEST_FILE;
@@ -52,17 +53,17 @@ impl Workspace {
                 // Glob pattern - only 1 level deep
                 let pattern_matcher = glob::Pattern::new(pattern)
                     .into_diagnostic()
-                    .wrap_err_with(|| miette::miette!("invalid glob pattern: {}", pattern))?;
+                    .wrap_err_with(|| miette!("invalid glob pattern: {}", pattern))?;
 
                 // Read all entries in workspace root
                 let entries = fs::read_dir(workspace_root.as_ref())
                     .into_diagnostic()
-                    .wrap_err_with(|| miette::miette!("failed to read workspace directory"))?;
+                    .wrap_err_with(|| miette!("failed to read workspace directory"))?;
 
                 for entry in entries {
                     let entry = entry
                         .into_diagnostic()
-                        .wrap_err_with(|| miette::miette!("failed to read directory entry"))?;
+                        .wrap_err_with(|| miette!("failed to read directory entry"))?;
 
                     let path = entry.path();
                     if path.is_dir()
@@ -94,7 +95,7 @@ impl Workspace {
                 })?;
 
                 let is_excluded = exclude_patterns.iter().any(|exclude_pattern| {
-                    if let Ok(glob_matcher) = glob::Pattern::new(exclude_pattern) {
+                    if let Ok(glob_matcher) = Pattern::new(exclude_pattern) {
                         glob_matcher.matches(member_str)
                     } else {
                         member_str == exclude_pattern
@@ -104,7 +105,7 @@ impl Workspace {
                 Ok((!is_excluded).then_some(member))
             })
             // collecting Result<T, E> into Result<Vec<T>, E> short-circuit into Err on first Err in Vec
-            .collect::<miette::Result<Vec<_>>>()?
+            .collect::<Result<Vec<_>>>()?
             .into_iter()
             .flatten()
             .collect();
