@@ -127,8 +127,10 @@ impl Publisher {
                     .await
             }
             ManifestType::Workspace => {
-                self.publish_workspace_from_manifest(manifest, version)
-                    .await
+                if version.is_some() {
+                    tracing::warn!(":: version flag is ignored for workspace publishes");
+                }
+                self.publish_workspace_from_manifest(manifest).await
             }
         }
     }
@@ -176,18 +178,10 @@ impl Publisher {
     }
 
     /// Publishes all packages in a workspace
-    async fn publish_workspace_from_manifest(
-        &mut self,
-        manifest: &Manifest,
-        version: Option<Version>,
-    ) -> miette::Result<()> {
+    async fn publish_workspace_from_manifest(&mut self, manifest: &Manifest) -> miette::Result<()> {
         let workspace = manifest.workspace.as_ref().ok_or_else(|| {
             miette!("publish_workspace called on manifest that does not define a workspace")
         })?;
-
-        if version.is_some() {
-            tracing::warn!(":: version flag is ignored for workspace publishes");
-        }
 
         let root_path = env::current_dir()
             .into_diagnostic()
