@@ -24,6 +24,7 @@ use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
+use crate::manifest_v2::BuffrsManifest;
 use crate::{
     ManagedFile,
     errors::InvalidManifestError,
@@ -106,7 +107,7 @@ impl From<Edition> for &'static str {
 /// This contains the exact structure of the `Proto.toml` and skips
 /// empty fields.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum RawManifest {
+pub enum RawManifest {
     Canary {
         package: Option<PackageManifest>,
         dependencies: Option<DependencyMap>,
@@ -120,28 +121,39 @@ enum RawManifest {
 }
 
 impl RawManifest {
-    fn package(&self) -> Option<&PackageManifest> {
+    pub(crate) fn package(&self) -> Option<&PackageManifest> {
         match self {
             Self::Canary { package, .. } => package.as_ref(),
             Self::Unknown { package, .. } => package.as_ref(),
         }
     }
 
-    fn dependencies(&self) -> Option<&DependencyMap> {
+    pub(crate) fn dependencies(&self) -> Option<&DependencyMap> {
         match self {
             Self::Canary { dependencies, .. } => dependencies.as_ref(),
             Self::Unknown { dependencies, .. } => dependencies.as_ref(),
         }
     }
 
-    fn edition(&self) -> Edition {
+    pub(crate) fn dependencies_as_vec(&self) -> Option<Vec<Dependency>> {
+        self.dependencies().map(|deps| {
+            deps.iter()
+                .map(|(package, manifest)| Dependency {
+                    package: package.to_owned(),
+                    manifest: manifest.to_owned(),
+                })
+                .collect()
+        })
+    }
+
+    pub(crate) fn edition(&self) -> Edition {
         match self {
             Self::Canary { .. } => Edition::Canary,
             Self::Unknown { .. } => Edition::Unknown,
         }
     }
 
-    fn workspace(&self) -> Option<&Workspace> {
+    pub(crate) fn workspace(&self) -> Option<&Workspace> {
         match self {
             Self::Canary { workspace, .. } => workspace.as_ref(),
             Self::Unknown { workspace, .. } => workspace.as_ref(),
@@ -367,7 +379,7 @@ impl Manifest {
     }
 
     /// Determine the ManifestType based on dependencies and workspace
-    fn get_manifest_type(
+    pub(crate) fn get_manifest_type(
         dependencies: &Option<Vec<Dependency>>,
         workspace: &Option<Workspace>,
     ) -> miette::Result<ManifestType> {

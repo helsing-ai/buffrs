@@ -23,6 +23,7 @@ use miette::{Context, IntoDiagnostic, miette};
 use tokio::fs;
 use walkdir::WalkDir;
 
+use crate::manifest_v2::PackagesManifest;
 use crate::{
     manifest::{MANIFEST_FILE, Manifest, PackageManifest},
     package::{Package, PackageName},
@@ -249,7 +250,7 @@ impl PackageStore {
     /// - The tarball creation fails
     pub async fn release(
         &self,
-        manifest: &Manifest,
+        manifest: &PackagesManifest,
         preserve_mtime: bool,
     ) -> miette::Result<Package> {
         let pkg_path = self.proto_path();

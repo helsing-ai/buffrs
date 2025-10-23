@@ -10,6 +10,7 @@ use miette::{Context as _, Diagnostic, bail};
 use semver::VersionReq;
 use thiserror::Error;
 
+use crate::manifest_v2::PackagesManifest;
 use crate::{
     credentials::Credentials,
     manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest},
@@ -73,7 +74,7 @@ impl DependencyGraph {
     ///
     /// Downloads remote packages to discover their transitive dependencies
     pub async fn build(
-        manifest: &Manifest,
+        manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
     ) -> miette::Result<Self> {

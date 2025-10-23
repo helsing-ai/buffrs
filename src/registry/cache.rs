@@ -20,6 +20,7 @@ use tokio::fs;
 
 use crate::{
     manifest::{Dependency, DependencyManifest},
+    manifest_v2::PackagesManifest,
     package::Package,
 };
 
@@ -100,6 +101,7 @@ impl LocalRegistry {
 
 #[cfg(test)]
 mod tests {
+    use crate::manifest_v2::PackagesManifest;
     use crate::{
         manifest::{Dependency, Manifest, PackageManifest},
         package::{Package, PackageType},
@@ -115,7 +117,7 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = Manifest::builder()
+        let manifest = PackagesManifest::builder()
             .package(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),

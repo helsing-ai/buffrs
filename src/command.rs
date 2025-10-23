@@ -12,19 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::manifest_v2::GenericManifest;
 use std::{
     env,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
-use semver::{Version, VersionReq};
-use tokio::{
-    fs,
-    io::{self, AsyncBufReadExt, BufReader},
-};
-
+use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
     credentials::Credentials,
     lock::Lockfile,
@@ -34,6 +29,10 @@ use crate::{
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
+use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
+use semver::{Version, VersionReq};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::{fs, io};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
@@ -50,18 +49,14 @@ const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";
 ///     // ... rest of command implementation
 /// }
 /// ```
-async fn require_package_manifest(command_name: &str) -> miette::Result<Manifest> {
-    let manifest = Manifest::read().await?;
+async fn require_package_manifest(command_name: &str) -> miette::Result<PackagesManifest> {
+    let manifest = BuffrsManifest::read().await?;
 
-    if let ManifestType::Workspace = manifest.manifest_type {
-        bail!(
-            "The `{}` command is not supported for workspaces.\n\
-             Please run this command from a package directory within the workspace.",
-            command_name
-        );
+    if let BuffrsManifest::Package(packages_manifest) = manifest {
+        Ok(packages_manifest)
+    } else {
+        bail!("A packages manifest is require");
     }
-
-    Ok(manifest)
 }
 
 /// Initializes the project
@@ -96,7 +91,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         })
         .transpose()?;
 
-    let mut builder = Manifest::builder();
+    let mut builder = PackagesManifest::builder();
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
@@ -131,12 +126,12 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
         })
         .transpose()?;
 
-    let mut builder = Manifest::builder();
+    let mut builder = PackagesManifest::builder();
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
     let manifest = builder.dependencies(vec![]).build();
-    manifest.write_at(&package_dir).await?;
+    manifest.write_at(&package_dir.as_path()).await?;
 
     PackageStore::open(&package_dir)
         .await
@@ -236,7 +231,9 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     manifest
         .write()
         .await
-        .wrap_err_with(|| format!("failed to write `{MANIFEST_FILE}`"))
+        .wrap_err_with(|| format!("failed to write `{MANIFEST_FILE}`"))?;
+
+    Ok(())
 }
 
 /// Removes a dependency from this project
@@ -313,7 +310,7 @@ pub async fn publish(
     #[cfg(feature = "git")]
     Publisher::check_git_status(allow_dirty).await?;
 
-    let manifest = Manifest::read().await?;
+    let manifest = BuffrsManifest::read().await?;
     let current_path = env::current_dir()
         .into_diagnostic()
         .wrap_err("current dir could not be retrieved")?;
@@ -334,7 +331,7 @@ pub async fn publish(
 ///
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
 pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
-    let manifest = Manifest::read().await?;
+    let manifest = BuffrsManifest::read().await?;
     let installer = Installer::new(preserve_mtime).await?;
     installer.install(&manifest).await
 }

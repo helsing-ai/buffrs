@@ -3,9 +3,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use buffrs::manifest_v2::GenericManifest;
 use buffrs::{
     credentials::Credentials,
-    manifest::{Dependency, LocalDependencyManifest, Manifest, PackageManifest},
+    manifest::{Dependency, LocalDependencyManifest, PackageManifest},
+    manifest_v2::PackagesManifest,
     package::{PackageName, PackageType},
     resolver::{DependencyGraph, DependencyNode, DependencySource},
 };
@@ -16,8 +18,8 @@ fn create_test_manifest(
     name: &str,
     package_type: PackageType,
     dependencies: Vec<Dependency>,
-) -> Manifest {
-    Manifest::builder()
+) -> PackagesManifest {
+    PackagesManifest::builder()
         .package(PackageManifest {
             kind: package_type,
             name: name.parse().expect("valid package name"),
@@ -57,7 +59,7 @@ async fn test_single_local_dependency() {
         .expect("write lib manifest");
 
     // Create an API package that depends on the lib
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api-package".parse().expect("valid package name"),
@@ -105,7 +107,7 @@ async fn test_transitive_dependencies() {
     let lib1_dir = temp_dir.path().join("lib1");
     std::fs::create_dir(&lib1_dir).expect("create lib1 dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
-    let lib1_manifest = Manifest::builder()
+    let lib1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "lib1".parse().expect("valid package name"),
@@ -126,7 +128,7 @@ async fn test_transitive_dependencies() {
         .expect("write lib1 manifest");
 
     // Create api (depends on lib1)
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api".parse().expect("valid package name"),
@@ -183,7 +185,7 @@ async fn test_lib_cannot_depend_on_api() {
         .expect("write manifest");
 
     // Create a lib package that tries to depend on the API
-    let lib_manifest = Manifest::builder()
+    let lib_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "lib-package".parse().expect("valid package name"),
@@ -225,7 +227,7 @@ async fn test_api_can_depend_on_lib() {
         .await
         .expect("write manifest");
 
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api-package".parse().expect("valid package name"),
@@ -262,7 +264,7 @@ async fn test_circular_dependency_direct() {
     std::fs::create_dir_all(pkg2_dir.join("proto")).expect("create proto dir");
 
     // Create pkg2 manifest (depends on pkg1 using absolute path to temp_dir/pkg1)
-    let pkg2_manifest = Manifest::builder()
+    let pkg2_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "pkg2".parse().expect("valid package name"),
@@ -283,7 +285,7 @@ async fn test_circular_dependency_direct() {
         .expect("write manifest");
 
     // Create pkg1 manifest (depends on pkg2 - circular!)
-    let pkg1_manifest = Manifest::builder()
+    let pkg1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "pkg1".parse().expect("valid package name"),
@@ -336,7 +338,7 @@ async fn test_circular_dependency_indirect() {
     std::fs::create_dir_all(pkg1_dir.join("proto")).expect("create proto dir");
 
     // pkg3 depends on pkg1 to create cycle: pkg1 -> pkg2 -> pkg3 -> pkg1
-    let pkg3_manifest = Manifest::builder()
+    let pkg3_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "pkg3".parse().expect("valid package name"),
@@ -356,7 +358,7 @@ async fn test_circular_dependency_indirect() {
         .await
         .expect("write manifest");
 
-    let pkg2_manifest = Manifest::builder()
+    let pkg2_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "pkg2".parse().expect("valid package name"),
@@ -376,7 +378,7 @@ async fn test_circular_dependency_indirect() {
         .await
         .expect("write manifest");
 
-    let pkg1_manifest = Manifest::builder()
+    let pkg1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "pkg1".parse().expect("valid package name"),
@@ -427,7 +429,7 @@ async fn test_diamond_dependency() {
     let lib1_dir = temp_dir.path().join("lib1");
     std::fs::create_dir(&lib1_dir).expect("create dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
-    let lib1_manifest = Manifest::builder()
+    let lib1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "lib1".parse().expect("valid package name"),
@@ -451,7 +453,7 @@ async fn test_diamond_dependency() {
     let lib2_dir = temp_dir.path().join("lib2");
     std::fs::create_dir(&lib2_dir).expect("create dir");
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
-    let lib2_manifest = Manifest::builder()
+    let lib2_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Lib,
             name: "lib2".parse().expect("valid package name"),
@@ -472,7 +474,7 @@ async fn test_diamond_dependency() {
         .expect("write manifest");
 
     // Create api (depends on both lib1 and lib2, creating diamond)
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api".parse().expect("valid package name"),
@@ -556,7 +558,7 @@ async fn test_multiple_dependencies_from_single_package() {
         .expect("write manifest");
 
     // Create api that depends on all three
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api".parse().expect("valid package name"),
@@ -626,7 +628,7 @@ async fn test_local_remote_conflict() {
 
     // Create a manifest with both local and remote dependency on same package
     // This is a bit contrived but tests the validation logic
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api-package".parse().expect("valid package name"),
@@ -688,7 +690,7 @@ async fn test_relative_path_resolution() {
     std::fs::create_dir(&api_dir).expect("create dir");
     std::fs::create_dir_all(api_dir.join("proto")).expect("create proto dir");
 
-    let api_manifest = Manifest::builder()
+    let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
             kind: PackageType::Api,
             name: "api".parse().expect("valid package name"),
