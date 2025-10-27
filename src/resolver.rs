@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use async_recursion::async_recursion;
@@ -20,7 +21,7 @@ use crate::{
     },
     operations::install::NetworkMode,
     package::{PackageName, PackageType},
-    registry::{Artifactory, RegistryUri},
+    registry::{Registry, RegistryUri},
 };
 
 /// Models the source of a dependency
@@ -222,7 +223,7 @@ struct GraphBuilder<'a> {
     visiting: HashSet<PackageName>,
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
-    registry_clients: HashMap<RegistryUri, Artifactory>,
+    registry_clients: HashMap<RegistryUri, Arc<dyn Registry>>,
     network_mode: NetworkMode,
 }
 
@@ -398,20 +399,21 @@ impl<'a> GraphBuilder<'a> {
                 (None, NetworkMode::Online) => {
                     tracing::debug!("downloading {}@{} from registry", package_name, version);
 
-                    // Reuse or create artifactory client
-                    let artifactory = if let Some(client) = self.registry_clients.get(registry) {
+                    // Reuse or create registry client
+                    let registry_client = if let Some(client) = self.registry_clients.get(registry)
+                    {
                         client.clone()
                     } else {
-                        let client = Artifactory::new(registry.clone(), self.credentials)
-                            .wrap_err_with(|| {
-                                format!("failed to initialize registry {}", registry)
-                            })?;
+                        let client: Arc<dyn Registry> =
+                            Arc::from(registry.get_registry(self.credentials).wrap_err_with(
+                                || format!("failed to initialize registry {}", registry),
+                            )?);
                         self.registry_clients
                             .insert(registry.clone(), client.clone());
                         client
                     };
 
-                    artifactory.download(dependency.clone()).await?
+                    registry_client.download(dependency.clone()).await?
                 }
                 (None, NetworkMode::Offline) => {
                     bail!(DependencyError::Offline {
