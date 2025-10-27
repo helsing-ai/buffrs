@@ -14,7 +14,7 @@ use crate::{
         RemoteDependencyManifest,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, RegistryUri},
+    registry::RegistryUri,
 };
 
 /// Represents a dependency contextualized by the current dependency graph
@@ -407,7 +407,10 @@ impl DependencyGraph {
                 }
             }
 
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
+            let registry = dependency
+                .manifest
+                .registry
+                .get_registry(credentials)
                 .wrap_err(DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
@@ -431,7 +434,10 @@ impl DependencyGraph {
 
             Ok(package)
         } else {
-            let registry = Artifactory::new(dependency.manifest.registry.clone(), credentials)
+            let registry = dependency
+                .manifest
+                .registry
+                .get_registry(credentials)
                 .wrap_err(DownloadError {
                     name: dependency.package.clone(),
                     version: dependency.manifest.version.clone(),
