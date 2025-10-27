@@ -18,7 +18,7 @@ use crate::{
     lock::{LockedPackage, Lockfile},
     manifest::{Dependency, MANIFEST_FILE, Manifest, PackageManifest},
     package::{PackageName, PackageStore, PackageType},
-    registry::{Artifactory, RegistryUri},
+    registry::RegistryUri,
     resolver::{DependencyGraph, ResolvedDependency},
 };
 
@@ -185,11 +185,11 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     let version = match version {
         DependencyLocatorVersion::Version(version_req) => version_req,
         DependencyLocatorVersion::Latest => {
-            // query artifactory to retrieve the actual latest version
+            // query the registry to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+            let registry_client = registry.get_registry(&credentials)?;
 
-            let latest_version = artifactory
+            let latest_version = registry_client
                 .get_latest_version(repository.clone(), package.clone())
                 .await?;
             // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
@@ -336,7 +336,7 @@ pub async fn publish(
     let mut manifest = Manifest::read().await?;
     let credentials = Credentials::load().await?;
     let store = PackageStore::current().await?;
-    let artifactory = Artifactory::new(registry, &credentials)?;
+    let registry_client = registry.get_registry(&credentials)?;
 
     if let Some(version) = version {
         if let Some(ref mut package) = manifest.package {
@@ -357,7 +357,7 @@ pub async fn publish(
         return Ok(());
     }
 
-    artifactory.publish(package, repository).await
+    registry_client.publish(package, repository).await
 }
 
 /// Installs dependencies
@@ -540,7 +540,8 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
-        Artifactory::new(registry, &credentials)?
+        registry
+            .get_registry(&credentials)?
             .ping()
             .await
             .wrap_err(miette!("failed to validate token"))?;

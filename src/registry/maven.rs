@@ -1,4 +1,4 @@
-// Copyright 2023 Helsing GmbH
+// Copyright 2025 Helsing GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,16 +25,16 @@ use semver::Version;
 use serde::Deserialize;
 use url::Url;
 
-/// The registry implementation for artifactory
+/// The registry implementation for Maven
 #[derive(Debug, Clone)]
-pub struct Artifactory {
+pub struct Maven {
     registry: RegistryUri,
     token: Option<String>,
     client: reqwest::Client,
 }
 
-impl Artifactory {
-    /// Creates a new instance of an Artifactory registry client
+impl Maven {
+    /// Creates a new instance of a Maven registry client
     pub fn new(registry: RegistryUri, credentials: &Credentials) -> miette::Result<Self> {
         Ok(Self {
             registry: registry.clone(),
@@ -56,105 +56,68 @@ impl Artifactory {
         request_builder
     }
 
-    /// Pings artifactory to ensure registry access is working
+    /// Pings the Maven registry to ensure access is working
     pub async fn ping(&self) -> miette::Result<()> {
-        let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
-            let path = &format!("{}/api/repositories", uri.path());
-            uri.set_path(path);
-            uri.into()
-        };
+        // For Maven, we just try to access the base URL
+        let ping_url: Url = self.registry.url().clone();
 
-        self.new_request(Method::GET, repositories_url)
+        self.new_request(Method::HEAD, ping_url)
             .send()
             .await
             .map(|_| ())
     }
 
-    /// Retrieves the latest version of a package by querying artifactory. Returns an error if no artifact could be found
+    /// Retrieves the latest version of a package by parsing maven-metadata.xml
     pub async fn get_latest_version(
         &self,
         repository: String,
         name: PackageName,
     ) -> miette::Result<Version> {
-        // First retrieve all packages matching the given name
-        let search_query_url: Url = {
+        let metadata_url: Url = {
             let mut url = self.registry.clone();
-            url.set_path("artifactory/api/search/artifact");
-            url.set_query(Some(&format!("name={name}&repos={repository}")));
+            let path = format!(
+                "{}/{}/{}/maven-metadata.xml",
+                url.path().trim_end_matches('/'),
+                repository,
+                name
+            );
+            url.set_path(&path);
             url.into()
         };
 
-        let response = self
-            .new_request(Method::GET, search_query_url)
-            .send()
-            .await?;
+        let response = self.new_request(Method::GET, metadata_url).send().await?;
         let response: reqwest::Response = response.0;
 
-        let headers = response.headers();
-        let content_type = headers
-            .get(&reqwest::header::CONTENT_TYPE)
-            .ok_or_else(|| miette!("missing content-type header"))?;
-        ensure!(
-            content_type
-                == reqwest::header::HeaderValue::from_static(
-                    "application/vnd.org.jfrog.artifactory.search.ArtifactSearchResult+json"
-                ),
-            "server response has incorrect mime type: {content_type:?}"
-        );
-
-        let response_str = response.text().await.into_diagnostic().wrap_err(miette!(
-            "unexpected error: unable to retrieve response payload"
+        let metadata_xml = response.text().await.into_diagnostic().wrap_err(miette!(
+            "unexpected error: unable to retrieve maven-metadata.xml"
         ))?;
-        let parsed_response = serde_json::from_str::<ArtifactSearchResponse>(&response_str)
+
+        // Parse the XML to extract the latest version
+        let metadata: MavenMetadata = quick_xml::de::from_str(&metadata_xml)
             .into_diagnostic()
             .wrap_err(miette!(
-                "unexpected error: response could not be deserialized to ArtifactSearchResponse"
+                "unexpected error: failed to parse maven-metadata.xml"
             ))?;
 
-        tracing::debug!(
-            "List of artifacts found matching the name: {:?}",
-            parsed_response
-        );
+        let latest_version_str = metadata
+            .versioning
+            .latest
+            .or(metadata.versioning.release)
+            .ok_or_else(|| miette!("no latest version found in maven-metadata.xml"))?;
 
-        // Then from all package names retrieved from artifactory, extract the highest version number
-        let highest_version = parsed_response
-            .results
-            .iter()
-            .filter_map(|artifact_search_result| {
-                let uri = artifact_search_result.to_owned().uri;
-                let full_artifact_name = uri
-                    .split('/')
-                    .next_back()
-                    .map(|name_tgz| name_tgz.trim_end_matches(".tgz"));
-                let artifact_version = full_artifact_name
-                    .and_then(|name| name.split('-').next_back())
-                    .and_then(|version_str| Version::parse(version_str).ok());
-
-                // we double check that the artifact name matches exactly
-                let expected_artifact_name =
-                    artifact_version.clone().map(|av| format!("{name}-{av}"));
-                if full_artifact_name.is_some_and(|actual| {
-                    expected_artifact_name.is_some_and(|expected| expected == actual)
-                }) {
-                    artifact_version
-                } else {
-                    None
-                }
-            })
-            .max();
-
-        tracing::debug!("Highest version for artifact: {:?}", highest_version);
-        highest_version.ok_or_else(|| {
-            miette!("no version could be found on artifactory for this artifact name. Does it exist in this registry and repository?")
-        })
+        Version::parse(&latest_version_str)
+            .into_diagnostic()
+            .wrap_err(miette!(
+                "invalid version in maven-metadata.xml: {}",
+                latest_version_str
+            ))
     }
 
-    /// Downloads a package from artifactory
+    /// Downloads a package from Maven
     pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
         let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
             return Err(miette!(
-                "unable to download local dependency ({}) from artifactory",
+                "unable to download local dependency ({}) from Maven",
                 dependency.package
             ));
         };
@@ -166,8 +129,8 @@ impl Artifactory {
 
             let mut url = manifest.registry.clone();
             url.set_path(&format!(
-                "{}/{}/{}/{}-{}.tgz",
-                path, manifest.repository, dependency.package, dependency.package, version
+                "{}/{}/{}/{}/{}-{}.tgz",
+                path, manifest.repository, dependency.package, version, dependency.package, version
             ));
 
             url.into()
@@ -185,7 +148,10 @@ impl Artifactory {
             .ok_or_else(|| miette!("missing content-type header"))?;
 
         ensure!(
-            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip"),
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip")
+                || content_type == reqwest::header::HeaderValue::from_static("application/gzip")
+                || content_type
+                    == reqwest::header::HeaderValue::from_static("application/octet-stream"),
             "server response has incorrect mime type: {content_type:?}"
         );
 
@@ -197,7 +163,7 @@ impl Artifactory {
         ))
     }
 
-    /// Publishes a package to artifactory
+    /// Publishes a package to Maven and updates maven-metadata.xml
     pub async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
         let local_deps: Vec<&Dependency> = package
             .manifest
@@ -211,19 +177,23 @@ impl Artifactory {
             let names: Vec<String> = local_deps.iter().map(|d| d.package.to_string()).collect();
 
             return Err(miette!(
-                "unable to publish {} to artifactory due having the following local dependencies: {}",
+                "unable to publish {} to Maven due having the following local dependencies: {}",
                 package.name(),
                 names.join(", ")
             ));
         }
 
+        let version = package.version().to_string();
+
+        // Construct the artifact URL
         let artifact_uri: Url = format!(
-            "{}/{}/{}/{}-{}.tgz",
+            "{}/{}/{}/{}/{}-{}.tgz",
             self.registry,
             repository,
             package.name(),
+            version,
             package.name(),
-            package.version(),
+            version,
         )
         .parse()
         .into_diagnostic()
@@ -246,7 +216,7 @@ impl Artifactory {
                 let package_hash = alg.digest(&package.tgz);
                 let expected_hash =
                     alg.digest(&response.bytes().await.into_diagnostic().wrap_err(miette!(
-                        "unexpected error: failed to read the bytes back from artifactory"
+                        "unexpected error: failed to read the bytes back from Maven"
                     ))?);
                 if package_hash == expected_hash {
                     tracing::info!(
@@ -264,13 +234,14 @@ impl Artifactory {
                         "publishing failed, hash mismatch"
                     );
                     return Err(miette!(
-                        "unable to publish {} to artifactory: package is already published with a different hash",
+                        "unable to publish {} to Maven: package is already published with a different hash",
                         package.name()
                     ));
                 }
             }
         }
 
+        // Upload the artifact
         let _ = self
             .new_request(Method::PUT, artifact_uri)
             .body(package.tgz.clone())
@@ -283,6 +254,89 @@ impl Artifactory {
             package.name(),
             package.version()
         );
+
+        // Now update maven-metadata.xml
+        self.update_maven_metadata(&repository, package.name(), package.version())
+            .await?;
+
+        Ok(())
+    }
+
+    /// Updates or creates maven-metadata.xml for a package
+    async fn update_maven_metadata(
+        &self,
+        repository: &str,
+        package_name: &PackageName,
+        new_version: &Version,
+    ) -> miette::Result<()> {
+        let metadata_url: Url = {
+            let mut url = self.registry.clone();
+            let path = format!(
+                "{}/{}/{}/maven-metadata.xml",
+                url.path().trim_end_matches('/'),
+                repository,
+                package_name
+            );
+            url.set_path(&path);
+            url.into()
+        };
+
+        // Try to fetch existing metadata
+        let existing_metadata = self
+            .new_request(Method::GET, metadata_url.clone())
+            .send()
+            .await;
+
+        let mut metadata = if let Ok(ValidatedResponse(response)) = existing_metadata {
+            if response.status().is_success() {
+                let xml = response.text().await.into_diagnostic()?;
+                quick_xml::de::from_str::<MavenMetadata>(&xml)
+                    .into_diagnostic()
+                    .wrap_err(miette!("failed to parse existing maven-metadata.xml"))?
+            } else {
+                // Create new metadata
+                MavenMetadata::new(package_name.to_string())
+            }
+        } else {
+            // Create new metadata
+            MavenMetadata::new(package_name.to_string())
+        };
+
+        // Add the new version if it doesn't exist
+        let version_str = new_version.to_string();
+        if !metadata.versioning.versions.contains(&version_str) {
+            metadata.versioning.versions.push(version_str.clone());
+            // Sort versions
+            metadata.versioning.versions.sort_by(|a, b| {
+                let va = Version::parse(a).ok();
+                let vb = Version::parse(b).ok();
+                match (va, vb) {
+                    (Some(va), Some(vb)) => va.cmp(&vb),
+                    _ => a.cmp(b),
+                }
+            });
+        }
+
+        // Update latest version
+        metadata.versioning.latest = Some(version_str.clone());
+        metadata.versioning.release = Some(version_str);
+
+        // Update lastUpdated timestamp
+        let now = chrono::Utc::now();
+        metadata.versioning.last_updated = Some(now.format("%Y%m%d%H%M%S").to_string());
+
+        // Serialize to XML
+        let xml = quick_xml::se::to_string(&metadata)
+            .into_diagnostic()
+            .wrap_err(miette!("failed to serialize maven-metadata.xml"))?;
+
+        // Upload the updated metadata
+        self.new_request(Method::PUT, metadata_url)
+            .body(xml)
+            .send()
+            .await?;
+
+        tracing::debug!("Updated maven-metadata.xml for {}", package_name);
 
         Ok(())
     }
@@ -331,18 +385,45 @@ impl TryFrom<Response> for ValidatedResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-struct ArtifactSearchResponse {
-    results: Vec<ArtifactSearchResult>,
+/// Maven metadata structure for maven-metadata.xml
+#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq)]
+struct MavenMetadata {
+    #[serde(rename = "groupId", skip_serializing_if = "Option::is_none")]
+    group_id: Option<String>,
+    #[serde(rename = "artifactId")]
+    artifact_id: String,
+    versioning: Versioning,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-struct ArtifactSearchResult {
-    uri: String,
+impl MavenMetadata {
+    fn new(artifact_id: String) -> Self {
+        Self {
+            group_id: None,
+            artifact_id,
+            versioning: Versioning {
+                latest: None,
+                release: None,
+                versions: Vec::new(),
+                last_updated: None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq)]
+struct Versioning {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release: Option<String>,
+    #[serde(rename = "versions")]
+    versions: Vec<String>,
+    #[serde(rename = "lastUpdated", skip_serializing_if = "Option::is_none")]
+    last_updated: Option<String>,
 }
 
 #[async_trait::async_trait]
-impl super::Registry for Artifactory {
+impl super::Registry for Maven {
     async fn ping(&self) -> miette::Result<()> {
         self.ping().await
     }

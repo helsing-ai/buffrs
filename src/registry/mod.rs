@@ -21,23 +21,125 @@ use std::{
 mod artifactory;
 #[cfg(test)]
 mod cache;
+mod maven;
 
 pub use artifactory::Artifactory;
+pub use maven::Maven;
 use miette::{Context, IntoDiagnostic, ensure, miette};
-use semver::VersionReq;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
-use crate::manifest::{Dependency, DependencyManifest};
+use crate::{
+    manifest::{Dependency, DependencyManifest},
+    package::{Package, PackageName},
+};
+
+/// Trait for registry backends
+#[async_trait::async_trait]
+pub trait Registry: Send + Sync {
+    /// Pings the registry to ensure access is working
+    async fn ping(&self) -> miette::Result<()>;
+
+    /// Retrieves the latest version of a package
+    async fn get_latest_version(
+        &self,
+        repository: String,
+        name: PackageName,
+    ) -> miette::Result<Version>;
+
+    /// Downloads a package from the registry
+    async fn download(&self, dependency: Dependency) -> miette::Result<Package>;
+
+    /// Publishes a package to the registry
+    async fn publish(&self, package: Package, repository: String) -> miette::Result<()>;
+}
+
+/// The type of registry backend
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RegistryType {
+    /// Artifactory registry backend
+    Artifactory,
+    /// Maven registry backend
+    Maven,
+}
+
+impl RegistryType {
+    /// Get the prefix string for this registry type
+    fn prefix(&self) -> &'static str {
+        match self {
+            RegistryType::Artifactory => "artifactory+",
+            RegistryType::Maven => "maven+",
+        }
+    }
+
+    /// Remove the registry type prefix from a URL string
+    fn strip_prefix(s: &str) -> (&str, Option<Self>) {
+        if let Some(rest) = s.strip_prefix("artifactory+") {
+            (rest, Some(RegistryType::Artifactory))
+        } else if let Some(rest) = s.strip_prefix("maven+") {
+            (rest, Some(RegistryType::Maven))
+        } else {
+            (s, None)
+        }
+    }
+}
 
 /// A representation of a registry URI
-#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct RegistryUri(Url);
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct RegistryUri {
+    url: Url,
+    registry_type: RegistryType,
+}
+
+impl Serialize for RegistryUri {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // Always serialize with the registry type prefix
+        let prefixed = format!("{}{}", self.registry_type.prefix(), self.url);
+        serializer.serialize_str(&prefixed)
+    }
+}
+
+impl<'de> Deserialize<'de> for RegistryUri {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl RegistryUri {
+    /// Get the registry type for this URI
+    pub fn registry_type(&self) -> RegistryType {
+        self.registry_type
+    }
+
+    /// Get the underlying URL (without the registry type prefix)
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
+    /// Creates a registry instance based on the RegistryUri type
+    pub fn get_registry(
+        &self,
+        credentials: &crate::credentials::Credentials,
+    ) -> miette::Result<Box<dyn Registry>> {
+        match self.registry_type {
+            RegistryType::Artifactory => Ok(Box::new(Artifactory::new(self.clone(), credentials)?)),
+            RegistryType::Maven => Ok(Box::new(Maven::new(self.clone(), credentials)?)),
+        }
+    }
+}
 
 impl From<RegistryUri> for Url {
     fn from(value: RegistryUri) -> Self {
-        value.0
+        value.url
     }
 }
 
@@ -45,19 +147,19 @@ impl Deref for RegistryUri {
     type Target = Url;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.url
     }
 }
 
 impl DerefMut for RegistryUri {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.url
     }
 }
 
 impl Display for RegistryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}{}", self.registry_type.prefix(), self.url)
     }
 }
 
@@ -65,13 +167,17 @@ impl FromStr for RegistryUri {
     type Err = miette::Report;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let url = Url::from_str(value)
+        // Strip the registry type prefix if present, defaulting to Artifactory
+        let (url_str, registry_type) = RegistryType::strip_prefix(value);
+        let registry_type = registry_type.unwrap_or(RegistryType::Artifactory);
+
+        let url = Url::from_str(url_str)
             .into_diagnostic()
             .wrap_err(miette!("not a valid URL: {value}"))?;
 
         sanity_check_url(&url)?;
 
-        Ok(Self(url))
+        Ok(Self { url, registry_type })
     }
 }
 
