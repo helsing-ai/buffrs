@@ -115,3 +115,221 @@ impl Workspace {
         Ok(final_members)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    mod workspace_tests {
+        use super::super::*;
+        use std::path::PathBuf;
+
+        #[test]
+        fn test_resolve_members_with_explicit_members() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create member directories with Proto.toml files
+            let pkg1 = workspace_root.join("package1");
+            let pkg2 = workspace_root.join("package2");
+            fs::create_dir(&pkg1).unwrap();
+            fs::create_dir(&pkg2).unwrap();
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(pkg2.join(MANIFEST_FILE), "").unwrap();
+
+            let workspace = Workspace {
+                members: vec!["package1".to_string(), "package2".to_string()],
+                exclude: None,
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 2);
+            assert!(members.contains(&PathBuf::from("package1")));
+            assert!(members.contains(&PathBuf::from("package2")));
+        }
+
+        #[test]
+        fn test_resolve_members_with_glob_pattern() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create multiple packages at workspace root (1 level deep only)
+            let pkg1 = workspace_root.join("pkg1");
+            let pkg2 = workspace_root.join("pkg2");
+            let lib = workspace_root.join("lib-special");
+            fs::create_dir(&pkg1).unwrap();
+            fs::create_dir(&pkg2).unwrap();
+            fs::create_dir(&lib).unwrap();
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(pkg2.join(MANIFEST_FILE), "").unwrap();
+            fs::write(lib.join(MANIFEST_FILE), "").unwrap();
+
+            let workspace = Workspace {
+                members: vec!["pkg*".to_string()],
+                exclude: None,
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 2);
+            assert!(members.contains(&PathBuf::from("pkg1")));
+            assert!(members.contains(&PathBuf::from("pkg2")));
+            assert!(!members.contains(&PathBuf::from("lib-special")));
+        }
+
+        #[test]
+        fn test_resolve_members_with_exclude() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create packages at workspace root
+            let pkg1 = workspace_root.join("pkg1");
+            let pkg2 = workspace_root.join("pkg2");
+            let internal = workspace_root.join("internal");
+
+            fs::create_dir(&pkg1).unwrap();
+            fs::create_dir(&pkg2).unwrap();
+            fs::create_dir(&internal).unwrap();
+
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(pkg2.join(MANIFEST_FILE), "").unwrap();
+            fs::write(internal.join(MANIFEST_FILE), "").unwrap();
+
+            let workspace = Workspace {
+                members: vec!["*".to_string()],
+                exclude: Some(vec!["internal".to_string()]),
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 2);
+            assert!(members.contains(&PathBuf::from("pkg1")));
+            assert!(members.contains(&PathBuf::from("pkg2")));
+            assert!(!members.contains(&PathBuf::from("internal")));
+        }
+
+        #[test]
+        fn test_resolve_members_with_exclude_glob() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create packages at workspace root
+            let pkg1 = workspace_root.join("pkg1");
+            let pkg2 = workspace_root.join("pkg2");
+            let internal1 = workspace_root.join("internal-one");
+            let internal2 = workspace_root.join("internal-two");
+
+            fs::create_dir(&pkg1).unwrap();
+            fs::create_dir(&pkg2).unwrap();
+            fs::create_dir(&internal1).unwrap();
+            fs::create_dir(&internal2).unwrap();
+
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(pkg2.join(MANIFEST_FILE), "").unwrap();
+            fs::write(internal1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(internal2.join(MANIFEST_FILE), "").unwrap();
+
+            let workspace = Workspace {
+                members: vec!["*".to_string()],
+                exclude: Some(vec!["internal*".to_string()]),
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 2);
+            assert!(members.contains(&PathBuf::from("pkg1")));
+            assert!(members.contains(&PathBuf::from("pkg2")));
+            assert!(!members.contains(&PathBuf::from("internal-one")));
+            assert!(!members.contains(&PathBuf::from("internal-two")));
+        }
+
+        #[test]
+        fn test_resolve_members_ignores_dirs_without_manifest() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create directory with Proto.toml
+            let pkg1 = workspace_root.join("pkg1");
+            fs::create_dir(&pkg1).unwrap();
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+
+            // Create directory WITHOUT Proto.toml
+            let not_a_pkg = workspace_root.join("not-a-package");
+            fs::create_dir(&not_a_pkg).unwrap();
+
+            let workspace = Workspace {
+                members: vec!["*".to_string()],
+                exclude: None,
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 1);
+            assert!(members.contains(&PathBuf::from("pkg1")));
+            assert!(!members.contains(&PathBuf::from("not-a-package")));
+        }
+
+        #[test]
+        fn test_resolve_members_mixed_patterns() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create packages at workspace root
+            let pkg1 = workspace_root.join("pkg1");
+            let pkg2 = workspace_root.join("pkg2");
+            let special = workspace_root.join("special");
+
+            fs::create_dir(&pkg1).unwrap();
+            fs::create_dir(&pkg2).unwrap();
+            fs::create_dir(&special).unwrap();
+            fs::write(pkg1.join(MANIFEST_FILE), "").unwrap();
+            fs::write(pkg2.join(MANIFEST_FILE), "").unwrap();
+            fs::write(special.join(MANIFEST_FILE), "").unwrap();
+
+            let workspace = Workspace {
+                members: vec!["pkg*".to_string(), "special".to_string()],
+                exclude: None,
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+            assert_eq!(members.len(), 3);
+            assert!(members.contains(&PathBuf::from("pkg1")));
+            assert!(members.contains(&PathBuf::from("pkg2")));
+            assert!(members.contains(&PathBuf::from("special")));
+        }
+
+        #[test]
+        fn test_resolve_members_deterministic_ordering() {
+            use std::fs;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let workspace_root = temp_dir.path();
+
+            // Create members in non-alphabetical order
+            for name in ["zebra", "alpha", "beta"] {
+                let dir = workspace_root.join(name);
+                fs::create_dir(&dir).unwrap();
+                fs::write(dir.join(MANIFEST_FILE), "").unwrap();
+            }
+
+            let workspace = Workspace {
+                members: vec!["*".to_string()],
+                exclude: None,
+            };
+
+            let members = workspace.resolve_members(workspace_root).unwrap();
+
+            // Should be sorted alphabetically
+            assert_eq!(members.len(), 3);
+            assert_eq!(members[0], PathBuf::from("alpha"));
+            assert_eq!(members[1], PathBuf::from("beta"));
+            assert_eq!(members[2], PathBuf::from("zebra"));
+        }
+    }
+}

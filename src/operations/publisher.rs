@@ -12,7 +12,8 @@ use semver::{Version, VersionReq};
 
 use crate::credentials::Credentials;
 use crate::manifest::{
-    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, RemoteDependencyManifest,
+    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+    RemoteDependencyManifest,
 };
 use crate::manifest_v2::{BuffrsManifest, PackagesManifest, WorkspaceManifest};
 use crate::package::PackageStore;

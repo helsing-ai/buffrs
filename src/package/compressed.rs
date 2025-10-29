@@ -56,9 +56,9 @@ impl Package {
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
             // Upgrade unknown edition to latest
-            let mut builder = PackagesManifest::builder();
+            let builder = PackagesManifest::builder();
             if let Some(pkg) = manifest.clone().package {
-                builder = builder.package(pkg);
+                builder.package(pkg);
             }
         }
 

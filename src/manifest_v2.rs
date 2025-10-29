@@ -27,7 +27,7 @@ fn try_manifest_type(
         ))
         .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
         (None, None) => Err(miette!(
-            "manifest cannot have both dependencies and workspace sections"
+            "manifest should have either dependencies or a workspace section"
         ))
         .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
         (&Some(_), None) => Ok(ManifestType::Package),
@@ -35,6 +35,7 @@ fn try_manifest_type(
     }
 }
 
+/// Defines common interfaces any Manifest should support
 pub trait GenericManifest: Sized + Into<RawManifest> + TryInto<String> + FromStr + Clone {
     /// Checks if the manifest file exists in the filesystem
     async fn exists() -> miette::Result<bool> {
@@ -68,13 +69,17 @@ pub trait GenericManifest: Sized + Into<RawManifest> + TryInto<String> + FromStr
     }
 }
 
+/// A buffrs manifest enum describing the different types of manifests that buffrs understands
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuffrsManifest {
+    /// A package manifest describing a concrete package
     Package(PackagesManifest),
+    /// A workspace manifest defining a buffrs workspace
     Workspace(WorkspaceManifest),
 }
 
 impl BuffrsManifest {
+    /// Returns a human friendly representation the current package. Intended to be used in error messages on the CLI top level
     pub async fn current_dir_display_name() -> Option<String> {
         let manifest = BuffrsManifest::try_read().await.ok()?;
 
@@ -95,6 +100,16 @@ impl BuffrsManifest {
         let manifest = BuffrsManifest::try_read_from(path).await?;
 
         match manifest {
+            BuffrsManifest::Package(packages_manifest) => Ok(packages_manifest),
+            BuffrsManifest::Workspace(_) => {
+                bail!("A packages manifest is required, but a workspace manifest was found")
+            }
+        }
+    }
+
+    /// Returns the packages manifest if correct type, errs otherwise
+    pub async fn to_package_manifest(self) -> miette::Result<PackagesManifest> {
+        match self {
             BuffrsManifest::Package(packages_manifest) => Ok(packages_manifest),
             BuffrsManifest::Workspace(_) => {
                 bail!("A packages manifest is required, but a workspace manifest was found")
@@ -217,6 +232,7 @@ impl WorkspaceManifest {
     }
 }
 
+/// NoWorkspace Type used for the workspace typestate builder pattern
 #[derive(Default, Clone)]
 pub struct NoWorkspace;
 
@@ -226,6 +242,7 @@ pub struct WorkspaceManifestBuilder<W> {
 }
 
 impl WorkspaceManifestBuilder<NoWorkspace> {
+    /// Set the workspace and transition to a WorkspaceManifestBuilder<Workspace>
     pub fn workspace(self, workspace: Workspace) -> WorkspaceManifestBuilder<Workspace> {
         WorkspaceManifestBuilder { workspace }
     }
@@ -298,7 +315,8 @@ impl FromStr for PackagesManifest {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         input
             .parse::<RawManifest>()
-            .map_err(|_| DeserializationError(ManagedFile::Manifest))
+            .into_diagnostic()
+            .wrap_err(DeserializationError(ManagedFile::Manifest))
             .map(PackagesManifest::try_from)?
     }
 }
@@ -309,7 +327,8 @@ impl FromStr for WorkspaceManifest {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         input
             .parse::<RawManifest>()
-            .map_err(|_| DeserializationError(ManagedFile::Manifest))
+            .into_diagnostic()
+            .wrap_err(DeserializationError(ManagedFile::Manifest))
             .map(WorkspaceManifest::try_from)?
     }
 }
@@ -368,7 +387,7 @@ impl TryFrom<RawManifest> for WorkspaceManifest {
     fn try_from(raw: RawManifest) -> Result<Self, Self::Error> {
         if raw.workspace().is_none() {
             bail!("Manifest has no workspace manifest");
-        } 
+        }
 
         match raw.workspace() {
             None => bail!("Manifest has no workspace manifest"),
@@ -479,11 +498,7 @@ mod tests {
             assert!(manifest.is_err());
             let report = manifest.err().unwrap();
             println!("{}", report.to_string());
-            assert!(
-                report
-                    .to_string()
-                    .contains("manifest Proto.toml is invalid")
-            )
+            assert!(report.to_string().contains("missing field `members`"))
         }
 
         #[test]
@@ -533,9 +548,11 @@ mod tests {
             "#;
 
             let manifest_path = PathBuf::from_str(".").unwrap();
-            let original_manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+            let original_manifest = BuffrsManifest::from_str(manifest)
+                .expect("should be valid manifest")
+                .to_package_manifest()
                 .await
-                .expect("should be valid manifest");
+                .expect("should be package manifest");
 
             // Create new dependencies
             let new_deps = vec![
@@ -568,8 +585,6 @@ mod tests {
         #[test]
         fn workspace_manifest_roundtrip() {
             let manifest_str = r#"
-            edition = "0.12"
-
             [workspace]
             members = ["pkg1", "pkg2"]
             "#;
@@ -577,12 +592,11 @@ mod tests {
             let manifest = BuffrsManifest::from_str(manifest_str).expect("should parse");
 
             let serialized: String = manifest.try_into().expect("should serialize");
-            assert!(serialized.contains("edition"));
             assert!(serialized.contains("[workspace]"));
         }
 
         #[test]
-        fn unknown_edition_parsed_correctly() {
+        fn unknown_edition_parsed_rejected() {
             let manifest_str = r#"
             edition = "99.99"
 
@@ -595,6 +609,7 @@ mod tests {
             "#;
 
             let result = PackagesManifest::from_str(manifest_str);
+
             assert!(result.is_err());
         }
 

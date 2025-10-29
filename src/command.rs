@@ -31,7 +31,7 @@ use crate::{
 };
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::{fs, io};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);

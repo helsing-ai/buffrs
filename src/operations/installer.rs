@@ -13,9 +13,7 @@ use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
     lock::{LOCKFILE, Lockfile},
-    manifest::{
-        Dependency, DependencyManifest, MANIFEST_FILE, RemoteDependencyManifest,
-    },
+    manifest::{Dependency, DependencyManifest, MANIFEST_FILE, RemoteDependencyManifest},
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
