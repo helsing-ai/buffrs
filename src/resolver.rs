@@ -13,8 +13,8 @@ use thiserror::Error;
 use crate::{
     credentials::Credentials,
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, PackagesManifest,
-        MANIFEST_FILE,
+        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        PackagesManifest,
     },
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},

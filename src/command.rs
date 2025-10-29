@@ -22,8 +22,8 @@ use crate::{
     credentials::Credentials,
     lock::Lockfile,
     manifest::{
-        BuffrsManifest, Dependency, GenericManifest, PackageManifest, PackagesManifest,
-        MANIFEST_FILE,
+        BuffrsManifest, Dependency, GenericManifest, MANIFEST_FILE, PackageManifest,
+        PackagesManifest,
     },
     operations::installer::Installer,
     operations::publisher::Publisher,

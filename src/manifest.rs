@@ -20,20 +20,19 @@ use std::{
 };
 
 use async_trait::async_trait;
-use miette::{bail, miette, Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, bail, miette};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
 use crate::{
+    ManagedFile,
     errors::{
-        DeserializationError, FileExistsError, InvalidManifestError, SerializationError,
-        WriteError,
+        DeserializationError, FileExistsError, InvalidManifestError, SerializationError, WriteError,
     },
     package::{PackageName, PackageType},
     registry::RegistryUri,
     workspace::Workspace,
-    ManagedFile,
 };
 
 /// The name of the manifest file
@@ -870,8 +869,8 @@ impl From<LocalDependencyManifest> for DependencyManifest {
 #[cfg(test)]
 mod tests {
     mod raw_manifest_tests {
-        use crate::manifest::RawManifest;
         use crate::manifest::BuffrsManifest;
+        use crate::manifest::RawManifest;
         use std::str::FromStr;
 
         #[test]

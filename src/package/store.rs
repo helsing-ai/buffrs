@@ -24,7 +24,7 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{BuffrsManifest, PackagesManifest, PackageManifest, MANIFEST_FILE},
+    manifest::{BuffrsManifest, MANIFEST_FILE, PackageManifest, PackagesManifest},
     package::{Package, PackageName},
 };
 

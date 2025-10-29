@@ -13,8 +13,8 @@ use crate::{
     credentials::Credentials,
     lock::{LOCKFILE, Lockfile},
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, PackagesManifest, RemoteDependencyManifest,
-        WorkspaceManifest, MANIFEST_FILE,
+        BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
+        RemoteDependencyManifest, WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
@@ -254,8 +254,8 @@ impl Installer {
 mod tests {
     use super::*;
     use crate::lock::LockedPackage;
-    use crate::manifest::PackageManifest;
     use crate::manifest::GenericManifest;
+    use crate::manifest::PackageManifest;
     use crate::package::PackageType;
     use semver::Version;
     use std::collections::HashMap;

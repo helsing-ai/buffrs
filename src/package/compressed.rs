@@ -29,7 +29,7 @@ use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, PackagesManifest, MANIFEST_FILE},
+    manifest::{self, Edition, MANIFEST_FILE, PackagesManifest},
     package::PackageName,
     registry::RegistryUri,
 };
