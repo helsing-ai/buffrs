@@ -3,13 +3,12 @@ use crate::errors::{
     DeserializationError, FileExistsError, InvalidManifestError, SerializationError, WriteError,
 };
 use crate::manifest::{
-    Dependency, DependencyMap, Edition, MANIFEST_FILE, Manifest, ManifestType, PackageManifest,
-    RawManifest,
+    Dependency, DependencyMap, Edition, MANIFEST_FILE, ManifestType, PackageManifest, RawManifest,
 };
 use crate::package::PackageName;
 use crate::workspace::Workspace;
 use miette::{Context, IntoDiagnostic, bail, miette};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use tokio::fs;
 
@@ -69,26 +68,50 @@ pub trait GenericManifest: Sized + Into<RawManifest> + TryInto<String> + FromStr
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuffrsManifest {
     Package(PackagesManifest),
     Workspace(WorkspaceManifest),
 }
 
 impl BuffrsManifest {
-    pub async fn require_package_manifest(
-        path: impl AsRef<Path>,
-    ) -> miette::Result<PackagesManifest> {
+    pub async fn current_dir_display_name() -> Option<String> {
+        let manifest = BuffrsManifest::try_read().await.ok()?;
+
+        let cwd = std::env::current_dir().unwrap();
+
+        let path_name = cwd.file_name()?.to_str();
+
+        match manifest {
+            BuffrsManifest::Package(p) => Some(p.package?.name.to_string()),
+            BuffrsManifest::Workspace(_) => path_name.map(String::from),
+        }
+    }
+    /// Ensures the current directory contains a package manifest, not a workspace
+    ///
+    /// Returns an error if the manifest is a workspace manifest, otherwise the package manifest
+    /// Use this at the beginning of commands that don't support workspaces.
+    pub async fn require_package_manifest(path: &PathBuf) -> miette::Result<PackagesManifest> {
         let manifest = BuffrsManifest::try_read_from(path).await?;
 
-        if let BuffrsManifest::Package(packages_manifest) = manifest {
-            Ok(packages_manifest)
-        } else {
-            bail!("A packages manifest is require");
+        match manifest {
+            BuffrsManifest::Package(packages_manifest) => Ok(packages_manifest),
+            BuffrsManifest::Workspace(_) => {
+                bail!("A packages manifest is required, but a workspace manifest was found")
+            }
         }
     }
 
+    /// Checks if a manifest file exists in the filesystem
+    pub async fn exists() -> miette::Result<bool> {
+        fs::try_exists(MANIFEST_FILE)
+            .await
+            .into_diagnostic()
+            .wrap_err(FileExistsError(MANIFEST_FILE))
+    }
+
     /// Loads the manifest from the current directory
-    pub async fn read() -> miette::Result<Self> {
+    pub async fn try_read() -> miette::Result<Self> {
         Self::try_read_from(MANIFEST_FILE)
             .await
             .wrap_err(miette!("`{MANIFEST_FILE}` does not exist"))
@@ -182,28 +205,33 @@ impl PackagesManifestBuilder {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkspaceManifest {
     /// Definition of a buffrs workspace
-    pub workspace: Option<Workspace>,
+    pub workspace: Workspace,
 }
 
 impl WorkspaceManifest {
     /// Create a new builder for WorkspaceManifest
-    pub fn builder() -> WorkspaceManifestBuilder {
-        WorkspaceManifestBuilder { workspace: None }
+    pub fn builder() -> WorkspaceManifestBuilder<NoWorkspace> {
+        WorkspaceManifestBuilder {
+            workspace: NoWorkspace,
+        }
     }
 }
+
+#[derive(Default, Clone)]
+pub struct NoWorkspace;
 
 /// Builder for constructing a WorkspaceManifest
-pub struct WorkspaceManifestBuilder {
-    workspace: Option<Workspace>,
+pub struct WorkspaceManifestBuilder<W> {
+    workspace: W,
 }
 
-impl WorkspaceManifestBuilder {
-    /// Sets the workspace configuration
-    pub fn workspace(mut self, workspace: Workspace) -> Self {
-        self.workspace = Some(workspace);
-        self
+impl WorkspaceManifestBuilder<NoWorkspace> {
+    pub fn workspace(self, workspace: Workspace) -> WorkspaceManifestBuilder<Workspace> {
+        WorkspaceManifestBuilder { workspace }
     }
+}
 
+impl WorkspaceManifestBuilder<Workspace> {
     /// Builds the WorkspaceManifest
     pub fn build(self) -> WorkspaceManifest {
         WorkspaceManifest {
@@ -291,7 +319,7 @@ impl From<WorkspaceManifest> for RawManifest {
         RawManifest::Unknown {
             package: NO_PACKAGE,
             dependencies: NO_DEPENDENCIES,
-            workspace: workspace_manifest.workspace,
+            workspace: Some(workspace_manifest.workspace),
         }
     }
 }
@@ -338,9 +366,16 @@ impl TryFrom<RawManifest> for WorkspaceManifest {
     type Error = miette::Report;
 
     fn try_from(raw: RawManifest) -> Result<Self, Self::Error> {
-        Ok(WorkspaceManifest {
-            workspace: raw.workspace().cloned(),
-        })
+        if raw.workspace().is_none() {
+            bail!("Manifest has no workspace manifest");
+        } 
+
+        match raw.workspace() {
+            None => bail!("Manifest has no workspace manifest"),
+            Some(workspace_manifest) => Ok(WorkspaceManifest::builder()
+                .workspace(workspace_manifest.clone())
+                .build()),
+        }
     }
 }
 
@@ -370,5 +405,212 @@ impl TryFrom<RawManifest> for BuffrsManifest {
         };
 
         Ok(manifest)
+    }
+}
+
+impl FromStr for BuffrsManifest {
+    type Err = miette::Report;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        input
+            .parse::<RawManifest>()
+            .into_diagnostic()
+            .map(Self::try_from)?
+    }
+}
+
+impl TryInto<String> for BuffrsManifest {
+    type Error = toml::ser::Error;
+
+    fn try_into(self) -> Result<String, Self::Error> {
+        match self {
+            BuffrsManifest::Package(p) => p.try_into(),
+            BuffrsManifest::Workspace(w) => w.try_into(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    mod raw_manifest_tests {
+        use crate::manifest::RawManifest;
+        use crate::manifest_v2::BuffrsManifest;
+        use std::str::FromStr;
+
+        #[test]
+        fn test_cloned_manifest_convert_to_exact_same_string() {
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "lib"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(manifest).expect("should be valid manifest");
+            let cloned_raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
+                .expect("should be convertable to str");
+            let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
+                .expect("should be convertable to str");
+
+            assert!(cloned_raw_manifest_str.contains("edition"));
+            assert_eq!(cloned_raw_manifest_str, raw_manifest_str);
+        }
+    }
+    mod manifest_tests {
+        use crate::manifest::Edition;
+        use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
+        use crate::package::PackageName;
+        use crate::registry::RegistryUri;
+        use std::path::PathBuf;
+        use std::str::FromStr;
+
+        #[test]
+        fn invalid_mixed_manifest() {
+            let mixed_dep_and_workspace = r#"
+        [workspace]
+
+        [dependencies]
+        "#;
+            let manifest = BuffrsManifest::from_str(mixed_dep_and_workspace);
+            assert!(manifest.is_err());
+            let report = manifest.err().unwrap();
+            println!("{}", report.to_string());
+            assert!(
+                report
+                    .to_string()
+                    .contains("manifest Proto.toml is invalid")
+            )
+        }
+
+        #[test]
+        fn invalid_empty_manifest() {
+            let empty_manifest = "";
+            let manifest = BuffrsManifest::from_str(empty_manifest);
+            assert!(manifest.is_err());
+        }
+
+        #[test]
+        fn manifest_parsing_ok() {
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "lib"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(manifest).expect("should be valid manifest");
+
+            assert!(matches!(manifest, BuffrsManifest::Package(_)));
+        }
+
+        #[tokio::test]
+        async fn test_clone_with_different_dependencies() {
+            use crate::manifest::Dependency;
+            use semver::VersionReq;
+            use std::str::FromStr;
+
+            // Create original manifest with initial dependencies
+            let manifest = r#"
+            edition = "0.12"
+
+            [package]
+            type = "lib"
+            name = "test-package"
+            version = "1.0.0"
+
+            [dependencies.test-dependency]
+            version = "1.0.0"
+            registry = "https://registry.example.com"
+            repository = "original-repo"
+            "#;
+
+            let manifest_path = PathBuf::from_str(".").unwrap();
+            let original_manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+                .await
+                .expect("should be valid manifest");
+
+            // Create new dependencies
+            let new_deps = vec![
+                Dependency::new(
+                    RegistryUri::from_str("https://new-registry.example.com").unwrap(),
+                    "new-repo".to_string(),
+                    PackageName::from_str("new-dep-1").unwrap(),
+                    VersionReq::from_str("2.0.0").unwrap(),
+                ),
+                Dependency::new(
+                    RegistryUri::from_str("https://another-registry.example.com").unwrap(),
+                    "another-repo".to_string(),
+                    PackageName::from_str("new-dep-2").unwrap(),
+                    VersionReq::from_str("3.0.0").unwrap(),
+                ),
+            ];
+
+            // Clone with different dependencies
+            let cloned_manifest =
+                original_manifest.clone_with_different_dependencies(new_deps.clone());
+
+            // Verify the dependencies were replaced
+            assert_eq!(cloned_manifest.dependencies, Some(new_deps));
+
+            // Verify other fields remain unchanged
+            assert_eq!(cloned_manifest.edition, original_manifest.edition);
+            assert_eq!(cloned_manifest.package, original_manifest.package);
+        }
+
+        #[test]
+        fn workspace_manifest_roundtrip() {
+            let manifest_str = r#"
+            edition = "0.12"
+
+            [workspace]
+            members = ["pkg1", "pkg2"]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(manifest_str).expect("should parse");
+
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(serialized.contains("edition"));
+            assert!(serialized.contains("[workspace]"));
+        }
+
+        #[test]
+        fn unknown_edition_parsed_correctly() {
+            let manifest_str = r#"
+            edition = "99.99"
+
+            [package]
+            type = "lib"
+            name = "test"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let result = PackagesManifest::from_str(manifest_str);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn manifest_without_edition_becomes_unknown() {
+            let manifest_str = r#"
+            [package]
+            type = "lib"
+            name = "test"
+            version = "0.0.1"
+
+            [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(manifest_str).expect("should parse");
+            assert_eq!(manifest.edition, Edition::Unknown);
+        }
     }
 }

@@ -11,10 +11,8 @@ use miette::{Context as _, IntoDiagnostic, bail, miette};
 use semver::{Version, VersionReq};
 
 use crate::credentials::Credentials;
-use crate::lock::Lockfile;
 use crate::manifest::{
-    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
-    PackageManifest, RemoteDependencyManifest,
+    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, RemoteDependencyManifest,
 };
 use crate::manifest_v2::{BuffrsManifest, PackagesManifest, WorkspaceManifest};
 use crate::package::PackageStore;
@@ -185,14 +183,10 @@ impl Publisher {
         &mut self,
         manifest: &WorkspaceManifest,
     ) -> miette::Result<()> {
-        let workspace = manifest.workspace.as_ref().ok_or_else(|| {
-            miette!("publish_workspace called on manifest that does not define a workspace")
-        })?;
-
         let root_path = env::current_dir()
             .into_diagnostic()
             .wrap_err("current dir could not be retrieved")?;
-        let packages = workspace.resolve_members(root_path)?;
+        let packages = manifest.workspace.resolve_members(root_path)?;
 
         tracing::info!(
             ":: workspace found. publishing {} packages in workspace",
@@ -206,7 +200,7 @@ impl Publisher {
             tracing::info!(":: processing workspace member: {}", member_path.display());
 
             let member_manifest =
-                BuffrsManifest::require_package_manifest(member_path.join(MANIFEST_FILE)).await?;
+                BuffrsManifest::require_package_manifest(&member_path.join(MANIFEST_FILE)).await?;
 
             // Build dependency graph for this member
             let graph =

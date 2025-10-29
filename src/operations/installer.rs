@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use miette::{Context as _, IntoDiagnostic, ensure, miette};
+use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
 
 use crate::manifest_v2::{BuffrsManifest, PackagesManifest, WorkspaceManifest};
@@ -14,8 +14,7 @@ use crate::{
     credentials::Credentials,
     lock::{LOCKFILE, Lockfile},
     manifest::{
-        Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
-        RemoteDependencyManifest,
+        Dependency, DependencyManifest, MANIFEST_FILE, RemoteDependencyManifest,
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
@@ -73,12 +72,8 @@ impl Installer {
         let root_path = env::current_dir()
             .into_diagnostic()
             .wrap_err("current dir could not be retrieved")?;
-        let workspace = manifest.workspace.as_ref().ok_or_else(|| {
-            miette!(
-                "buffers install for workspaces executed on manifest that does not define a workspace."
-            )
-        })?;
-        let packages = workspace.resolve_members(root_path)?;
+
+        let packages = manifest.workspace.resolve_members(root_path)?;
         tracing::info!(
             ":: workspace found. running install for {} packages in workspace",
             packages.len()
@@ -86,7 +81,7 @@ impl Installer {
 
         for package in packages {
             let pkg_manifest =
-                BuffrsManifest::require_package_manifest(package.join(MANIFEST_FILE)).await?;
+                BuffrsManifest::require_package_manifest(&package.join(MANIFEST_FILE)).await?;
             let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
             let store = PackageStore::open(&package).await?;
 
@@ -169,7 +164,7 @@ impl Installer {
     /// Installs a local dependency
     async fn install_local_dependency(&self, path: &Path) -> miette::Result<Package> {
         let dep_manifest =
-            BuffrsManifest::require_package_manifest(path.join(MANIFEST_FILE)).await?;
+            BuffrsManifest::require_package_manifest(&path.join(MANIFEST_FILE)).await?;
         let dep_store = PackageStore::open(path).await?;
         dep_store.release(&dep_manifest, self.preserve_mtime).await
     }

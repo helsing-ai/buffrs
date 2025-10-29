@@ -18,7 +18,7 @@ use crate::manifest::MANIFEST_FILE;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     /// Packages to include in the workspace.
-    pub members: Option<Vec<String>>,
+    pub members: Vec<String>,
     /// Packages to exclude from the workspace.
     pub exclude: Option<Vec<String>>,
 }
@@ -43,8 +43,8 @@ impl Workspace {
         workspace_root: impl AsRef<Path>,
     ) -> miette::Result<Vec<PathBuf>> {
         // Default to ["*"] if members is not specified
-        let default_members = vec!["*".to_string()];
-        let member_patterns = self.members.as_ref().unwrap_or(&default_members);
+
+        let member_patterns = &self.members;
         let exclude_patterns = self.exclude.as_deref().unwrap_or(&[]);
 
         let mut resolved_members = BTreeSet::new();

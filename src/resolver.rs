@@ -10,10 +10,10 @@ use miette::{Context as _, Diagnostic, bail};
 use semver::VersionReq;
 use thiserror::Error;
 
-use crate::manifest_v2::PackagesManifest;
+use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
     credentials::Credentials,
-    manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest},
+    manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE},
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -260,7 +260,7 @@ impl<'a> GraphBuilder<'a> {
         let resolved_path = self.base_path.join(&local_manifest.path);
         let manifest_path = resolved_path.join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest_path).await?;
+        let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;

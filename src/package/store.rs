@@ -23,9 +23,9 @@ use miette::{Context, IntoDiagnostic, miette};
 use tokio::fs;
 use walkdir::WalkDir;
 
-use crate::manifest_v2::PackagesManifest;
+use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
-    manifest::{MANIFEST_FILE, Manifest, PackageManifest},
+    manifest::{MANIFEST_FILE, PackageManifest},
     package::{Package, PackageName},
 };
 
@@ -180,17 +180,19 @@ impl PackageStore {
     ///
     /// Returns an error if:
     /// - The package directory doesn't exist in `proto/vendor/`
-    /// - The `Proto.toml` file is missing or corruptedDo
+    /// - The `Proto.toml` file is missing or corrupted
     /// - The manifest cannot be deserialized
-    pub async fn resolve(&self, package: &PackageName) -> miette::Result<Manifest> {
-        let manifest = self.locate(package).join(MANIFEST_FILE);
+    pub async fn resolve(&self, package: &PackageName) -> miette::Result<PackagesManifest> {
+        let manifest_path = self.locate(package).join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest).await.wrap_err({
-            miette!(
-                "the package store is corrupted: `{}` is not present",
-                manifest.display()
-            )
-        })?;
+        let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+            .await
+            .wrap_err({
+                miette!(
+                    "the package store is corrupted: `{}` is not present",
+                    manifest_path.display()
+                )
+            })?;
 
         Ok(manifest)
     }

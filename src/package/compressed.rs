@@ -30,7 +30,7 @@ use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, MANIFEST_FILE, Manifest},
+    manifest::{self, Edition, MANIFEST_FILE},
     package::PackageName,
     registry::RegistryUri,
 };
@@ -50,7 +50,7 @@ impl Package {
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
     pub fn create(
-        mut manifest: PackagesManifest,
+        manifest: PackagesManifest,
         files: BTreeMap<PathBuf, Entry>,
         preserve_mtime: bool,
     ) -> miette::Result<Self> {

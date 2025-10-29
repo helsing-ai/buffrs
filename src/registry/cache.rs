@@ -103,7 +103,7 @@ impl LocalRegistry {
 mod tests {
     use crate::manifest_v2::PackagesManifest;
     use crate::{
-        manifest::{Dependency, Manifest, PackageManifest},
+        manifest::{Dependency, PackageManifest},
         package::{Package, PackageType},
         registry::cache::LocalRegistry,
     };

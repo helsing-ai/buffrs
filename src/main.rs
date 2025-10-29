@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use buffrs::manifest_v2::BuffrsManifest;
 use buffrs::{
     command,
     manifest::MANIFEST_FILE,
-    manifest::Manifest,
     package::PackageType,
     package::{PackageName, PackageStore},
     registry::RegistryUri,
@@ -185,25 +185,9 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-    let manifest = if Manifest::exists().await? {
-        Some(Manifest::read().await?)
-    } else {
-        None
-    };
-
-    let package = {
-        let cwd = std::env::current_dir().unwrap();
-
-        let name = cwd
-            .file_name()
-            .ok_or_else(|| miette!("failed to locate current directory"))?
-            .to_str()
-            .ok_or_else(|| miette!("internal error"))?;
-
-        manifest
-            .and_then(|m| m.package.map(|p| p.name.to_string()))
-            .unwrap_or_else(|| name.to_string())
-    };
+    let package = BuffrsManifest::current_dir_display_name()
+        .await
+        .unwrap_or("unknown package".into());
 
     match cli.command {
         Command::Init { lib, api, package } => {
