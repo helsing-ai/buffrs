@@ -20,7 +20,6 @@ use tokio::fs;
 
 use crate::{
     manifest::{Dependency, DependencyManifest},
-    manifest_v2::PackagesManifest,
     package::Package,
 };
 
@@ -101,9 +100,8 @@ impl LocalRegistry {
 
 #[cfg(test)]
 mod tests {
-    use crate::manifest_v2::PackagesManifest;
     use crate::{
-        manifest::{Dependency, PackageManifest},
+        manifest::{Dependency, PackageManifest, PackagesManifest},
         package::{Package, PackageType},
         registry::cache::LocalRegistry,
     };

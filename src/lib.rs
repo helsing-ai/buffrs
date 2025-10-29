@@ -46,9 +46,6 @@ pub mod validation;
 /// Workspace related business logic.
 pub mod workspace;
 
-/// Workspace related business logic.
-pub mod manifest_v2;
-
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";
 

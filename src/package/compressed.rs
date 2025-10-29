@@ -25,12 +25,11 @@ use semver::Version;
 use tokio::fs;
 
 use super::store::Entry;
-use crate::manifest_v2::PackagesManifest;
 use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, MANIFEST_FILE},
+    manifest::{self, Edition, PackagesManifest, MANIFEST_FILE},
     package::PackageName,
     registry::RegistryUri,
 };

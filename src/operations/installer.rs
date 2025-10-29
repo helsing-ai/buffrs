@@ -8,12 +8,14 @@ use std::{
 use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
 
-use crate::manifest_v2::{BuffrsManifest, PackagesManifest, WorkspaceManifest};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
     lock::{LOCKFILE, Lockfile},
-    manifest::{Dependency, DependencyManifest, MANIFEST_FILE, RemoteDependencyManifest},
+    manifest::{
+        BuffrsManifest, Dependency, DependencyManifest, PackagesManifest, RemoteDependencyManifest,
+        WorkspaceManifest, MANIFEST_FILE,
+    },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
@@ -253,7 +255,7 @@ mod tests {
     use super::*;
     use crate::lock::LockedPackage;
     use crate::manifest::PackageManifest;
-    use crate::manifest_v2::GenericManifest;
+    use crate::manifest::GenericManifest;
     use crate::package::PackageType;
     use semver::Version;
     use std::collections::HashMap;

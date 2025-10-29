@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::manifest_v2::GenericManifest;
 use std::{
     env,
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
     credentials::Credentials,
     lock::Lockfile,
-    manifest::{Dependency, MANIFEST_FILE, PackageManifest},
+    manifest::{
+        BuffrsManifest, Dependency, GenericManifest, PackageManifest, PackagesManifest,
+        MANIFEST_FILE,
+    },
     operations::installer::Installer,
     operations::publisher::Publisher,
     package::{PackageName, PackageStore, PackageType},

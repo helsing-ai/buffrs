@@ -10,10 +10,12 @@ use miette::{Context as _, Diagnostic, bail};
 use semver::VersionReq;
 use thiserror::Error;
 
-use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
     credentials::Credentials,
-    manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE},
+    manifest::{
+        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, PackagesManifest,
+        MANIFEST_FILE,
+    },
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},
 };

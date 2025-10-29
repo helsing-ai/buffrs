@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::manifest_v2::BuffrsManifest;
 use buffrs::{
     command,
-    manifest::MANIFEST_FILE,
+    manifest::{BuffrsManifest, MANIFEST_FILE},
     package::PackageType,
     package::{PackageName, PackageStore},
     registry::RegistryUri,

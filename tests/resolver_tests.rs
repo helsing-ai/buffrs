@@ -3,11 +3,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use buffrs::manifest_v2::GenericManifest;
 use buffrs::{
     credentials::Credentials,
-    manifest::{Dependency, LocalDependencyManifest, PackageManifest},
-    manifest_v2::PackagesManifest,
+    manifest::{
+        Dependency, GenericManifest, LocalDependencyManifest, PackageManifest, PackagesManifest,
+    },
     package::{PackageName, PackageType},
     resolver::{DependencyGraph, DependencyNode, DependencySource},
 };

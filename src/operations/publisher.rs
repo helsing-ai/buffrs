@@ -12,10 +12,9 @@ use semver::{Version, VersionReq};
 
 use crate::credentials::Credentials;
 use crate::manifest::{
-    Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
-    RemoteDependencyManifest,
+    BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, PackagesManifest,
+    RemoteDependencyManifest, WorkspaceManifest, MANIFEST_FILE,
 };
-use crate::manifest_v2::{BuffrsManifest, PackagesManifest, WorkspaceManifest};
 use crate::package::PackageStore;
 use crate::registry::{Artifactory, RegistryUri};
 use crate::resolver::{DependencyGraph, DependencySource};

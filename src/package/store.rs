@@ -23,9 +23,8 @@ use miette::{Context, IntoDiagnostic, miette};
 use tokio::fs;
 use walkdir::WalkDir;
 
-use crate::manifest_v2::{BuffrsManifest, PackagesManifest};
 use crate::{
-    manifest::{MANIFEST_FILE, PackageManifest},
+    manifest::{BuffrsManifest, PackagesManifest, PackageManifest, MANIFEST_FILE},
     package::{Package, PackageName},
 };
 
