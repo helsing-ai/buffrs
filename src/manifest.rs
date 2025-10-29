@@ -617,7 +617,7 @@ impl FromStr for WorkspaceManifest {
 
 impl From<WorkspaceManifest> for RawManifest {
     fn from(workspace_manifest: WorkspaceManifest) -> Self {
-        RawManifest::Unknown {
+        RawManifest::Canary {
             package: NO_PACKAGE,
             dependencies: NO_DEPENDENCIES,
             workspace: Some(workspace_manifest.workspace),
@@ -648,17 +648,11 @@ impl From<PackagesManifest> for RawManifest {
                 .map(|dep| (dep.package, dep.manifest))
                 .collect()
         });
-        match package_manifest.edition {
-            Edition::Unknown => RawManifest::Unknown {
-                package: package_manifest.package,
-                dependencies,
-                workspace: NO_WORKSPACE,
-            },
-            _ => RawManifest::Canary {
-                package: package_manifest.package,
-                dependencies,
-                workspace: NO_WORKSPACE,
-            },
+        // Always write as Canary - Unknown manifests get upgraded when written
+        RawManifest::Canary {
+            package: package_manifest.package,
+            dependencies,
+            workspace: NO_WORKSPACE,
         }
     }
 }
