@@ -128,7 +128,7 @@ impl Publisher {
             }
             ManifestType::Workspace => {
                 if version.is_some() {
-                    tracing::warn!(":: version flag is ignored for workspace publishes");
+                    bail!(":: version flag is not supported for workspace publishing");
                 }
                 self.publish_workspace_from_manifest(manifest).await
             }
