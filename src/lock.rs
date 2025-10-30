@@ -174,7 +174,7 @@ impl Lockfile {
         }
     }
 
-    /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
+    /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
     pub async fn read_or_default() -> miette::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
@@ -183,7 +183,7 @@ impl Lockfile {
         }
     }
 
-    /// Loads the Lockfile from a specific path, if it exists, otherwise returns an empty one
+    /// Loads the Lockfile from a specific path, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
     pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
         if Lockfile::exists_at(&path).await? {
             Lockfile::read_from(path).await
