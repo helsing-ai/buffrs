@@ -862,10 +862,201 @@ impl From<LocalDependencyManifest> for DependencyManifest {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{package::PackageType, workspace::Workspace};
+    use semver::{Version, VersionReq};
+    use std::str::FromStr;
+
+    // ===== Edition Tests =====
+    mod edition_tests {
+        use super::*;
+
+        #[test]
+        fn edition_from_str_current_version() {
+            let edition = Edition::from(CANARY_EDITION);
+            assert_eq!(edition, Edition::Canary);
+        }
+
+        #[test]
+        fn edition_from_str_legacy_versions() {
+            assert_eq!(Edition::from("0.11"), Edition::Canary11);
+            assert_eq!(Edition::from("0.10"), Edition::Canary10);
+            assert_eq!(Edition::from("0.9"), Edition::Canary09);
+            assert_eq!(Edition::from("0.8"), Edition::Canary08);
+            assert_eq!(Edition::from("0.7"), Edition::Canary07);
+        }
+
+        #[test]
+        fn edition_from_str_unknown() {
+            assert_eq!(Edition::from("99.99"), Edition::Unknown);
+            assert_eq!(Edition::from("invalid"), Edition::Unknown);
+            assert_eq!(Edition::from(""), Edition::Unknown);
+        }
+
+        #[test]
+        fn edition_to_str() {
+            assert_eq!(<&str>::from(Edition::Canary), CANARY_EDITION);
+            assert_eq!(<&str>::from(Edition::Canary11), "0.11");
+            assert_eq!(<&str>::from(Edition::Canary10), "0.10");
+            assert_eq!(<&str>::from(Edition::Canary09), "0.9");
+            assert_eq!(<&str>::from(Edition::Canary08), "0.8");
+            assert_eq!(<&str>::from(Edition::Canary07), "0.7");
+            assert_eq!(<&str>::from(Edition::Unknown), "unknown");
+        }
+
+        #[test]
+        fn edition_latest() {
+            assert_eq!(Edition::latest(), Edition::Canary);
+        }
+    }
+
+    // ===== try_manifest_type Tests =====
+    mod manifest_type_tests {
+        use super::*;
+
+        #[test]
+        fn manifest_type_package() {
+            let deps = Some(vec![]);
+            let workspace = None;
+            let result = try_manifest_type(&deps, &workspace);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), ManifestType::Package);
+        }
+
+        #[test]
+        fn manifest_type_workspace() {
+            let deps = None;
+            let workspace = Some(Workspace {
+                members: vec!["pkg1".to_string()],
+                exclude: None,
+            });
+            let result = try_manifest_type(&deps, &workspace);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), ManifestType::Workspace);
+        }
+
+        #[test]
+        fn manifest_type_both_dependencies_and_workspace_errors() {
+            let deps = Some(vec![]);
+            let workspace = Some(Workspace {
+                members: vec!["pkg1".to_string()],
+                exclude: None,
+            });
+            let result = try_manifest_type(&deps, &workspace);
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(err_msg.contains("manifest") && err_msg.contains("invalid"));
+        }
+
+        #[test]
+        fn manifest_type_neither_dependencies_nor_workspace_errors() {
+            let deps = None;
+            let workspace = None;
+            let result = try_manifest_type(&deps, &workspace);
+            assert!(result.is_err());
+            let err_msg = result.unwrap_err().to_string();
+            assert!(err_msg.contains("manifest") && err_msg.contains("invalid"));
+        }
+    }
+
+    // ===== RawManifest Tests =====
     mod raw_manifest_tests {
-        use crate::manifest::BuffrsManifest;
-        use crate::manifest::RawManifest;
-        use std::str::FromStr;
+        use super::*;
+
+        #[test]
+        fn raw_manifest_accessors_canary() {
+            let pkg = PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::from_str("test").unwrap(),
+                version: Version::new(1, 0, 0),
+                description: None,
+            };
+
+            let raw = RawManifest::Canary {
+                package: Some(pkg.clone()),
+                dependencies: Some(HashMap::new()),
+                workspace: None,
+            };
+
+            assert_eq!(raw.package(), Some(&pkg));
+            assert_eq!(raw.dependencies(), Some(&HashMap::new()));
+            assert_eq!(raw.workspace(), None);
+            assert_eq!(raw.edition(), Edition::Canary);
+        }
+
+        #[test]
+        fn raw_manifest_accessors_unknown() {
+            let pkg = PackageManifest {
+                kind: PackageType::Api,
+                name: PackageName::from_str("test").unwrap(),
+                version: Version::new(1, 0, 0),
+                description: None,
+            };
+
+            let raw = RawManifest::Unknown {
+                package: Some(pkg.clone()),
+                dependencies: None,
+                workspace: None,
+            };
+
+            assert_eq!(raw.package(), Some(&pkg));
+            assert_eq!(raw.dependencies(), None);
+            assert_eq!(raw.edition(), Edition::Unknown);
+        }
+
+        #[test]
+        fn raw_manifest_dependencies_as_vec_empty() {
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: Some(HashMap::new()),
+                workspace: None,
+            };
+
+            assert_eq!(raw.dependencies_as_vec(), Some(vec![]));
+        }
+
+        #[test]
+        fn raw_manifest_dependencies_as_vec_with_deps() {
+            let mut deps = HashMap::new();
+            deps.insert(
+                PackageName::from_str("test-dep").unwrap(),
+                DependencyManifest::Remote(RemoteDependencyManifest {
+                    version: VersionReq::from_str("1.0.0").unwrap(),
+                    repository: "repo".to_string(),
+                    registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
+                }),
+            );
+
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: Some(deps),
+                workspace: None,
+            };
+
+            let vec_deps = raw.dependencies_as_vec().unwrap();
+            assert_eq!(vec_deps.len(), 1);
+            assert_eq!(
+                vec_deps[0].package,
+                PackageName::from_str("test-dep").unwrap()
+            );
+        }
+
+        #[test]
+        fn raw_manifest_from_str_valid() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let raw = RawManifest::from_str(toml).expect("should parse");
+            assert!(matches!(raw, RawManifest::Canary { .. }));
+        }
 
         #[test]
         fn test_cloned_manifest_convert_to_exact_same_string() {
@@ -890,151 +1081,811 @@ mod tests {
             assert_eq!(cloned_raw_manifest_str, raw_manifest_str);
         }
     }
-    mod manifest_tests {
-        use crate::manifest::Edition;
-        use crate::manifest::{BuffrsManifest, PackagesManifest};
-        use crate::package::PackageName;
-        use crate::registry::RegistryUri;
-        use std::str::FromStr;
+
+    // ===== PackagesManifest Tests =====
+    mod packages_manifest_tests {
+        use super::*;
 
         #[test]
-        fn invalid_mixed_manifest() {
-            let mixed_dep_and_workspace = r#"
-        [workspace]
+        fn packages_manifest_builder_defaults() {
+            let manifest = PackagesManifest::builder().dependencies(vec![]).build();
 
-        [dependencies]
-        "#;
-            let manifest = BuffrsManifest::from_str(mixed_dep_and_workspace);
-            assert!(manifest.is_err());
-            let report = manifest.err().unwrap();
-            println!("{}", report.to_string());
-            assert!(report.to_string().contains("missing field `members`"))
+            assert_eq!(manifest.edition, Edition::latest());
+            assert_eq!(manifest.package, None);
+            assert_eq!(manifest.dependencies, Some(vec![]));
         }
 
         #[test]
-        fn invalid_empty_manifest() {
-            let empty_manifest = "";
-            let manifest = BuffrsManifest::from_str(empty_manifest);
-            assert!(manifest.is_err());
+        fn packages_manifest_builder_full() {
+            let pkg = PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::from_str("test-pkg").unwrap(),
+                version: Version::new(1, 2, 3),
+                description: Some("A test package".to_string()),
+            };
+
+            let deps = vec![Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "repo".to_string(),
+                PackageName::from_str("dep").unwrap(),
+                VersionReq::from_str("1.0.0").unwrap(),
+            )];
+
+            let manifest = PackagesManifest::builder()
+                .edition(Edition::Canary11)
+                .package(pkg.clone())
+                .dependencies(deps.clone())
+                .build();
+
+            assert_eq!(manifest.edition, Edition::Canary11);
+            assert_eq!(manifest.package, Some(pkg));
+            assert_eq!(manifest.dependencies, Some(deps));
         }
 
         #[test]
-        fn manifest_parsing_ok() {
-            let manifest = r#"
-            edition = "0.12"
-
-            [package]
-            type = "lib"
-            name = "lib"
-            version = "0.0.1"
-
-            [dependencies]
-            "#;
-
-            let manifest = BuffrsManifest::from_str(manifest).expect("should be valid manifest");
-
-            assert!(matches!(manifest, BuffrsManifest::Package(_)));
+        fn get_dependency_package_names_empty() {
+            let manifest = PackagesManifest::builder().dependencies(vec![]).build();
+            assert_eq!(manifest.get_dependency_package_names(), vec![]);
         }
 
-        #[tokio::test]
-        async fn test_clone_with_different_dependencies() {
-            use crate::manifest::Dependency;
-            use semver::VersionReq;
-            use std::str::FromStr;
-
-            // Create original manifest with initial dependencies
-            let manifest = r#"
-            edition = "0.12"
-
-            [package]
-            type = "lib"
-            name = "test-package"
-            version = "1.0.0"
-
-            [dependencies.test-dependency]
-            version = "1.0.0"
-            registry = "https://registry.example.com"
-            repository = "original-repo"
-            "#;
-
-            let original_manifest = BuffrsManifest::from_str(manifest)
-                .expect("should be valid manifest")
-                .to_package_manifest()
-                .await
-                .expect("should be package manifest");
-
-            // Create new dependencies
-            let new_deps = vec![
+        #[test]
+        fn get_dependency_package_names_multiple() {
+            let deps = vec![
                 Dependency::new(
-                    RegistryUri::from_str("https://new-registry.example.com").unwrap(),
-                    "new-repo".to_string(),
-                    PackageName::from_str("new-dep-1").unwrap(),
-                    VersionReq::from_str("2.0.0").unwrap(),
+                    RegistryUri::from_str("https://registry.example.com").unwrap(),
+                    "repo".to_string(),
+                    PackageName::from_str("dep1").unwrap(),
+                    VersionReq::from_str("1.0.0").unwrap(),
                 ),
                 Dependency::new(
-                    RegistryUri::from_str("https://another-registry.example.com").unwrap(),
-                    "another-repo".to_string(),
-                    PackageName::from_str("new-dep-2").unwrap(),
-                    VersionReq::from_str("3.0.0").unwrap(),
+                    RegistryUri::from_str("https://registry.example.com").unwrap(),
+                    "repo".to_string(),
+                    PackageName::from_str("dep2").unwrap(),
+                    VersionReq::from_str("2.0.0").unwrap(),
                 ),
             ];
 
-            // Clone with different dependencies
-            let cloned_manifest =
-                original_manifest.clone_with_different_dependencies(new_deps.clone());
+            let manifest = PackagesManifest::builder().dependencies(deps).build();
+            let names = manifest.get_dependency_package_names();
 
-            // Verify the dependencies were replaced
-            assert_eq!(cloned_manifest.dependencies, Some(new_deps));
+            assert_eq!(names.len(), 2);
+            assert!(names.contains(&PackageName::from_str("dep1").unwrap()));
+            assert!(names.contains(&PackageName::from_str("dep2").unwrap()));
+        }
 
-            // Verify other fields remain unchanged
-            assert_eq!(cloned_manifest.edition, original_manifest.edition);
-            assert_eq!(cloned_manifest.package, original_manifest.package);
+        #[test]
+        fn get_dependency_package_names_none() {
+            let manifest = PackagesManifest {
+                edition: Edition::Canary,
+                package: None,
+                dependencies: None,
+            };
+            assert_eq!(manifest.get_dependency_package_names(), vec![]);
+        }
+
+        #[test]
+        fn clone_with_different_dependencies() {
+            let original = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Lib,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                })
+                .dependencies(vec![])
+                .build();
+
+            let new_deps = vec![Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "repo".to_string(),
+                PackageName::from_str("new-dep").unwrap(),
+                VersionReq::from_str("1.0.0").unwrap(),
+            )];
+
+            let cloned = original.clone_with_different_dependencies(new_deps.clone());
+
+            assert_eq!(cloned.dependencies, Some(new_deps));
+            assert_eq!(cloned.edition, original.edition);
+            assert_eq!(cloned.package, original.package);
+        }
+
+        #[test]
+        fn get_local_dependencies() {
+            let deps = vec![
+                Dependency {
+                    package: PackageName::from_str("remote").unwrap(),
+                    manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+                        version: VersionReq::from_str("1.0.0").unwrap(),
+                        repository: "repo".to_string(),
+                        registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
+                    }),
+                },
+                Dependency {
+                    package: PackageName::from_str("local").unwrap(),
+                    manifest: DependencyManifest::Local(LocalDependencyManifest {
+                        path: PathBuf::from("../local-pkg"),
+                    }),
+                },
+            ];
+
+            let manifest = PackagesManifest::builder().dependencies(deps).build();
+            let local_deps = manifest.get_local_dependencies();
+
+            assert_eq!(local_deps.len(), 1);
+            assert_eq!(
+                local_deps[0].package,
+                PackageName::from_str("local").unwrap()
+            );
+        }
+
+        #[test]
+        fn get_remote_dependencies() {
+            let deps = vec![
+                Dependency {
+                    package: PackageName::from_str("remote").unwrap(),
+                    manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+                        version: VersionReq::from_str("1.0.0").unwrap(),
+                        repository: "repo".to_string(),
+                        registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
+                    }),
+                },
+                Dependency {
+                    package: PackageName::from_str("local").unwrap(),
+                    manifest: DependencyManifest::Local(LocalDependencyManifest {
+                        path: PathBuf::from("../local-pkg"),
+                    }),
+                },
+            ];
+
+            let manifest = PackagesManifest::builder().dependencies(deps).build();
+            let remote_deps = manifest.get_remote_dependencies();
+
+            assert_eq!(remote_deps.len(), 1);
+            assert_eq!(
+                remote_deps[0].package,
+                PackageName::from_str("remote").unwrap()
+            );
+        }
+
+        #[test]
+        fn packages_manifest_from_str_valid() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            assert_eq!(manifest.edition, Edition::Canary);
+            assert!(manifest.package.is_some());
+        }
+
+        #[test]
+        fn packages_manifest_from_str_with_dependencies() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies.example]
+                version = "1.0.0"
+                registry = "https://registry.example.com"
+                repository = "my-repo"
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            assert_eq!(manifest.dependencies.as_ref().unwrap().len(), 1);
+        }
+
+        #[test]
+        fn packages_manifest_to_raw_manifest() {
+            let manifest = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Lib,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                })
+                .dependencies(vec![])
+                .build();
+
+            let raw: RawManifest = manifest.into();
+            assert!(matches!(raw, RawManifest::Canary { .. }));
+            assert!(raw.package().is_some());
+            assert_eq!(raw.workspace(), None);
+        }
+
+        #[test]
+        fn packages_manifest_roundtrip() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let serialized: String = manifest.try_into().expect("should serialize");
+
+            assert!(serialized.contains("edition"));
+            assert!(serialized.contains("[package]"));
+            assert!(serialized.contains("test"));
+        }
+    }
+
+    // ===== WorkspaceManifest Tests =====
+    mod workspace_manifest_tests {
+        use super::*;
+
+        #[test]
+        fn workspace_manifest_builder() {
+            let workspace = Workspace {
+                members: vec!["pkg1".to_string(), "pkg2".to_string()],
+                exclude: Some(vec!["internal".to_string()]),
+            };
+
+            let manifest = WorkspaceManifest::builder()
+                .workspace(workspace.clone())
+                .build();
+
+            assert_eq!(manifest.workspace, workspace);
+        }
+
+        #[test]
+        fn workspace_manifest_from_str() {
+            let toml = r#"
+                [workspace]
+                members = ["pkg1", "pkg2"]
+            "#;
+
+            let manifest = WorkspaceManifest::from_str(toml).expect("should parse");
+            assert_eq!(manifest.workspace.members, vec!["pkg1", "pkg2"]);
+        }
+
+        #[test]
+        fn workspace_manifest_from_str_with_exclude() {
+            let toml = r#"
+                [workspace]
+                members = ["packages/*"]
+                exclude = ["packages/internal"]
+            "#;
+
+            let manifest = WorkspaceManifest::from_str(toml).expect("should parse");
+            assert_eq!(manifest.workspace.members, vec!["packages/*"]);
+            assert_eq!(
+                manifest.workspace.exclude,
+                Some(vec!["packages/internal".to_string()])
+            );
+        }
+
+        #[test]
+        fn workspace_manifest_to_raw_manifest() {
+            let workspace = Workspace {
+                members: vec!["pkg1".to_string()],
+                exclude: None,
+            };
+
+            let manifest = WorkspaceManifest::builder().workspace(workspace).build();
+            let raw: RawManifest = manifest.into();
+
+            assert!(matches!(raw, RawManifest::Canary { .. }));
+            assert!(raw.workspace().is_some());
+            assert_eq!(raw.package(), None);
+            assert_eq!(raw.dependencies(), None);
         }
 
         #[test]
         fn workspace_manifest_roundtrip() {
-            let manifest_str = r#"
-            [workspace]
-            members = ["pkg1", "pkg2"]
+            let toml = r#"
+                [workspace]
+                members = ["pkg1", "pkg2"]
             "#;
 
-            let manifest = BuffrsManifest::from_str(manifest_str).expect("should parse");
-
+            let manifest = WorkspaceManifest::from_str(toml).expect("should parse");
             let serialized: String = manifest.try_into().expect("should serialize");
+
+            assert!(serialized.contains("[workspace]"));
+            assert!(serialized.contains("pkg1"));
+            assert!(serialized.contains("pkg2"));
+        }
+
+        #[test]
+        fn workspace_manifest_try_from_raw_missing_workspace_errors() {
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: Some(HashMap::new()),
+                workspace: None,
+            };
+
+            let result = WorkspaceManifest::try_from(raw);
+            assert!(result.is_err());
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("no workspace manifest")
+            );
+        }
+    }
+
+    // ===== BuffrsManifest Tests =====
+    mod buffrs_manifest_tests {
+        use super::*;
+
+        #[test]
+        fn buffrs_manifest_package_from_str() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            assert!(matches!(manifest, BuffrsManifest::Package(_)));
+        }
+
+        #[test]
+        fn buffrs_manifest_workspace_from_str() {
+            let toml = r#"
+                [workspace]
+                members = ["pkg1"]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            assert!(matches!(manifest, BuffrsManifest::Workspace(_)));
+        }
+
+        #[test]
+        fn buffrs_manifest_invalid_mixed() {
+            let toml = r#"
+                [workspace]
+                members = ["pkg1"]
+
+                [dependencies]
+            "#;
+
+            let result = BuffrsManifest::from_str(toml);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn buffrs_manifest_invalid_empty() {
+            let result = BuffrsManifest::from_str("");
+            assert!(result.is_err());
+        }
+
+        #[tokio::test]
+        async fn buffrs_manifest_to_package_manifest_success() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let result = manifest.to_package_manifest().await;
+            assert!(result.is_ok());
+        }
+
+        #[tokio::test]
+        async fn buffrs_manifest_to_package_manifest_fails_for_workspace() {
+            let toml = r#"
+                [workspace]
+                members = ["pkg1"]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let result = manifest.to_package_manifest().await;
+            assert!(result.is_err());
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("packages manifest is required")
+            );
+        }
+
+        #[test]
+        fn buffrs_manifest_roundtrip_package() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let serialized: String = manifest.try_into().expect("should serialize");
+
+            assert!(serialized.contains("edition"));
+            assert!(serialized.contains("[package]"));
+        }
+
+        #[test]
+        fn buffrs_manifest_roundtrip_workspace() {
+            let toml = r#"
+                [workspace]
+                members = ["pkg1", "pkg2"]
+            "#;
+
+            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let serialized: String = manifest.try_into().expect("should serialize");
+
             assert!(serialized.contains("[workspace]"));
         }
 
         #[test]
-        fn unknown_edition_parsed_rejected() {
-            let manifest_str = r#"
-            edition = "99.99"
+        fn unknown_edition_rejected() {
+            let toml = r#"
+                edition = "99.99"
 
-            [package]
-            type = "lib"
-            name = "test"
-            version = "0.0.1"
+                [package]
+                type = "lib"
+                name = "test"
+                version = "0.0.1"
 
-            [dependencies]
+                [dependencies]
             "#;
 
-            let result = PackagesManifest::from_str(manifest_str);
-
+            let result = PackagesManifest::from_str(toml);
             assert!(result.is_err());
         }
 
         #[test]
         fn manifest_without_edition_becomes_unknown() {
-            let manifest_str = r#"
-            [package]
-            type = "lib"
-            name = "test"
-            version = "0.0.1"
+            let toml = r#"
+                [package]
+                type = "lib"
+                name = "test"
+                version = "0.0.1"
 
-            [dependencies]
+                [dependencies]
             "#;
 
-            let manifest = PackagesManifest::from_str(manifest_str).expect("should parse");
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
             assert_eq!(manifest.edition, Edition::Unknown);
+        }
+    }
+
+    // ===== Dependency Tests =====
+    mod dependency_tests {
+        use super::*;
+
+        #[test]
+        fn dependency_new() {
+            let dep = Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "my-repo".to_string(),
+                PackageName::from_str("test-pkg").unwrap(),
+                VersionReq::from_str("1.2.3").unwrap(),
+            );
+
+            assert_eq!(dep.package, PackageName::from_str("test-pkg").unwrap());
+            match dep.manifest {
+                DependencyManifest::Remote(ref remote) => {
+                    assert_eq!(remote.repository, "my-repo");
+                    assert_eq!(
+                        remote.registry,
+                        RegistryUri::from_str("https://registry.example.com").unwrap()
+                    );
+                }
+                _ => panic!("Expected remote dependency"),
+            }
+        }
+
+        #[test]
+        fn dependency_with_version() {
+            let dep = Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "repo".to_string(),
+                PackageName::from_str("test").unwrap(),
+                VersionReq::from_str("1.0.0").unwrap(),
+            );
+
+            let pinned = dep.with_version(&Version::new(2, 3, 4));
+
+            match pinned.manifest {
+                DependencyManifest::Remote(ref remote) => {
+                    assert_eq!(remote.version.to_string(), "=2.3.4");
+                }
+                _ => panic!("Expected remote dependency"),
+            }
+        }
+
+        #[test]
+        fn dependency_with_version_prerelease() {
+            let dep = Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "repo".to_string(),
+                PackageName::from_str("test").unwrap(),
+                VersionReq::from_str("1.0.0").unwrap(),
+            );
+
+            let mut version = Version::new(1, 0, 0);
+            version.pre = semver::Prerelease::new("alpha.1").unwrap();
+
+            let pinned = dep.with_version(&version);
+
+            match pinned.manifest {
+                DependencyManifest::Remote(ref remote) => {
+                    assert_eq!(remote.version.to_string(), "=1.0.0-alpha.1");
+                }
+                _ => panic!("Expected remote dependency"),
+            }
+        }
+
+        #[test]
+        fn dependency_with_version_local_unchanged() {
+            let dep = Dependency {
+                package: PackageName::from_str("test").unwrap(),
+                manifest: DependencyManifest::Local(LocalDependencyManifest {
+                    path: PathBuf::from("../test"),
+                }),
+            };
+
+            let cloned = dep.with_version(&Version::new(1, 0, 0));
+            assert_eq!(dep, cloned);
+        }
+
+        #[test]
+        fn dependency_display_remote() {
+            let dep = Dependency::new(
+                RegistryUri::from_str("https://registry.example.com").unwrap(),
+                "my-repo".to_string(),
+                PackageName::from_str("test-pkg").unwrap(),
+                VersionReq::from_str("1.2.3").unwrap(),
+            );
+
+            let display = format!("{}", dep);
+            assert!(display.contains("my-repo"));
+            assert!(display.contains("test-pkg"));
+            assert!(display.contains("1.2.3"));
+        }
+
+        #[test]
+        fn dependency_display_local() {
+            let dep = Dependency {
+                package: PackageName::from_str("local-pkg").unwrap(),
+                manifest: DependencyManifest::Local(LocalDependencyManifest {
+                    path: PathBuf::from("../local-pkg"),
+                }),
+            };
+
+            let display = format!("{}", dep);
+            assert!(display.contains("local-pkg"));
+            assert!(display.contains("local-pkg")); // path contains name
+        }
+
+        #[test]
+        fn dependency_manifest_is_local() {
+            let local = DependencyManifest::Local(LocalDependencyManifest {
+                path: PathBuf::from("../test"),
+            });
+            assert!(local.is_local());
+
+            let remote = DependencyManifest::Remote(RemoteDependencyManifest {
+                version: VersionReq::from_str("1.0.0").unwrap(),
+                repository: "repo".to_string(),
+                registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
+            });
+            assert!(!remote.is_local());
+        }
+    }
+
+    // ===== Serialization/Deserialization Edge Cases =====
+    mod serialization_tests {
+        use super::*;
+
+        #[test]
+        fn serialize_package_manifest_with_description() {
+            let manifest = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Api,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: Some("Test description".to_string()),
+                })
+                .dependencies(vec![])
+                .build();
+
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(serialized.contains("Test description"));
+        }
+
+        #[test]
+        fn deserialize_manifest_with_local_dependency() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies.local-dep]
+                path = "../local-dep"
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let deps = manifest.dependencies.unwrap();
+            assert_eq!(deps.len(), 1);
+            assert!(deps[0].manifest.is_local());
+        }
+
+        #[test]
+        fn deserialize_manifest_multiple_dependencies() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies.dep1]
+                version = "1.0.0"
+                registry = "https://registry.example.com"
+                repository = "repo1"
+
+                [dependencies.dep2]
+                path = "../local"
+
+                [dependencies.dep3]
+                version = "2.0.0"
+                registry = "https://other-registry.example.com"
+                repository = "repo2"
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let deps = manifest.dependencies.unwrap();
+            assert_eq!(deps.len(), 3);
+        }
+
+        #[test]
+        fn upgrade_unknown_to_canary_on_write() {
+            let toml = r#"
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            assert_eq!(manifest.edition, Edition::Unknown);
+
+            let serialized: String = manifest.try_into().expect("should serialize");
+            // When written, Unknown gets upgraded to Canary
+            assert!(serialized.contains("edition"));
+        }
+
+        #[test]
+        fn deserialize_invalid_toml() {
+            let invalid_toml = "this is not valid toml {]";
+            let result = PackagesManifest::from_str(invalid_toml);
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn deserialize_missing_required_package_fields() {
+            let toml = r#"
+                edition = "0.12"
+
+                [package]
+                name = "test"
+
+                [dependencies]
+            "#;
+
+            let result = PackagesManifest::from_str(toml);
+            assert!(result.is_err());
+        }
+    }
+
+    // ===== Integration Tests =====
+    mod integration_tests {
+        use super::*;
+
+        #[test]
+        fn complex_package_manifest_full_cycle() {
+            // Create a complex manifest with multiple dependencies
+            let pkg = PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::from_str("complex-package").unwrap(),
+                version: Version::new(2, 1, 0),
+                description: Some("A complex test package".to_string()),
+            };
+
+            let deps = vec![
+                Dependency::new(
+                    RegistryUri::from_str("https://registry1.example.com").unwrap(),
+                    "repo1".to_string(),
+                    PackageName::from_str("remote-dep-1").unwrap(),
+                    VersionReq::from_str("1.0.0").unwrap(),
+                ),
+                Dependency {
+                    package: PackageName::from_str("local-dep").unwrap(),
+                    manifest: DependencyManifest::Local(LocalDependencyManifest {
+                        path: PathBuf::from("../local"),
+                    }),
+                },
+                Dependency::new(
+                    RegistryUri::from_str("https://registry2.example.com").unwrap(),
+                    "repo2".to_string(),
+                    PackageName::from_str("remote-dep-2").unwrap(),
+                    VersionReq::from_str("2.3.4").unwrap(),
+                ),
+            ];
+
+            let manifest = PackagesManifest::builder()
+                .edition(Edition::Canary)
+                .package(pkg.clone())
+                .dependencies(deps.clone())
+                .build();
+
+            // Convert to string
+            let serialized: String = manifest.clone().try_into().expect("should serialize");
+
+            // Parse back
+            let parsed = PackagesManifest::from_str(&serialized).expect("should parse");
+
+            // Verify roundtrip
+            assert_eq!(parsed.edition, manifest.edition);
+            assert_eq!(parsed.package, manifest.package);
+            assert_eq!(parsed.dependencies.as_ref().unwrap().len(), 3);
+
+            // Verify dependencies are correct types
+            let local_deps = parsed.get_local_dependencies();
+            let remote_deps = parsed.get_remote_dependencies();
+            assert_eq!(local_deps.len(), 1);
+            assert_eq!(remote_deps.len(), 2);
+        }
+
+        #[test]
+        fn workspace_manifest_full_cycle() {
+            let workspace = Workspace {
+                members: vec!["packages/*".to_string(), "special-package".to_string()],
+                exclude: Some(vec!["packages/internal*".to_string()]),
+            };
+
+            let manifest = WorkspaceManifest::builder().workspace(workspace).build();
+
+            // Convert to string
+            let serialized: String = manifest.clone().try_into().expect("should serialize");
+
+            // Parse back
+            let parsed = WorkspaceManifest::from_str(&serialized).expect("should parse");
+
+            // Verify roundtrip
+            assert_eq!(parsed.workspace.members, manifest.workspace.members);
+            assert_eq!(parsed.workspace.exclude, manifest.workspace.exclude);
         }
     }
 }
