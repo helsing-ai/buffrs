@@ -20,8 +20,10 @@ use std::{
 
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::{fs, io};
+use tokio::{
+    io::{AsyncBufReadExt, BufReader, stdin},
+    fs,
+};
 
 use crate::{
     credentials::Credentials,
@@ -420,7 +422,7 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
 
     let token = {
         let mut raw = String::new();
-        let mut reader = BufReader::new(io::stdin());
+        let mut reader = BufReader::new(stdin());
 
         reader
             .read_line(&mut raw)
