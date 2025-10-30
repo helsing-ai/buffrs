@@ -24,13 +24,13 @@ use miette::{Context, IntoDiagnostic, bail, miette};
 use semver::Version;
 use tokio::fs;
 
-use super::store::Entry;
 use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
     manifest::{self, Edition, MANIFEST_FILE, PackagesManifest},
     package::PackageName,
+    package::store::Entry,
     registry::RegistryUri,
 };
 

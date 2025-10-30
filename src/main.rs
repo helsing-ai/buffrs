@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use clap::{Parser, Subcommand};
+use miette::{WrapErr, miette};
+use semver::Version;
+
 use buffrs::{
     command,
     manifest::{BuffrsManifest, MANIFEST_FILE},
@@ -19,9 +23,6 @@ use buffrs::{
     package::{PackageName, PackageStore},
     registry::RegistryUri,
 };
-use clap::{Parser, Subcommand};
-use miette::{WrapErr, miette};
-use semver::Version;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]

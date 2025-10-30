@@ -18,6 +18,11 @@ use std::{
     str::FromStr,
 };
 
+use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
+use semver::{Version, VersionReq};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::{fs, io};
+
 use crate::{
     credentials::Credentials,
     lock::Lockfile,
@@ -30,10 +35,6 @@ use crate::{
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
-use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
-use semver::{Version, VersionReq};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::{fs, io};
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
 const BUFFRS_TESTSUITE_VAR: &str = "BUFFRS_TESTSUITE";

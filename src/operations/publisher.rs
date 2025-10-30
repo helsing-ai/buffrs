@@ -10,14 +10,16 @@ use std::str::FromStr;
 use miette::{Context as _, IntoDiagnostic, bail, miette};
 use semver::{Version, VersionReq};
 
-use crate::credentials::Credentials;
-use crate::manifest::{
-    BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
-    PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
+use crate::{
+    credentials::Credentials,
+    manifest::{
+        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
+    },
+    package::PackageStore,
+    registry::{Artifactory, RegistryUri},
+    resolver::{DependencyGraph, DependencySource},
 };
-use crate::package::PackageStore;
-use crate::registry::{Artifactory, RegistryUri};
-use crate::resolver::{DependencyGraph, DependencySource};
 
 /// Handles publishing of local packages to a registry
 pub struct Publisher {
