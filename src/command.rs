@@ -21,8 +21,8 @@ use std::{
 use miette::{Context as _, IntoDiagnostic, bail, ensure, miette};
 use semver::{Version, VersionReq};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader, stdin},
     fs,
+    io::{AsyncBufReadExt, BufReader, stdin},
 };
 
 use crate::{
