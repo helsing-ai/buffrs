@@ -554,7 +554,7 @@ impl PackagesManifest {
     }
 
     /// Clones the Manifest but replaces the dependencies with a given Vec
-    pub fn clone_with_different_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
+    pub fn with_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
         Self {
             dependencies: Some(dependencies),
             ..self.clone()
@@ -1182,7 +1182,7 @@ mod tests {
                 VersionReq::from_str("1.0.0").unwrap(),
             )];
 
-            let cloned = original.clone_with_different_dependencies(new_deps.clone());
+            let cloned = original.with_dependencies(new_deps.clone());
 
             assert_eq!(cloned.dependencies, Some(new_deps));
             assert_eq!(cloned.edition, original.edition);

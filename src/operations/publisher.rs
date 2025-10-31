@@ -556,7 +556,9 @@ mod tests {
         let publisher = create_test_publisher();
         let base_path = PathBuf::from("/project");
 
-        let manifest = PackagesManifest::builder().dependencies(Default::default()).build();
+        let manifest = PackagesManifest::builder()
+            .dependencies(Default::default())
+            .build();
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
