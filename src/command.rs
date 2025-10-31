@@ -253,12 +253,12 @@ pub async fn package(
     let mut manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
     let store = PackageStore::current().await?;
 
-    if let Some(version) = version {
-        if let Some(ref mut package) = manifest.package {
-            tracing::info!(":: modified version in published manifest to {version}");
+    if let Some(version) = version
+        && let Some(ref mut package) = manifest.package
+    {
+        tracing::info!(":: modified version in published manifest to {version}");
 
-            package.version = version;
-        }
+        package.version = version;
     }
 
     if let Some(ref pkg) = manifest.package {

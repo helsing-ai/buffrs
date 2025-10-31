@@ -65,13 +65,12 @@ impl Workspace {
                         .wrap_err_with(|| miette!("failed to read directory entry"))?;
 
                     let path = entry.path();
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if path.is_dir()
-                            && pattern_matcher.matches(name)
-                            && path.join(MANIFEST_FILE).exists()
-                        {
-                            resolved_members.insert(PathBuf::from(name));
-                        }
+                    if path.is_dir()
+                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && pattern_matcher.matches(name)
+                        && path.join(MANIFEST_FILE).exists()
+                    {
+                        resolved_members.insert(PathBuf::from(name));
                     }
                 }
             } else {

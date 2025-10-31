@@ -317,8 +317,8 @@ impl<'a> GraphBuilder<'a> {
         package_type: Option<PackageType>,
     ) -> miette::Result<()> {
         // Validate package type constraint
-        if matches!(parent_type, Some(PackageType::Lib))
-            && matches!(package_type, Some(PackageType::Api))
+        if let Some(PackageType::Lib) = parent_type
+            && let Some(PackageType::Api) = package_type
         {
             bail!(DependencyError::InvalidPackageTypeDependency {
                 parent: PackageName::unchecked("parent"),
