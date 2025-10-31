@@ -28,18 +28,17 @@ use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, MANIFEST_FILE, Manifest},
+    manifest::{self, Edition, MANIFEST_FILE, PackagesManifest},
     package::PackageName,
+    package::store::Entry,
     registry::RegistryUri,
 };
-
-use super::store::Entry;
 
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
     /// Manifest of the package
-    pub manifest: Manifest,
+    pub manifest: PackagesManifest,
     /// The `tar.gz` archive containing the protocol buffers
     pub tgz: Bytes,
 }
@@ -50,23 +49,16 @@ impl Package {
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
     pub fn create(
-        mut manifest: Manifest,
+        manifest: PackagesManifest,
         files: BTreeMap<PathBuf, Entry>,
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
             // Upgrade unknown edition to latest
-            let mut builder = Manifest::builder();
-            if let Some(pkg) = manifest.package {
-                builder = builder.package(pkg);
+            let builder = PackagesManifest::builder();
+            if let Some(pkg) = manifest.clone().package {
+                builder.package(pkg);
             }
-            manifest = match (manifest.dependencies, manifest.workspace) {
-                (Some(deps), None) => builder.dependencies(deps).build(),
-                (None, Some(ws)) => builder.workspace(ws).build(),
-                _ => {
-                    bail!("manifest must have either dependencies or workspace")
-                }
-            };
         }
 
         if manifest.package.is_none() {

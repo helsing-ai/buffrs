@@ -12,7 +12,10 @@ use thiserror::Error;
 
 use crate::{
     credentials::Credentials,
-    manifest::{Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest},
+    manifest::{
+        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        PackagesManifest,
+    },
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -73,7 +76,7 @@ impl DependencyGraph {
     ///
     /// Downloads remote packages to discover their transitive dependencies
     pub async fn build(
-        manifest: &Manifest,
+        manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
     ) -> miette::Result<Self> {
@@ -270,7 +273,7 @@ impl<'a> GraphBuilder<'a> {
         let resolved_path = self.base_path.join(&local_manifest.path);
         let manifest_path = resolved_path.join(MANIFEST_FILE);
 
-        let manifest = Manifest::try_read_from(&manifest_path).await?;
+        let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;

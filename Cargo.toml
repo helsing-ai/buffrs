@@ -44,6 +44,7 @@ git = []
 
 [dependencies]
 async-recursion = "1.0.5"
+async-trait = "0.1.89"
 anyhow = { version = "1.0", optional = true }
 bytes = "1.0"
 clap = { version = "4.3", features = ["cargo", "derive"] }

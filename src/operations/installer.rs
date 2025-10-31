@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use miette::{Context as _, IntoDiagnostic, ensure, miette};
+use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
 
 use crate::{
@@ -13,8 +13,8 @@ use crate::{
     credentials::Credentials,
     lock::{LOCKFILE, Lockfile},
     manifest::{
-        Dependency, DependencyManifest, MANIFEST_FILE, Manifest, ManifestType,
-        RemoteDependencyManifest,
+        BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
+        RemoteDependencyManifest, WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
@@ -49,40 +49,39 @@ impl Installer {
     /// Behavior depends on the manifest type:
     /// - **Package**: Installs dependencies listed in the `[dependencies]` section
     /// - **Workspace**: Installs dependencies for all workspace members
-    pub async fn install(&self, manifest: &Manifest) -> miette::Result<()> {
-        match manifest.manifest_type {
-            ManifestType::Package => {
+    pub async fn install(&self, manifest: &BuffrsManifest) -> miette::Result<()> {
+        match manifest {
+            BuffrsManifest::Package(packages_manifest) => {
                 let lockfile = Lockfile::read_or_default().await?;
                 let store = PackageStore::current().await?;
                 let current_path = env::current_dir()
                     .into_diagnostic()
                     .wrap_err("current dir could not be retrieved")?;
 
-                self.install_package(manifest, &lockfile, &store, &current_path)
+                self.install_package(packages_manifest, &lockfile, &store, &current_path)
                     .await
             }
-            ManifestType::Workspace => self.install_workspace(manifest).await,
+            BuffrsManifest::Workspace(workspace_manifest) => {
+                self.install_workspace(workspace_manifest).await
+            }
         }
     }
 
     /// Installs dependencies for a workspace
-    async fn install_workspace(&self, manifest: &Manifest) -> miette::Result<()> {
+    async fn install_workspace(&self, manifest: &WorkspaceManifest) -> miette::Result<()> {
         let root_path = env::current_dir()
             .into_diagnostic()
             .wrap_err("current dir could not be retrieved")?;
-        let workspace = manifest.workspace.as_ref().ok_or_else(|| {
-            miette!(
-                "buffers install for workspaces executed on manifest that does not define a workspace."
-            )
-        })?;
-        let packages = workspace.resolve_members(root_path)?;
+
+        let packages = manifest.workspace.resolve_members(root_path)?;
         tracing::info!(
             ":: workspace found. running install for {} packages in workspace",
             packages.len()
         );
 
         for package in packages {
-            let pkg_manifest = Manifest::try_read_from(package.join(MANIFEST_FILE)).await?;
+            let pkg_manifest =
+                BuffrsManifest::require_package_manifest(&package.join(MANIFEST_FILE)).await?;
             let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
             let store = PackageStore::open(&package).await?;
 
@@ -97,7 +96,7 @@ impl Installer {
     /// Installs dependencies of a package
     async fn install_package(
         &self,
-        manifest: &Manifest,
+        manifest: &PackagesManifest,
         lockfile: &Lockfile,
         store: &PackageStore,
         package_path: &PathBuf,
@@ -164,7 +163,8 @@ impl Installer {
 
     /// Installs a local dependency
     async fn install_local_dependency(&self, path: &Path) -> miette::Result<Package> {
-        let dep_manifest = Manifest::try_read_from(path.join(MANIFEST_FILE)).await?;
+        let dep_manifest =
+            BuffrsManifest::require_package_manifest(&path.join(MANIFEST_FILE)).await?;
         let dep_store = PackageStore::open(path).await?;
         dep_store.release(&dep_manifest, self.preserve_mtime).await
     }
@@ -254,6 +254,7 @@ impl Installer {
 mod tests {
     use super::*;
     use crate::lock::LockedPackage;
+    use crate::manifest::GenericManifest;
     use crate::manifest::PackageManifest;
     use crate::package::PackageType;
     use semver::Version;
@@ -388,7 +389,7 @@ mod tests {
         fs::create_dir_all(&dep_dir).await.unwrap();
 
         // Create a minimal manifest for the local dependency
-        let manifest = Manifest::builder()
+        let manifest = PackagesManifest::builder()
             .package(PackageManifest {
                 kind: PackageType::Lib,
                 name: PackageName::unchecked("local-lib"),
@@ -427,7 +428,7 @@ mod tests {
         let dep_dir = temp_dir.path().join("local-dep");
         fs::create_dir_all(&dep_dir).await.unwrap();
 
-        let manifest = Manifest::builder()
+        let manifest = PackagesManifest::builder()
             .package(PackageManifest {
                 kind: PackageType::Lib,
                 name: PackageName::unchecked("local-lib"),
