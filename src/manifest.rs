@@ -1073,9 +1073,9 @@ mod tests {
 
             let manifest = BuffrsManifest::from_str(manifest).expect("should be valid manifest");
             let cloned_raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
-                .expect("should be convertable to str");
+                .expect("should be convertible to str");
             let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
-                .expect("should be convertable to str");
+                .expect("should be convertible to str");
 
             assert!(cloned_raw_manifest_str.contains("edition"));
             assert_eq!(cloned_raw_manifest_str, raw_manifest_str);
