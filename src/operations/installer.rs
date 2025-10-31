@@ -191,19 +191,19 @@ impl Installer {
             );
 
             // Try to retrieve from cache if version matches lockfile
-            if version.matches(&locked_entry.version)
-                && let Some(cached_pkg) = self.cache.get(locked_entry.into()).await?
-            {
-                // Validate the cached package digest
-                locked_entry.validate(&cached_pkg)?;
+            if version.matches(&locked_entry.version) {
+                if let Some(cached_pkg) = self.cache.get(locked_entry.into()).await? {
+                    // Validate the cached package digest
+                    locked_entry.validate(&cached_pkg)?;
 
-                tracing::debug!(
-                    ":: using cached package for {}@{}",
-                    package_name,
-                    cached_pkg.version()
-                );
+                    tracing::debug!(
+                        ":: using cached package for {}@{}",
+                        package_name,
+                        cached_pkg.version()
+                    );
 
-                resolved_package = Some(cached_pkg);
+                    resolved_package = Some(cached_pkg);
+                }
             }
         }
 

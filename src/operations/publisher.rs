@@ -148,11 +148,11 @@ impl Publisher {
         let mut root_manifest = manifest.clone();
         let store = PackageStore::current().await?;
 
-        if let Some(version) = version
-            && let Some(ref mut package) = root_manifest.package
-        {
-            tracing::info!(":: modified version in published manifest to {version}");
-            package.version = version;
+        if let Some(version) = version {
+            if let Some(ref mut package) = root_manifest.package {
+                tracing::info!(":: modified version in published manifest to {version}");
+                package.version = version;
+            }
         }
 
         // Build dependency graph

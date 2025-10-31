@@ -240,34 +240,35 @@ impl Artifactory {
 
         // 404 gets wrapped into a DiagnosticError(reqwest::Error(404))
         // so we need to make sure it's OK before unwrapping
-        if let Ok(ValidatedResponse(response)) = response
-            && response.status().is_success()
-        {
-            // compare hash to make sure the file in the registry is the same
-            let alg = DigestAlgorithm::SHA256;
-            let package_hash = alg.digest(&package.tgz);
-            let expected_hash = alg.digest(&response.bytes().await.into_diagnostic().wrap_err(
-                miette!("unexpected error: failed to read the bytes back from artifactory"),
-            )?);
-            if package_hash == expected_hash {
-                tracing::info!(
-                    ":: {}/{}@{} is already published, skipping",
-                    repository,
-                    package.name(),
-                    package.version()
-                );
-                return Ok(());
-            } else {
-                tracing::error!(
-                    %package_hash,
-                    %expected_hash,
-                    package = %package.name(),
-                    "publishing failed, hash mismatch"
-                );
-                return Err(miette!(
-                    "unable to publish {} to artifactory: package is already published with a different hash",
-                    package.name()
-                ));
+        if let Ok(ValidatedResponse(response)) = response {
+            if response.status().is_success() {
+                // compare hash to make sure the file in the registry is the same
+                let alg = DigestAlgorithm::SHA256;
+                let package_hash = alg.digest(&package.tgz);
+                let expected_hash =
+                    alg.digest(&response.bytes().await.into_diagnostic().wrap_err(miette!(
+                        "unexpected error: failed to read the bytes back from artifactory"
+                    ))?);
+                if package_hash == expected_hash {
+                    tracing::info!(
+                        ":: {}/{}@{} is already published, skipping",
+                        repository,
+                        package.name(),
+                        package.version()
+                    );
+                    return Ok(());
+                } else {
+                    tracing::error!(
+                        %package_hash,
+                        %expected_hash,
+                        package = %package.name(),
+                        "publishing failed, hash mismatch"
+                    );
+                    return Err(miette!(
+                        "unable to publish {} to artifactory: package is already published with a different hash",
+                        package.name()
+                    ));
+                }
             }
         }
 
