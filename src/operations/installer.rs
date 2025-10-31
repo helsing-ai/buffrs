@@ -278,7 +278,7 @@ mod tests {
             digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
                 .parse()
                 .unwrap(),
-            dependencies: vec![],
+            dependencies: Default::default(),
             dependants: 1,
         };
         Lockfile::from_iter(vec![locked_pkg])
@@ -396,7 +396,7 @@ mod tests {
                 version: Version::new(1, 0, 0),
                 description: None,
             })
-            .dependencies(vec![])
+            .dependencies(Default::default())
             .build();
 
         manifest.write_at(&dep_dir).await.unwrap();
@@ -435,7 +435,7 @@ mod tests {
                 version: Version::new(1, 0, 0),
                 description: None,
             })
-            .dependencies(vec![])
+            .dependencies(Default::default())
             .build();
 
         manifest.write_at(&dep_dir).await.unwrap();

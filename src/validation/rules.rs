@@ -66,17 +66,17 @@ pub trait Rule: Debug {
 
     /// Check [`Packages`] for violations.
     fn check_packages(&mut self, _packages: &Packages) -> Violations {
-        vec![]
+        Default::default()
     }
 
     /// Check [`Package`] for violations.
     fn check_package(&mut self, _package: &Package) -> Violations {
-        vec![]
+        Default::default()
     }
 
     /// Check [`Entity`] for violations.
     fn check_entity(&mut self, _name: &str, _entity: &Entity) -> Violations {
-        vec![]
+        Default::default()
     }
 }
 

@@ -14,6 +14,17 @@ use buffrs::{
 use semver::{Version, VersionReq};
 use tempfile::TempDir;
 
+/// Helper to get full error chain as a string for testing
+fn error_chain_to_string(error: &miette::Report) -> String {
+    let mut chain = vec![error.to_string()];
+    let mut source = error.source();
+    while let Some(err) = source {
+        chain.push(err.to_string());
+        source = err.source();
+    }
+    chain.join("\n")
+}
+
 fn create_test_manifest(
     name: &str,
     package_type: PackageType,
@@ -205,7 +216,8 @@ async fn test_lib_cannot_depend_on_api() {
         DependencyGraph::build(&lib_manifest, &temp_dir.path().to_path_buf(), &credentials).await;
 
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let err = result.unwrap_err();
+    let err_msg = error_chain_to_string(&err);
     assert!(
         err_msg.contains("lib cannot depend") || err_msg.contains("InvalidPackageTypeDependency"),
         "Error message should mention lib/api restriction, got: {}",
@@ -309,7 +321,8 @@ async fn test_circular_dependency_direct() {
     let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
 
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let err = result.unwrap_err();
+    let err_msg = error_chain_to_string(&err);
     assert!(
         err_msg.contains("circular") || err_msg.contains("CircularDependency"),
         "Error should mention circular dependency, got: {}",
@@ -402,7 +415,8 @@ async fn test_circular_dependency_indirect() {
     let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
 
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let err = result.unwrap_err();
+    let err_msg = error_chain_to_string(&err);
     assert!(
         err_msg.contains("circular") || err_msg.contains("CircularDependency"),
         "Error should mention circular dependency, got: {}",
@@ -659,7 +673,8 @@ async fn test_local_remote_conflict() {
 
     // Should detect local/remote conflict
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let err = result.unwrap_err();
+    let err_msg = error_chain_to_string(&err);
     assert!(
         err_msg.contains("conflict") || err_msg.contains("LocalRemoteConflict"),
         "Error should mention local/remote conflict, got: {}",

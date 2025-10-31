@@ -30,6 +30,6 @@ impl Rule for IdentCasing {
 
     /// Check [`Entity`] for violations.
     fn check_entity(&mut self, _name: &str, _entity: &Entity) -> Violations {
-        vec![]
+        Default::default()
     }
 }

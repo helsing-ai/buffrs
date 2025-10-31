@@ -89,7 +89,17 @@ impl DependencyGraph {
         for dependency in manifest.dependencies.iter().flatten() {
             builder
                 .add_dependency(dependency, parent_package_type)
-                .await?;
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "while resolving dependencies of {}",
+                        manifest
+                            .package
+                            .as_ref()
+                            .map(|p| p.name.to_string())
+                            .unwrap_or_else(|| "root".to_string())
+                    )
+                })?;
         }
 
         Ok(Self {
@@ -229,7 +239,8 @@ impl<'a> GraphBuilder<'a> {
 
         // If already processed, just validate compatibility
         if let Some(existing) = self.nodes.get(package_name) {
-            self.validate_compatibility(dependency, existing)?;
+            self.validate_compatibility(dependency, existing)
+                .wrap_err_with(|| format!("conflicting dependency on {}", package_name))?;
             return Ok(());
         }
 
@@ -288,7 +299,11 @@ impl<'a> GraphBuilder<'a> {
             // We need to update the base path for sub-dependencies
             let old_base = self.base_path.clone();
             self.base_path = resolved_path.clone();
-            self.add_dependency(&sub_dep, package_type).await?;
+            self.add_dependency(&sub_dep, package_type)
+                .await
+                .wrap_err_with(|| {
+                    format!("while resolving dependencies of {}", dependency.package)
+                })?;
             self.base_path = old_base;
         }
 
@@ -302,9 +317,11 @@ impl<'a> GraphBuilder<'a> {
         package_type: Option<PackageType>,
     ) -> miette::Result<()> {
         // Validate package type constraint
-        if let (Some(PackageType::Lib), Some(PackageType::Api)) = (parent_type, package_type) {
+        if let Some(PackageType::Lib) = parent_type
+            && let Some(PackageType::Api) = package_type
+        {
             bail!(DependencyError::InvalidPackageTypeDependency {
-                parent: PackageName::unchecked("parent"), // TODO: thread parent name
+                parent: PackageName::unchecked("parent"),
                 dependency: dependency.package.clone(),
             });
         }
@@ -354,7 +371,9 @@ impl<'a> GraphBuilder<'a> {
 
         // Recursively process transitive dependencies
         for sub_dep in manifest.dependencies.unwrap_or_default() {
-            self.add_dependency(&sub_dep, package_type).await?;
+            self.add_dependency(&sub_dep, package_type)
+                .await
+                .wrap_err_with(|| format!("while resolving dependencies of {}", package_name))?;
         }
 
         Ok(())
@@ -390,7 +409,6 @@ impl<'a> GraphBuilder<'a> {
             if new_remote.version != existing.version {
                 bail!(DependencyError::VersionConflict {
                     package: dependency.package.clone(),
-                    requester: PackageName::unchecked("unknown"), // TODO: thread parent package name
                     required_version: new_remote.version.clone(),
                     existing_version: existing.version.clone(),
                 });
@@ -409,14 +427,12 @@ impl<'a> GraphBuilder<'a> {
         match (&dependency.manifest, &existing.source) {
             (DependencyManifest::Local(_), DependencySource::Remote { .. }) => {
                 bail!(DependencyError::LocalRemoteConflict {
-                    local_pkg: dependency.package.clone(),
-                    requester: PackageName::unchecked("unknown"), // TODO: thread requester
+                    package: dependency.package.clone(),
                 });
             }
             (DependencyManifest::Remote(_), DependencySource::Local { .. }) => {
                 bail!(DependencyError::LocalRemoteConflict {
-                    local_pkg: dependency.package.clone(),
-                    requester: PackageName::unchecked("unknown"),
+                    package: dependency.package.clone(),
                 });
             }
             _ => {}
@@ -430,14 +446,10 @@ impl<'a> GraphBuilder<'a> {
 #[derive(Error, Diagnostic, Debug)]
 pub enum DependencyError {
     /// A local dependency conflicts with a remote dependency
-    #[error(
-        "local dependency {local_pkg} conflicts with remote dependency required by {requester}"
-    )]
+    #[error("local/remote dependency conflict for package {package}")]
     LocalRemoteConflict {
-        /// The package that is declared as local
-        local_pkg: PackageName,
-        /// The package that requires it as remote
-        requester: PackageName,
+        /// The package that has the conflict
+        package: PackageName,
     },
 
     /// A lib package cannot depend on an api package
@@ -455,13 +467,11 @@ pub enum DependencyError {
 
     /// Version conflict between multiple dependants
     #[error(
-        "version conflict for {package}: {requester} requires {required_version} but already resolved to {existing_version}"
+        "version conflict for {package}: requires {required_version} but already resolved to {existing_version}"
     )]
     VersionConflict {
         /// The package with conflicting versions
         package: PackageName,
-        /// The package requesting the conflicting version
-        requester: PackageName,
         /// The version requirement that conflicts
         required_version: VersionReq,
         /// The version already resolved in the graph

@@ -122,7 +122,7 @@ mod tests {
                 version: "0.1.0".parse().unwrap(),
                 description: None,
             })
-            .dependencies(vec![])
+            .dependencies(Default::default())
             .build();
 
         let package_bytes =

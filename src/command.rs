@@ -77,7 +77,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
-    let manifest = builder.dependencies(vec![]).build();
+    let manifest = builder.dependencies(Default::default()).build();
 
     manifest.write().await?;
 
@@ -112,7 +112,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
-    let manifest = builder.dependencies(vec![]).build();
+    let manifest = builder.dependencies(Default::default()).build();
     manifest.write_at(package_dir.as_path()).await?;
 
     PackageStore::open(&package_dir)
