@@ -38,10 +38,7 @@ impl Workspace {
     /// members = ["packages/*", "special"]
     /// exclude = ["packages/internal*"]
     /// ```
-    pub fn resolve_members(
-        &self,
-        workspace_root: impl AsRef<Path>,
-    ) -> miette::Result<Vec<PathBuf>> {
+    pub fn resolve_members(&self, workspace_root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         // Default to ["*"] if members is not specified
         let default_members = vec!["*".to_string()];
         let member_patterns = self.members.as_ref().unwrap_or(&default_members);
@@ -53,7 +50,7 @@ impl Workspace {
         for pattern in member_patterns {
             if pattern.contains(['*', '?', '[']) {
                 // Glob pattern - only 1 level deep
-                let pattern_matcher = glob::Pattern::new(pattern)
+                let pattern_matcher = Pattern::new(pattern)
                     .into_diagnostic()
                     .wrap_err_with(|| miette!("invalid glob pattern: {}", pattern))?;
 
@@ -81,6 +78,11 @@ impl Workspace {
                 let member_path = workspace_root.as_ref().join(pattern);
                 if member_path.is_dir() && member_path.join(MANIFEST_FILE).exists() {
                     resolved_members.insert(PathBuf::from(pattern));
+                } else {
+                    tracing::warn!(
+                        ":: path {} was explicitly provided in members, but contains no buffrs manifest",
+                        member_path.display()
+                    );
                 }
             }
         }

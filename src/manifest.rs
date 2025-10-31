@@ -311,6 +311,7 @@ pub enum ManifestType {
     /// The Manifest defines a workspace
     Workspace,
 }
+
 /// The buffrs manifest format used for internal processing, contains a parsed
 /// version of the `RawManifest` for easier use.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -329,7 +330,7 @@ pub struct Manifest {
 
 impl Manifest {
     /// Clones the Manifest but replaces the dependencies with a given Vec
-    pub fn clone_with_different_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
+    pub fn with_dependencies(&self, dependencies: Vec<Dependency>) -> Self {
         Self {
             dependencies: Some(dependencies),
             ..self.clone()
@@ -729,6 +730,7 @@ mod tests {
             assert_eq!(cloned_raw_manifest_str, raw_manifest_str);
         }
     }
+
     mod manifest_tests {
         use crate::manifest::{Edition, Manifest};
         use std::str::FromStr;
@@ -820,8 +822,7 @@ mod tests {
             ];
 
             // Clone with different dependencies
-            let cloned_manifest =
-                original_manifest.clone_with_different_dependencies(new_deps.clone());
+            let cloned_manifest = original_manifest.with_dependencies(new_deps.clone());
 
             // Verify the dependencies were replaced
             assert_eq!(cloned_manifest.dependencies, Some(new_deps));
@@ -863,7 +864,7 @@ mod tests {
             use crate::workspace::Workspace;
 
             // Package manifest
-            let manifest = Manifest::builder().dependencies(vec![]).build();
+            let manifest = Manifest::builder().dependencies(Default::default()).build();
             assert_eq!(
                 manifest.manifest_type,
                 crate::manifest::ManifestType::Package

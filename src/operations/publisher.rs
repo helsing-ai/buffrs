@@ -265,7 +265,7 @@ impl Publisher {
             self.replace_local_with_remote_dependencies(&manifest, package_path)?;
 
         // Clone manifest with local dependencies replaced by their remote locations
-        let remote_deps_manifest = manifest.clone_with_different_dependencies(remote_dependencies);
+        let remote_deps_manifest = manifest.with_dependencies(remote_dependencies);
         let package = package_store
             .release(&remote_deps_manifest, self.preserve_mtime)
             .await?;
@@ -553,7 +553,7 @@ mod tests {
         let publisher = create_test_publisher();
         let base_path = PathBuf::from("/project");
 
-        let manifest = Manifest::builder().dependencies(vec![]).build();
+        let manifest = Manifest::builder().dependencies(Default::default()).build();
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
