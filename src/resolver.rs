@@ -341,7 +341,8 @@ impl<'a> GraphBuilder<'a> {
         let version = &remote_manifest.version;
 
         // Download the package to read its manifest and discover dependencies
-        let registry_client = registry.get_registry(self.credentials)
+        let registry_client = registry
+            .get_registry(self.credentials)
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let downloaded_package = registry_client.download(dependency.clone()).await?;
