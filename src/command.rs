@@ -35,7 +35,7 @@ use crate::{
     operations::installer::Installer,
     operations::publisher::Publisher,
     package::{PackageName, PackageStore, PackageType},
-    registry::{Artifactory, RegistryUri},
+    registry::RegistryUri,
 };
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
@@ -194,11 +194,11 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
     let version = match version {
         DependencyLocatorVersion::Version(version_req) => version_req,
         DependencyLocatorVersion::Latest => {
-            // query artifactory to retrieve the actual latest version
+            // query the registry to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+            let registry_client = registry.get_registry(&credentials)?;
 
-            let latest_version = artifactory
+            let latest_version = registry_client
                 .get_latest_version(repository.clone(), package.clone())
                 .await?;
             // Convert semver::Version to semver::VersionReq. It will default to operator `>`, which is what we want for Proto.toml
@@ -436,7 +436,8 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
-        Artifactory::new(registry, &credentials)?
+        registry
+            .get_registry(&credentials)?
             .ping()
             .await
             .wrap_err("failed to validate token")?;

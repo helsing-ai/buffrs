@@ -44,9 +44,10 @@ git = []
 
 [dependencies]
 async-recursion = "1.0.5"
-async-trait = "0.1.89"
+async-trait = "0.1"
 anyhow = { version = "1.0", optional = true }
 bytes = "1.0"
+chrono = "0.4"
 clap = { version = "4.3", features = ["cargo", "derive"] }
 diff-struct = { version = "0.5.3", optional = true }
 flate2 = "1"
@@ -57,6 +58,7 @@ human-panic = "2"
 miette = { version = "7", features = ["fancy"] }
 protobuf = { version = "3.7.2", optional = true }
 protobuf-parse = { version = "3.7.2", optional = true }
+quick-xml = { version = "0.37", features = ["serialize"] }
 reqwest = { version = "0.12", features = [
   "rustls-tls-native-roots",
 ], default-features = false }

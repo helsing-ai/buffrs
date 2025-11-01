@@ -17,7 +17,7 @@ use crate::{
         PackagesManifest,
     },
     package::{PackageName, PackageType},
-    registry::{Artifactory, RegistryUri},
+    registry::RegistryUri,
 };
 
 /// Models the source of a dependency
@@ -341,10 +341,10 @@ impl<'a> GraphBuilder<'a> {
         let version = &remote_manifest.version;
 
         // Download the package to read its manifest and discover dependencies
-        let artifactory = Artifactory::new(registry.clone(), self.credentials)
+        let registry_client = registry.get_registry(self.credentials)
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
-        let downloaded_package = artifactory.download(dependency.clone()).await?;
+        let downloaded_package = registry_client.download(dependency.clone()).await?;
 
         // Read the package manifest to discover dependencies and package type
         let manifest = downloaded_package.manifest;

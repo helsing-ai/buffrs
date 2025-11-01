@@ -340,3 +340,26 @@ struct ArtifactSearchResponse {
 struct ArtifactSearchResult {
     uri: String,
 }
+
+#[async_trait::async_trait]
+impl super::Registry for Artifactory {
+    async fn ping(&self) -> miette::Result<()> {
+        self.ping().await
+    }
+
+    async fn get_latest_version(
+        &self,
+        repository: String,
+        name: PackageName,
+    ) -> miette::Result<Version> {
+        self.get_latest_version(repository, name).await
+    }
+
+    async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        self.download(dependency).await
+    }
+
+    async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
+        self.publish(package, repository).await
+    }
+}
