@@ -16,6 +16,8 @@
     * [Package Types](guide/package-types.md)
     * [Creating a Package](guide/creating-a-package.md)
     * [Consuming Packages](guide/consuming-packages.md)
+    * [Local Dependencies](guide/local-dependencies.md)
+    * [Workspaces](guide/workspaces.md)
     * [Import System](guide/import-system.md)
     * [Project Layout](guide/project-layout.md)
     * [Manifest vs Lockfile](guide/manifest-vs-lockfile.md)

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
@@ -75,6 +75,7 @@ impl LockedPackage {
                 .manifest
                 .dependencies
                 .iter()
+                .flatten()
                 .map(|d| d.package.clone())
                 .collect(),
             dependants,
@@ -133,7 +134,7 @@ struct RawLockfile {
 /// Captures metadata about currently installed Packages
 ///
 /// Used to ensure future installations will deterministically select the exact same packages.
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Lockfile {
     packages: BTreeMap<PackageName, LockedPackage>,
 }
@@ -141,7 +142,12 @@ pub struct Lockfile {
 impl Lockfile {
     /// Checks if the Lockfile currently exists in the filesystem
     pub async fn exists() -> miette::Result<bool> {
-        fs::try_exists(LOCKFILE)
+        Self::exists_at(LOCKFILE).await
+    }
+
+    /// Checks if the Lockfile currently exists in the filesystem at a given path
+    pub async fn exists_at(path: impl AsRef<Path>) -> miette::Result<bool> {
+        fs::try_exists(path)
             .await
             .into_diagnostic()
             .wrap_err(FileExistsError(LOCKFILE))
@@ -149,7 +155,12 @@ impl Lockfile {
 
     /// Loads the Lockfile from the current directory
     pub async fn read() -> miette::Result<Self> {
-        match fs::read_to_string(LOCKFILE).await {
+        Self::read_from(LOCKFILE).await
+    }
+
+    /// Loads the Lockfile from a specific path.
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
+        match fs::read_to_string(path).await {
             Ok(contents) => {
                 let raw: RawLockfile = toml::from_str(&contents)
                     .into_diagnostic()
@@ -163,7 +174,7 @@ impl Lockfile {
         }
     }
 
-    /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one
+    /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
     pub async fn read_or_default() -> miette::Result<Self> {
         if Lockfile::exists().await? {
             Lockfile::read().await
@@ -172,8 +183,17 @@ impl Lockfile {
         }
     }
 
+    /// Loads the Lockfile from a specific path, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
+    pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
+        if Lockfile::exists_at(&path).await? {
+            Lockfile::read_from(path).await
+        } else {
+            Ok(Lockfile::default())
+        }
+    }
+
     /// Persists a Lockfile to the filesystem
-    pub async fn write(&self) -> miette::Result<()> {
+    pub async fn write(&self, path: impl AsRef<Path>) -> miette::Result<()> {
         let mut packages: Vec<_> = self
             .packages
             .values()
@@ -191,8 +211,10 @@ impl Lockfile {
             packages,
         };
 
+        let lockfile_path = path.as_ref().join(LOCKFILE);
+
         fs::write(
-            LOCKFILE,
+            lockfile_path,
             toml::to_string(&raw)
                 .into_diagnostic()
                 .wrap_err(SerializationError(ManagedFile::Lock))?
@@ -323,7 +345,7 @@ mod tests {
                         registry: RegistryUri::from_str("http://my-registry.com").unwrap(),
                         repository: "my-repo".to_owned(),
                         version: Version::new(0, 1, 0),
-                        dependencies: vec![],
+                        dependencies: Default::default(),
                         dependants: 1,
                     },
                 ),
@@ -339,7 +361,7 @@ mod tests {
                         registry: RegistryUri::from_str("http://my-registry.com").unwrap(),
                         repository: "my-other-repo".to_owned(),
                         version: Version::new(0, 2, 0),
-                        dependencies: vec![],
+                        dependencies: Default::default(),
                         dependants: 1,
                     },
                 ),
@@ -355,7 +377,7 @@ mod tests {
                         registry: RegistryUri::from_str("http://your-registry.com").unwrap(),
                         repository: "your-repo".to_owned(),
                         version: Version::new(0, 2, 0),
-                        dependencies: vec![],
+                        dependencies: Default::default(),
                         dependants: 1,
                     },
                 ),
@@ -371,7 +393,7 @@ mod tests {
                         registry: RegistryUri::from_str("http://your-registry.com").unwrap(),
                         repository: "your-other-repo".to_owned(),
                         version: Version::new(0, 2, 0),
-                        dependencies: vec![],
+                        dependencies: Default::default(),
                         dependants: 1,
                     },
                 ),
@@ -387,5 +409,108 @@ mod tests {
             let other_files: Vec<FileRequirement> = simple_lockfile().into();
             assert!(other_files == files)
         }
+    }
+
+    #[tokio::test]
+    async fn test_exists_at_returns_false_for_nonexistent_file() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let lockfile_path = temp_dir.path().join("Proto.lock");
+
+        let exists = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        assert!(!exists);
+    }
+
+    #[tokio::test]
+    async fn test_exists_at_returns_true_for_existing_file() {
+        use tempfile::TempDir;
+        use tokio::fs;
+
+        let temp_dir = TempDir::new().unwrap();
+        let lockfile_path = temp_dir.path().join("Proto.lock");
+
+        // Create an empty lockfile
+        fs::write(&lockfile_path, "").await.unwrap();
+
+        let exists = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        assert!(exists);
+    }
+
+    #[tokio::test]
+    async fn test_exists_at_accepts_reference_and_owned() {
+        use std::path::PathBuf;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let lockfile_path = temp_dir.path().join("Proto.lock");
+
+        // Test with reference
+        let exists_ref = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        assert!(!exists_ref);
+
+        // Test with owned PathBuf
+        let lockfile_path_owned = PathBuf::from(&lockfile_path);
+        let exists_owned = Lockfile::exists_at(lockfile_path_owned).await.unwrap();
+        assert!(!exists_owned);
+
+        // Test with &str
+        let path_str = lockfile_path.to_str().unwrap();
+        let exists_str = Lockfile::exists_at(path_str).await.unwrap();
+        assert!(!exists_str);
+    }
+
+    #[tokio::test]
+    async fn test_read_from_or_default_returns_default_when_file_missing() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let lockfile_path = temp_dir.path().join("Proto.lock");
+
+        let lockfile = Lockfile::read_from_or_default(&lockfile_path)
+            .await
+            .unwrap();
+
+        assert_eq!(lockfile.packages.len(), 0);
+        assert_eq!(lockfile, Lockfile::default());
+    }
+
+    #[tokio::test]
+    async fn test_read_from_or_default_reads_existing_file() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let lockfile_path = temp_dir.path().join("Proto.lock");
+
+        // Create and write a lockfile (write expects directory path)
+        let original_lockfile = simple_lockfile();
+        original_lockfile.write(temp_dir.path()).await.unwrap();
+
+        // Read it back using read_from_or_default
+        let loaded_lockfile = Lockfile::read_from_or_default(&lockfile_path)
+            .await
+            .unwrap();
+
+        assert_eq!(loaded_lockfile.packages.len(), 4);
+        assert!(
+            loaded_lockfile
+                .packages
+                .contains_key(&PackageName::new("package1").unwrap())
+        );
+        assert!(
+            loaded_lockfile
+                .packages
+                .contains_key(&PackageName::new("package2").unwrap())
+        );
+        assert!(
+            loaded_lockfile
+                .packages
+                .contains_key(&PackageName::new("package3").unwrap())
+        );
+        assert!(
+            loaded_lockfile
+                .packages
+                .contains_key(&PackageName::new("package4").unwrap())
+        );
     }
 }

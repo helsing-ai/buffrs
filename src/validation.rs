@@ -23,8 +23,9 @@ mod violation;
 
 pub use violation::*;
 
-use miette::IntoDiagnostic;
 use std::path::Path;
+
+use miette::IntoDiagnostic;
 
 use self::parse::*;
 use crate::manifest::PackageManifest;

@@ -1,4 +1,4 @@
-// Copyright 2023 Helsing GmbH
+// Copyright 2025 Helsing GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,8 +15,9 @@
 #![warn(missing_docs)]
 #![doc = include_str!("../README.md")]
 
-use miette::Diagnostic;
 use std::{env, path::PathBuf};
+
+use miette::Diagnostic;
 use thiserror::Error;
 
 /// Caching implementation
@@ -31,15 +32,19 @@ pub mod errors;
 pub mod lock;
 /// Manifest format and IO
 pub mod manifest;
+/// Dedicated helpers to deal with more complicated CLI operations
+pub mod operations;
 /// Packages formats and utilities
 pub mod package;
 /// Supported registries
 pub mod registry;
-/// Resolve package dependencies.
+/// Resolve package dependencies
 pub mod resolver;
 /// Validation for buffrs packages.
 #[cfg(feature = "validation")]
 pub mod validation;
+/// Workspace related business logic.
+pub mod workspace;
 
 /// Managed directory for `buffrs`
 pub const BUFFRS_HOME: &str = ".buffrs";

@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use buffrs::command;
-use buffrs::manifest::Manifest;
-use buffrs::package::{PackageName, PackageStore};
-use buffrs::registry::RegistryUri;
-use buffrs::{manifest::MANIFEST_FILE, package::PackageType};
 use clap::{Parser, Subcommand};
 use miette::{WrapErr, miette};
 use semver::Version;
+
+use buffrs::{
+    command,
+    manifest::{BuffrsManifest, MANIFEST_FILE},
+    package::PackageType,
+    package::{PackageName, PackageStore},
+    registry::RegistryUri,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about)]
@@ -182,26 +185,9 @@ async fn main() -> miette::Result<()> {
         .unwrap();
 
     let cli = Cli::parse();
-
-    let manifest = if Manifest::exists().await? {
-        Some(Manifest::read().await?)
-    } else {
-        None
-    };
-
-    let package = {
-        let cwd = std::env::current_dir().unwrap();
-
-        let name = cwd
-            .file_name()
-            .ok_or_else(|| miette!("failed to locate current directory"))?
-            .to_str()
-            .ok_or_else(|| miette!("internal error"))?;
-
-        manifest
-            .and_then(|m| m.package.map(|p| p.name.to_string()))
-            .unwrap_or_else(|| name.to_string())
-    };
+    let package = BuffrsManifest::current_dir_display_name()
+        .await
+        .unwrap_or("unknown package".into());
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -235,6 +221,7 @@ async fn main() -> miette::Result<()> {
             .wrap_err(miette!(
                 "failed to add `{dependency}` from `{registry}` to `{MANIFEST_FILE}`"
             )),
+
         Command::Remove { package } => command::remove(package.to_owned()).await.wrap_err(miette!(
             "failed to remove `{package}` from `{MANIFEST_FILE}`"
         )),

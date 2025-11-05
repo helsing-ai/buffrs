@@ -29,6 +29,11 @@ By default, Buffrs does not allow publishing packages from git repositories in a
 dirty state (note: this requires the `git` feature to be enabled). This
 behaviour can be overridden by passing the `--allow-dirty` flag.
 
+Since version 0.12, `buffrs publish` supports [local dependencies](../guide/local-dependencies.md)
+and [workspaces](../guide/workspaces.md):
+- **Local dependencies**: Automatically publishes local dependencies first, then rewrites references to point to the registry
+- **Workspaces**: When run from a workspace root, publishes all workspace members in dependency order with automatic deduplication
+
 #### Supported project types
 
 Only Buffrs libraries and API packages can be packaged and published. More details in [Package Types](../guide/package-types.md).

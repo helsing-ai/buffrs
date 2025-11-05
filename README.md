@@ -33,6 +33,15 @@ Useful resources:
 - [Announcement Post](https://blog.helsing.ai/buffrs-a-package-manager-for-protocol-buffers-1-2-aaf7c00153d2)
 - `buffrs help`
 
+## Features
+
+- **Local dependencies**: Develop with `path = "../my-lib"` references, automatically resolved recursively and published seamlessly
+- **Workspaces**: Manage multiple packages in a single repository with automatic dependency ordering
+- **Artifactory integration**: Publish to and consume from Artifactory registries
+- **Lock files**: Reproducible builds with cryptographic checksums
+
+See the [Buffrs Book](https://helsing-ai.github.io/buffrs) for comprehensive documentation.
+
 ## Synopsis
 
 ```text,ignore

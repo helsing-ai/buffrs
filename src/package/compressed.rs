@@ -20,7 +20,7 @@ use std::{
 };
 
 use bytes::{Buf, Bytes};
-use miette::{Context, IntoDiagnostic, miette};
+use miette::{Context, IntoDiagnostic, bail, miette};
 use semver::Version;
 use tokio::fs;
 
@@ -28,18 +28,17 @@ use crate::{
     ManagedFile,
     errors::{DeserializationError, SerializationError},
     lock::{Digest, DigestAlgorithm, LockedPackage},
-    manifest::{self, Edition, MANIFEST_FILE, Manifest},
+    manifest::{self, Edition, MANIFEST_FILE, PackagesManifest},
     package::PackageName,
+    package::store::Entry,
     registry::RegistryUri,
 };
-
-use super::store::Entry;
 
 /// An in memory representation of a `buffrs` package
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
     /// Manifest of the package
-    pub manifest: Manifest,
+    pub manifest: PackagesManifest,
     /// The `tar.gz` archive containing the protocol buffers
     pub tgz: Bytes,
 }
@@ -50,18 +49,20 @@ impl Package {
     /// This intentionally uses a [`BTreeMap`] to ensure that the list of files is sorted
     /// lexicographically. This ensures a reproducible output.
     pub fn create(
-        mut manifest: Manifest,
+        manifest: PackagesManifest,
         files: BTreeMap<PathBuf, Entry>,
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         if manifest.edition == Edition::Unknown {
-            manifest = Manifest::new(manifest.package, manifest.dependencies);
+            // Upgrade unknown edition to latest
+            let builder = PackagesManifest::builder();
+            if let Some(pkg) = manifest.clone().package {
+                builder.package(pkg);
+            }
         }
 
         if manifest.package.is_none() {
-            return Err(miette!(
-                "failed to create package, manifest doesnt contain a package declaration"
-            ));
+            bail!("failed to create package, manifest doesnt contain a package declaration")
         }
 
         let mut archive = tar::Builder::new(Vec::new());
@@ -213,8 +214,7 @@ impl Package {
         let manifest = String::from_utf8(manifest)
             .into_diagnostic()
             .wrap_err(miette!("manifest has invalid character encoding"))?
-            .parse()
-            .into_diagnostic()?;
+            .parse()?;
 
         Ok(Self { manifest, tgz })
     }

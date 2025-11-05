@@ -25,7 +25,7 @@ impl Rule for PackageHierarchy {
         };
 
         if expected_components.is_empty() {
-            return vec![];
+            return Default::default();
         }
 
         let expected_components = {

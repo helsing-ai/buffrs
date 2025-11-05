@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::{collections::BTreeMap, fmt::Display, str::FromStr};
+
 use serde::{Deserialize, Deserializer, de};
-use std::collections::BTreeMap;
-use std::fmt::Display;
-use std::str::FromStr;
 
 /// Allow deserializing an integer key from a string representation.
 ///

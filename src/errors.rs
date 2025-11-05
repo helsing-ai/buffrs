@@ -15,6 +15,10 @@ pub(crate) struct WriteError(pub &'static str);
 pub(crate) struct ReadError(pub &'static str);
 
 #[derive(thiserror::Error, Diagnostic, Debug)]
+#[error("manifest {0} is invalid")]
+pub(crate) struct InvalidManifestError(pub ManagedFile);
+
+#[derive(thiserror::Error, Diagnostic, Debug)]
 #[error("could not deserialize {0}")]
 pub(crate) struct DeserializationError(pub ManagedFile);
 

@@ -101,7 +101,7 @@ impl LocalRegistry {
 #[cfg(test)]
 mod tests {
     use crate::{
-        manifest::{Dependency, Manifest, PackageManifest},
+        manifest::{Dependency, PackageManifest, PackagesManifest},
         package::{Package, PackageType},
         registry::cache::LocalRegistry,
     };
@@ -115,15 +115,15 @@ mod tests {
         let dir = env::temp_dir();
         let registry = LocalRegistry::new(dir.clone());
 
-        let manifest = Manifest::new(
-            Some(PackageManifest {
+        let manifest = PackagesManifest::builder()
+            .package(PackageManifest {
                 kind: PackageType::Api,
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
-            }),
-            vec![],
-        );
+            })
+            .dependencies(Default::default())
+            .build();
 
         let package_bytes =
             Bytes::from(include_bytes!("../../tests/data/packages/test-api-0.1.0.tgz").to_vec());
