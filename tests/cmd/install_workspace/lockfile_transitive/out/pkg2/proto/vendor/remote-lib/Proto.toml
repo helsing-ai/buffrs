@@ -1,0 +1,8 @@
+edition = "0.12"
+
+[package]
+type = "lib"
+name = "remote-lib"
+version = "1.0.0"
+
+[dependencies]

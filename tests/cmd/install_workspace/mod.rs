@@ -1,0 +1,4 @@
+mod lockfile_transitive;
+mod lockfile_multiple_versions;
+mod lockfile_diamond_dependencies;
+mod creates_lockfile;
