@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package remote.v1;
+
+message DataV1 {
+  string value = 1;
+}
