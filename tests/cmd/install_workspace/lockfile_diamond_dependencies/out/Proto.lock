@@ -6,9 +6,7 @@ digest = "DIGEST_A"
 registry = "REGISTRY_URL"
 repository = "test-repo"
 version = "1.0.0"
-dependencies = [
-  "lib-b 1.0.0",
-]
+dependencies = ["lib-b 1.0.0"]
 dependants = 2
 
 [[packages]]
@@ -18,4 +16,4 @@ registry = "REGISTRY_URL"
 repository = "test-repo"
 version = "1.0.0"
 dependencies = []
-dependants = 1
+dependants = 2

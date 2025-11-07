@@ -19,6 +19,12 @@ fn fixture() {
                 .assert()
                 .success();
 
+            // Update version to 1.0.0
+            let manifest_path = lib_dir.join("Proto.toml");
+            let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+            let updated = manifest.replace("version = \"0.1.0\"", "version = \"1.0.0\"");
+            std::fs::write(&manifest_path, updated).unwrap();
+
             std::fs::write(
                 lib_dir.join("proto/remote.proto"),
                 "syntax = \"proto3\";\n\npackage remote;\n\nmessage Data {\n  string value = 1;\n}\n",
@@ -32,6 +38,9 @@ fn fixture() {
                 .assert()
                 .success();
         }
+
+        // Clean up temporary lib directory (not part of workspace)
+        std::fs::remove_dir_all(cwd.join("remote-lib")).unwrap();
 
         // Add remote-lib to pkg1
         crate::cli!()
@@ -51,13 +60,25 @@ fn fixture() {
 
         // Verify workspace lockfile exists
         let lockfile_path = cwd.join("Proto.lock");
-        assert!(lockfile_path.exists(), "Proto.lock should exist at workspace root");
+        assert!(
+            lockfile_path.exists(),
+            "Proto.lock should exist at workspace root"
+        );
 
         // Verify lockfile contains remote-lib with dependencies = []
         let lockfile_content = std::fs::read_to_string(&lockfile_path).unwrap();
-        assert!(lockfile_content.contains("name = \"remote-lib\""), "Lockfile should contain remote-lib");
-        assert!(lockfile_content.contains("dependencies = []"), "Lockfile should have empty dependencies array");
-        assert!(lockfile_content.contains("dependants = 2"), "remote-lib should have 2 dependants (pkg1 direct, pkg2 transitive)");
+        assert!(
+            lockfile_content.contains("name = \"remote-lib\""),
+            "Lockfile should contain remote-lib"
+        );
+        assert!(
+            lockfile_content.contains("dependencies = []"),
+            "Lockfile should have empty dependencies array"
+        );
+        assert!(
+            lockfile_content.contains("dependants = 2"),
+            "remote-lib should have 2 dependants (pkg1 direct, pkg2 transitive)"
+        );
 
         // Verify pkg2 has remote-lib installed (flattened transitive dependency)
         assert!(
@@ -86,7 +107,11 @@ fn fixture() {
         .unwrap();
 
         // Replace REGISTRY_URL in expected files
-        for file in ["pkg1/Proto.toml", "pkg2/proto/vendor/workspace-pkg1/Proto.toml", "Proto.lock"] {
+        for file in [
+            "pkg1/Proto.toml",
+            "pkg2/proto/vendor/workspace-pkg1/Proto.toml",
+            "Proto.lock",
+        ] {
             let path = temp_expected.join(file);
             if path.exists() {
                 let content = std::fs::read_to_string(&path).unwrap();

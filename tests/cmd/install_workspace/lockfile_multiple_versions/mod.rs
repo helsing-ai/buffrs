@@ -71,6 +71,10 @@ fn fixture() {
                 .success();
         }
 
+        // Clean up temporary lib directories (not part of workspace)
+        std::fs::remove_dir_all(cwd.join("remote-lib-v1")).unwrap();
+        std::fs::remove_dir_all(cwd.join("remote-lib-v2")).unwrap();
+
         // Add remote-lib@=1.0.0 to pkg1
         crate::cli!()
             .args(["add", "--registry", url, "test-repo/remote-lib@=1.0.0"])
@@ -97,12 +101,21 @@ fn fixture() {
 
         // Verify workspace lockfile exists
         let lockfile_path = cwd.join("Proto.lock");
-        assert!(lockfile_path.exists(), "Proto.lock should exist at workspace root");
+        assert!(
+            lockfile_path.exists(),
+            "Proto.lock should exist at workspace root"
+        );
 
         // Verify lockfile contains both versions
         let lockfile_content = std::fs::read_to_string(&lockfile_path).unwrap();
-        assert!(lockfile_content.contains("version = \"1.0.0\""), "Lockfile should have v1.0.0");
-        assert!(lockfile_content.contains("version = \"2.0.0\""), "Lockfile should have v2.0.0");
+        assert!(
+            lockfile_content.contains("version = \"1.0.0\""),
+            "Lockfile should have v1.0.0"
+        );
+        assert!(
+            lockfile_content.contains("version = \"2.0.0\""),
+            "Lockfile should have v2.0.0"
+        );
 
         // Prepare expected output with dynamic values
         let out_dir = crate::parent_directory!().join("out");
@@ -138,18 +151,27 @@ fn fixture() {
         let actual_lockfile = std::fs::read_to_string(&lockfile_path).unwrap();
 
         // Extract digests for both versions
-        let digest_v1 = actual_lockfile
+        // Split into package blocks and find the digest for each version
+        let packages: Vec<&str> = actual_lockfile.split("[[packages]]").collect();
+
+        let pkg_v1 = packages
+            .iter()
+            .find(|p| p.contains("version = \"1.0.0\""))
+            .expect("Should find v1.0.0 package");
+        let digest_v1 = pkg_v1
             .lines()
-            .skip_while(|line| !line.contains("version = \"1.0.0\""))
-            .find(|line| line.starts_with("digest = "))
-            .unwrap()
+            .find(|line| line.trim().starts_with("digest = "))
+            .expect("Should find v1.0.0 digest")
             .trim();
 
-        let digest_v2 = actual_lockfile
+        let pkg_v2 = packages
+            .iter()
+            .find(|p| p.contains("version = \"2.0.0\""))
+            .expect("Should find v2.0.0 package");
+        let digest_v2 = pkg_v2
             .lines()
-            .skip_while(|line| !line.contains("version = \"2.0.0\""))
-            .find(|line| line.starts_with("digest = "))
-            .unwrap()
+            .find(|line| line.trim().starts_with("digest = "))
+            .expect("Should find v2.0.0 digest")
             .trim();
 
         let expected_lockfile_path = temp_expected.join("Proto.lock");

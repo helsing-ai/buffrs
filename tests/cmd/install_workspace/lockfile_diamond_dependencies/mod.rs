@@ -19,6 +19,12 @@ fn fixture() {
                 .assert()
                 .success();
 
+            // Update version to 1.0.0
+            let manifest_path = lib_dir.join("Proto.toml");
+            let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+            let updated = manifest.replace("version = \"0.1.0\"", "version = \"1.0.0\"");
+            std::fs::write(&manifest_path, updated).unwrap();
+
             std::fs::write(
                 lib_dir.join("proto/libb.proto"),
                 "syntax = \"proto3\";\n\npackage libb;\n\nmessage LibBMessage {\n  string value = 1;\n}\n",
@@ -45,6 +51,12 @@ fn fixture() {
                 .assert()
                 .success();
 
+            // Update version to 1.0.0
+            let manifest_path = lib_dir.join("Proto.toml");
+            let manifest = std::fs::read_to_string(&manifest_path).unwrap();
+            let updated = manifest.replace("version = \"0.1.0\"", "version = \"1.0.0\"");
+            std::fs::write(&manifest_path, updated).unwrap();
+
             std::fs::write(
                 lib_dir.join("proto/liba.proto"),
                 "syntax = \"proto3\";\n\npackage liba;\n\nmessage LibAMessage {\n  string value = 1;\n}\n",
@@ -66,6 +78,10 @@ fn fixture() {
                 .assert()
                 .success();
         }
+
+        // Clean up temporary lib directories (not part of workspace)
+        std::fs::remove_dir_all(cwd.join("lib-a")).unwrap();
+        std::fs::remove_dir_all(cwd.join("lib-b")).unwrap();
 
         // Add lib-a to pkg1
         crate::cli!()

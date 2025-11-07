@@ -219,7 +219,7 @@ impl Installer {
     /// Merges locked packages from multiple members, deduplicating by (name, version)
     /// and summing dependants counts.
     fn aggregate_workspace_lockfile(
-        locked_packages: Vec<LockedPackage>,
+        locked_packages: Vec<WorkspaceLockedPackage>,
     ) -> miette::Result<WorkspaceLockfile> {
         use std::collections::HashMap;
 
@@ -256,16 +256,18 @@ impl Installer {
                             locked.digest
                         );
                     }
+                    // Dependencies should be identical for same (name, version)
+                    if existing.dependencies != locked.dependencies {
+                        tracing::warn!(
+                            "dependencies mismatch for {}@{}: {:?} vs {:?}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.dependencies,
+                            locked.dependencies
+                        );
+                    }
                 })
-                .or_insert_with(|| WorkspaceLockedPackage {
-                    name: locked.name,
-                    version: locked.version,
-                    registry: locked.registry,
-                    repository: locked.repository,
-                    digest: locked.digest,
-                    dependencies: vec![], // Empty for now - will add dependency graph capture later
-                    dependants: locked.dependants,
-                });
+                .or_insert(locked);
         }
 
         Ok(WorkspaceLockfile::from_iter(
@@ -285,7 +287,7 @@ impl Installer {
         store: &PackageStore,
         package_path: &PathBuf,
         write_mode: LockfileWriteMode,
-    ) -> miette::Result<Vec<LockedPackage>> {
+    ) -> miette::Result<Vec<WorkspaceLockedPackage>> {
         store.clear().await?;
 
         if let Some(ref pkg) = manifest.package {
@@ -297,7 +299,11 @@ impl Installer {
         let graph = DependencyGraph::build(manifest, package_path, &self.credentials).await?;
         let dependencies = graph.ordered_dependencies()?;
 
-        let mut locked = Vec::new();
+        // Pass 1: Install all dependencies and track resolved remote packages
+        let mut resolved_remote: std::collections::HashMap<
+            PackageName,
+            (Package, RegistryUri, String),
+        > = std::collections::HashMap::new();
 
         for dependency_node in dependencies {
             // Iterate through the dependencies in order and install them
@@ -321,9 +327,15 @@ impl Installer {
                         )
                         .await?;
 
-                    // Add to new lockfile
-                    let dependants_count = graph.dependants_count_of(package_name);
-                    locked.push(resolved_package.lock(registry, repository, dependants_count));
+                    // Track this resolved remote package
+                    resolved_remote.insert(
+                        package_name.clone(),
+                        (
+                            resolved_package.clone(),
+                            registry.clone(),
+                            repository.clone(),
+                        ),
+                    );
 
                     resolved_package
                 }
@@ -341,10 +353,69 @@ impl Installer {
             );
         }
 
-        // Write lockfile based on mode
+        // Pass 2: Create LockedPackages with dependency information
+        let mut locked = Vec::new();
+
+        for (pkg_name, (pkg, registry, repository)) in &resolved_remote {
+            let node = graph
+                .nodes
+                .get(pkg_name)
+                .ok_or_else(|| miette::miette!("Package {} not found in graph", pkg_name))?;
+
+            // Map dependency names to their resolved versions (only remote ones)
+            let deps: Vec<crate::lock::LockedDependency> = node
+                .dependencies
+                .iter()
+                .filter_map(|dep_name| {
+                    resolved_remote.get(dep_name).map(|(dep_pkg, _, _)| {
+                        crate::lock::LockedDependency::new(
+                            dep_name.clone(),
+                            dep_pkg.version().clone(),
+                        )
+                    })
+                })
+                .collect();
+
+            // For workspace lockfiles, set dependants=1 (this package needs it)
+            // Aggregation will sum them up across all workspace members
+            let dependants_count = 1;
+
+            // Create WorkspaceLockedPackage with dependencies
+            let workspace_locked = WorkspaceLockedPackage {
+                name: pkg.name().clone(),
+                version: pkg.version().clone(),
+                registry: registry.clone(),
+                repository: repository.clone(),
+                digest: crate::lock::DigestAlgorithm::SHA256.digest(&pkg.tgz),
+                dependencies: deps,
+                dependants: dependants_count,
+            };
+
+            locked.push(workspace_locked);
+        }
+
+        // Write lockfile based on mode (convert to package lockfile format)
         match write_mode {
             LockfileWriteMode::Write => {
-                Lockfile::from_iter(locked.iter().cloned())
+                // Convert to LockedPackage for writing package lockfile
+                let package_locked: Vec<LockedPackage> = locked
+                    .iter()
+                    .map(|ws_locked| LockedPackage {
+                        name: ws_locked.name.clone(),
+                        version: ws_locked.version.clone(),
+                        digest: ws_locked.digest.clone(),
+                        registry: ws_locked.registry.clone(),
+                        repository: ws_locked.repository.clone(),
+                        dependencies: ws_locked
+                            .dependencies
+                            .iter()
+                            .map(|d| d.name.clone())
+                            .collect(),
+                        dependants: ws_locked.dependants,
+                    })
+                    .collect();
+
+                Lockfile::from_iter(package_locked.into_iter())
                     .write(package_path)
                     .await?;
             }
@@ -718,10 +789,10 @@ mod tests {
 
     #[test]
     fn test_aggregate_workspace_lockfile_multiple_versions() {
-        use crate::lock::{Digest, DigestAlgorithm};
+        use crate::lock::{Digest, DigestAlgorithm, WorkspaceLockedPackage};
 
         // Create two different versions of the same package from different members
-        let pkg_v1 = LockedPackage {
+        let pkg_v1 = WorkspaceLockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://registry.com").unwrap(),
@@ -735,7 +806,7 @@ mod tests {
             dependants: 1,
         };
 
-        let pkg_v2 = LockedPackage {
+        let pkg_v2 = WorkspaceLockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(2, 0, 0),
             registry: RegistryUri::from_str("https://registry.com").unwrap(),
@@ -750,7 +821,7 @@ mod tests {
         };
 
         // Also add the same version from two different members
-        let pkg_v1_dup = LockedPackage {
+        let pkg_v1_dup = WorkspaceLockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://registry.com").unwrap(),

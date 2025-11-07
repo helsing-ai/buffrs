@@ -51,7 +51,10 @@ fn fixture() {
 
         // Verify lockfile was created at workspace root
         let lockfile_path = cwd.join("Proto.lock");
-        assert!(lockfile_path.exists(), "Proto.lock should exist at workspace root");
+        assert!(
+            lockfile_path.exists(),
+            "Proto.lock should exist at workspace root"
+        );
 
         // Replace REGISTRY_URL and DIGEST placeholders in expected output
         let out_dir = crate::parent_directory!().join("out");
@@ -74,7 +77,11 @@ fn fixture() {
         .unwrap();
 
         // Update registry URL in expected files
-        for file in ["pkg1/Proto.toml", "pkg2/proto/vendor/workspace-pkg1/Proto.toml", "Proto.lock"] {
+        for file in [
+            "pkg1/Proto.toml",
+            "pkg2/proto/vendor/workspace-pkg1/Proto.toml",
+            "Proto.lock",
+        ] {
             let path = temp_expected.join(file);
             if path.exists() {
                 let content = std::fs::read_to_string(&path).unwrap();
