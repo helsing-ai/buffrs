@@ -37,7 +37,7 @@ fn fixture() {
         crate::cli!()
             .args(["add", "--registry", url, "test-repo/remote-lib@=0.1.0"])
             .env("BUFFRS_HOME", &buffrs_home)
-            .current_dir(&cwd.join("pkg1"))
+            .current_dir(cwd.join("pkg1"))
             .assert()
             .success();
 
