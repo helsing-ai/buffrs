@@ -177,9 +177,9 @@ fn fixture() {
         let expected_lockfile_path = temp_expected.join("Proto.lock");
         if expected_lockfile_path.exists() {
             let content = std::fs::read_to_string(&expected_lockfile_path).unwrap();
-            // Replace digests by matching them to the correct version placeholder
-            let updated = content.replace("digest = \"DIGEST_V1\"", digest_v1);
-            let updated = updated.replace("digest = \"DIGEST_V2\"", digest_v2);
+            // Replace first occurrence with v1 digest, second with v2 digest
+            let updated = content.replacen("digest = \"DIGEST_V1\"", digest_v1, 1);
+            let updated = updated.replacen("digest = \"DIGEST_V2\"", digest_v2, 1);
             std::fs::write(&expected_lockfile_path, updated).unwrap();
         }
 
