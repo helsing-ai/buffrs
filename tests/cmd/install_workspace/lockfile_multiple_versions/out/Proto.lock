@@ -2,18 +2,18 @@ version = 1
 
 [[packages]]
 name = "remote-lib"
+version = "1.0.0"
 digest = "DIGEST_V1"
 registry = "REGISTRY_URL"
 repository = "test-repo"
-version = "1.0.0"
 dependencies = []
 dependants = 1
 
 [[packages]]
 name = "remote-lib"
+version = "2.0.0"
 digest = "DIGEST_V2"
 registry = "REGISTRY_URL"
 repository = "test-repo"
-version = "2.0.0"
 dependencies = []
 dependants = 1

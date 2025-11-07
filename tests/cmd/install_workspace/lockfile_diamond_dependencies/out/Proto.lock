@@ -2,18 +2,18 @@ version = 1
 
 [[packages]]
 name = "lib-a"
+version = "1.0.0"
 digest = "DIGEST_A"
 registry = "REGISTRY_URL"
 repository = "test-repo"
-version = "1.0.0"
 dependencies = ["lib-b 1.0.0"]
 dependants = 2
 
 [[packages]]
 name = "lib-b"
+version = "1.0.0"
 digest = "DIGEST_B"
 registry = "REGISTRY_URL"
 repository = "test-repo"
-version = "1.0.0"
 dependencies = []
 dependants = 2

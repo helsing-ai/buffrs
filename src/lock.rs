@@ -178,21 +178,48 @@ impl LockedPackage {
     }
 }
 
+impl From<&WorkspaceLockedPackage> for LockedPackage {
+    fn from(ws_locked: &WorkspaceLockedPackage) -> Self {
+        Self {
+            name: ws_locked.name.clone(),
+            version: ws_locked.version.clone(),
+            digest: ws_locked.digest.clone(),
+            registry: ws_locked.registry.clone(),
+            repository: ws_locked.repository.clone(),
+            dependencies: ws_locked
+                .dependencies
+                .iter()
+                .map(|d| d.name.clone())
+                .collect(),
+            dependants: ws_locked.dependants,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
-struct RawLockfile {
+struct RawPackageLockfile {
     version: u16,
     packages: Vec<LockedPackage>,
+}
+
+impl RawPackageLockfile {
+    pub fn v1(packages: Vec<LockedPackage>) -> Self {
+        Self {
+            version: 1,
+            packages,
+        }
+    }
 }
 
 /// Captures metadata about currently installed Packages
 ///
 /// Used to ensure future installations will deterministically select the exact same packages.
 #[derive(Default, Debug, PartialEq)]
-pub struct Lockfile {
+pub struct PackageLockfile {
     packages: BTreeMap<PackageName, LockedPackage>,
 }
 
-impl Lockfile {
+impl PackageLockfile {
     /// Checks if the Lockfile currently exists in the filesystem
     pub async fn exists() -> miette::Result<bool> {
         Self::exists_at(LOCKFILE).await
@@ -215,7 +242,7 @@ impl Lockfile {
     pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
         match fs::read_to_string(path).await {
             Ok(contents) => {
-                let raw: RawLockfile = toml::from_str(&contents)
+                let raw: RawPackageLockfile = toml::from_str(&contents)
                     .into_diagnostic()
                     .wrap_err(DeserializationError(ManagedFile::Lock))?;
                 Ok(Self::from_iter(raw.packages.into_iter()))
@@ -229,19 +256,19 @@ impl Lockfile {
 
     /// Loads the Lockfile from the current directory, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
     pub async fn read_or_default() -> miette::Result<Self> {
-        if Lockfile::exists().await? {
-            Lockfile::read().await
+        if PackageLockfile::exists().await? {
+            PackageLockfile::read().await
         } else {
-            Ok(Lockfile::default())
+            Ok(PackageLockfile::default())
         }
     }
 
     /// Loads the Lockfile from a specific path, if it exists, otherwise returns an empty one. Fails, if the exists() check fails
     pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
-        if Lockfile::exists_at(&path).await? {
-            Lockfile::read_from(path).await
+        if PackageLockfile::exists_at(&path).await? {
+            PackageLockfile::read_from(path).await
         } else {
-            Ok(Lockfile::default())
+            Ok(PackageLockfile::default())
         }
     }
 
@@ -259,11 +286,7 @@ impl Lockfile {
 
         packages.sort();
 
-        let raw = RawLockfile {
-            version: 1,
-            packages,
-        };
-
+        let raw = RawPackageLockfile::v1(packages);
         let lockfile_path = path.as_ref().join(LOCKFILE);
 
         fs::write(
@@ -284,7 +307,18 @@ impl Lockfile {
     }
 }
 
-impl FromIterator<LockedPackage> for Lockfile {
+impl TryFrom<Vec<WorkspaceLockedPackage>> for PackageLockfile {
+    type Error = miette::Error;
+
+    fn try_from(locked: Vec<WorkspaceLockedPackage>) -> Result<Self, Self::Error> {
+        let package_locked: Vec<LockedPackage> =
+            locked.iter().map(LockedPackage::from).collect();
+
+        Ok(PackageLockfile::from_iter(package_locked))
+    }
+}
+
+impl FromIterator<LockedPackage> for PackageLockfile {
     fn from_iter<I: IntoIterator<Item = LockedPackage>>(iter: I) -> Self {
         Self {
             packages: iter
@@ -381,6 +415,15 @@ struct RawWorkspaceLockfile {
     packages: Vec<WorkspaceLockedPackage>,
 }
 
+impl RawWorkspaceLockfile {
+    pub fn v1(packages: Vec<WorkspaceLockedPackage>) -> Self {
+        Self {
+            version: 1,
+            packages,
+        }
+    }
+}
+
 /// Captures metadata about packages installed in a workspace
 ///
 /// Unlike package lockfiles which can only store one version per package,
@@ -430,11 +473,7 @@ impl WorkspaceLockfile {
 
         packages.sort();
 
-        let raw = RawWorkspaceLockfile {
-            version: 1,
-            packages,
-        };
-
+        let raw = RawWorkspaceLockfile::v1(packages);
         let lockfile_path = path.as_ref().join(LOCKFILE);
 
         fs::write(
@@ -532,12 +571,12 @@ impl TryFrom<Vec<WorkspaceLockedPackage>> for WorkspaceLockfile {
     }
 }
 
-impl From<Lockfile> for Vec<FileRequirement> {
+impl From<PackageLockfile> for Vec<FileRequirement> {
     /// Converts lockfile into list of required files
     ///
     /// Must return files with a stable order to ensure identical lockfiles lead to identical
     /// buffrs-cache nix derivations
-    fn from(lock: Lockfile) -> Self {
+    fn from(lock: PackageLockfile) -> Self {
         lock.packages.values().map(FileRequirement::from).collect()
     }
 }
@@ -643,12 +682,12 @@ mod tests {
     use crate::{package::PackageName, registry::RegistryUri};
 
     use super::{
-        Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, Lockfile,
+        Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, PackageLockfile,
         WorkspaceLockedPackage, WorkspaceLockfile,
     };
 
-    fn simple_lockfile() -> Lockfile {
-        Lockfile {
+    fn simple_lockfile() -> PackageLockfile {
+        PackageLockfile {
             packages: BTreeMap::from([
                 (
                     PackageName::new("package1").unwrap(),
@@ -735,7 +774,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let lockfile_path = temp_dir.path().join("Proto.lock");
 
-        let exists = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        let exists = PackageLockfile::exists_at(&lockfile_path).await.unwrap();
         assert!(!exists);
     }
 
@@ -750,7 +789,7 @@ mod tests {
         // Create an empty lockfile
         fs::write(&lockfile_path, "").await.unwrap();
 
-        let exists = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        let exists = PackageLockfile::exists_at(&lockfile_path).await.unwrap();
         assert!(exists);
     }
 
@@ -763,17 +802,19 @@ mod tests {
         let lockfile_path = temp_dir.path().join("Proto.lock");
 
         // Test with reference
-        let exists_ref = Lockfile::exists_at(&lockfile_path).await.unwrap();
+        let exists_ref = PackageLockfile::exists_at(&lockfile_path).await.unwrap();
         assert!(!exists_ref);
 
         // Test with owned PathBuf
         let lockfile_path_owned = PathBuf::from(&lockfile_path);
-        let exists_owned = Lockfile::exists_at(lockfile_path_owned).await.unwrap();
+        let exists_owned = PackageLockfile::exists_at(lockfile_path_owned)
+            .await
+            .unwrap();
         assert!(!exists_owned);
 
         // Test with &str
         let path_str = lockfile_path.to_str().unwrap();
-        let exists_str = Lockfile::exists_at(path_str).await.unwrap();
+        let exists_str = PackageLockfile::exists_at(path_str).await.unwrap();
         assert!(!exists_str);
     }
 
@@ -784,12 +825,12 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let lockfile_path = temp_dir.path().join("Proto.lock");
 
-        let lockfile = Lockfile::read_from_or_default(&lockfile_path)
+        let lockfile = PackageLockfile::read_from_or_default(&lockfile_path)
             .await
             .unwrap();
 
         assert_eq!(lockfile.packages.len(), 0);
-        assert_eq!(lockfile, Lockfile::default());
+        assert_eq!(lockfile, PackageLockfile::default());
     }
 
     #[tokio::test]
@@ -804,7 +845,7 @@ mod tests {
         original_lockfile.write(temp_dir.path()).await.unwrap();
 
         // Read it back using read_from_or_default
-        let loaded_lockfile = Lockfile::read_from_or_default(&lockfile_path)
+        let loaded_lockfile = PackageLockfile::read_from_or_default(&lockfile_path)
             .await
             .unwrap();
 

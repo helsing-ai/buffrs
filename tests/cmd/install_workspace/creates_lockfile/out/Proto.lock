@@ -2,9 +2,9 @@ version = 1
 
 [[packages]]
 name = "remote-lib"
+version = "0.1.0"
 digest = "DIGEST"
 registry = "REGISTRY_URL"
 repository = "test-repo"
-version = "0.1.0"
 dependencies = []
 dependants = 2

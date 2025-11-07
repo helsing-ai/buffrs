@@ -4,7 +4,7 @@ use std::{
     env,
     path::{Path, PathBuf},
 };
-
+use std::collections::HashMap;
 use colored::*;
 use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
@@ -12,7 +12,7 @@ use semver::VersionReq;
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{LOCKFILE, LockedPackage, Lockfile, WorkspaceLockedPackage, WorkspaceLockfile},
+    lock::{LOCKFILE, LockedPackage, PackageLockfile, WorkspaceLockedPackage, WorkspaceLockfile},
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
         RemoteDependencyManifest, WorkspaceManifest,
@@ -21,6 +21,7 @@ use crate::{
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
+use crate::lock::{DigestAlgorithm, LockedDependency};
 
 /// Controls whether the lockfile is written to disk during package installation
 #[derive(Debug, Clone, Copy)]
@@ -38,6 +39,14 @@ enum WorkspaceLockfileMode<'a> {
     UseExisting(&'a WorkspaceLockfile),
     /// No workspace lockfile available (resolve from registry)
     CreateNew,
+}
+
+/// A resolved remote package with its registry metadata
+#[derive(Debug, Clone)]
+struct ResolvedRemotePackage {
+    package: Package,
+    registry: RegistryUri,
+    repository: String,
 }
 
 /// Helper for installing package dependencies
@@ -71,7 +80,7 @@ impl Installer {
     pub async fn install(&self, manifest: &BuffrsManifest) -> miette::Result<()> {
         match manifest {
             BuffrsManifest::Package(packages_manifest) => {
-                let lockfile = Lockfile::read_or_default().await?;
+                let lockfile = PackageLockfile::read_or_default().await?;
                 let store = PackageStore::current().await?;
                 let current_path = env::current_dir()
                     .into_diagnostic()
@@ -80,9 +89,9 @@ impl Installer {
                 self.install_package(
                     packages_manifest,
                     &lockfile,
-                    WorkspaceLockfileMode::CreateNew,
                     &store,
                     &current_path,
+                    WorkspaceLockfileMode::CreateNew,
                     LockfileWriteMode::Write,
                 )
                 .await?;
@@ -95,7 +104,6 @@ impl Installer {
         }
     }
 
-    /// Installs dependencies for a workspace
     async fn install_workspace(&self, manifest: &WorkspaceManifest) -> miette::Result<()> {
         let root_path = env::current_dir()
             .into_diagnostic()
@@ -103,14 +111,15 @@ impl Installer {
 
         let workspace_lockfile_path = root_path.join(LOCKFILE);
 
-        // Check if workspace lockfile exists
         if WorkspaceLockfile::exists_at(&workspace_lockfile_path).await? {
             tracing::info!(":: using existing workspace lockfile");
             let workspace_lockfile = WorkspaceLockfile::read_from(&workspace_lockfile_path).await?;
             self.install_with_workspace_lockfile(manifest, &root_path, &workspace_lockfile)
                 .await
         } else {
-            tracing::info!(":: no workspace lockfile found, creating new one");
+            tracing::info!(
+                ":: no workspace lockfile found, installing workspace members & creating new one"
+            );
             self.install_and_create_workspace_lockfile(manifest, &root_path)
                 .await
         }
@@ -135,7 +144,7 @@ impl Installer {
 
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
-            if Lockfile::exists_at(&pkg_lockfile_path).await? {
+            if PackageLockfile::exists_at(&pkg_lockfile_path).await? {
                 let warn = format!(
                     "[WARN] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
                     pkg_lockfile_path.display()
@@ -150,10 +159,10 @@ impl Installer {
             // Install using workspace lockfile (no package lockfile needed)
             self.install_package(
                 &pkg_manifest,
-                &Lockfile::default(),
-                WorkspaceLockfileMode::UseExisting(workspace_lockfile),
+                &PackageLockfile::default(),
                 &store,
                 &package,
+                WorkspaceLockfileMode::UseExisting(workspace_lockfile),
                 LockfileWriteMode::Skip,
             )
             .await?;
@@ -182,9 +191,9 @@ impl Installer {
             let pkg_manifest =
                 BuffrsManifest::require_package_manifest(&package.join(MANIFEST_FILE)).await?;
 
-            // Warn if package lockfile exists
+            // WARN if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
-            if Lockfile::exists_at(&pkg_lockfile_path).await? {
+            if PackageLockfile::exists_at(&pkg_lockfile_path).await? {
                 let warn = format!(
                     "package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
                     pkg_lockfile_path.display()
@@ -192,7 +201,7 @@ impl Installer {
                 eprintln!("{}", warn.bright_yellow());
             }
 
-            let pkg_lockfile = Lockfile::read_from_or_default(&pkg_lockfile_path).await?;
+            let pkg_lockfile = PackageLockfile::read_from_or_default(&pkg_lockfile_path).await?;
             let store = PackageStore::open(&package).await?;
 
             tracing::info!(":: running install for package: {}", package.display());
@@ -202,9 +211,9 @@ impl Installer {
                 .install_package(
                     &pkg_manifest,
                     &pkg_lockfile,
-                    WorkspaceLockfileMode::CreateNew,
                     &store,
                     &package,
+                    WorkspaceLockfileMode::CreateNew,
                     LockfileWriteMode::Skip,
                 )
                 .await?;
@@ -226,18 +235,14 @@ impl Installer {
         Ok(())
     }
 
-
     /// Installs dependencies of a package
-    ///
-    /// Returns the lockfile data. Lockfile persistence depends on `write_mode`.
-    /// `workspace_mode` controls workspace lockfile usage for version resolution.
     async fn install_package(
         &self,
         manifest: &PackagesManifest,
-        lockfile: &Lockfile,
-        workspace_mode: WorkspaceLockfileMode<'_>,
+        lockfile: &PackageLockfile,
         store: &PackageStore,
         package_path: &PathBuf,
+        workspace_mode: WorkspaceLockfileMode<'_>,
         write_mode: LockfileWriteMode,
     ) -> miette::Result<Vec<WorkspaceLockedPackage>> {
         store.clear().await?;
@@ -251,22 +256,19 @@ impl Installer {
         let graph = DependencyGraph::build(manifest, package_path, &self.credentials).await?;
         let dependencies = graph.ordered_dependencies()?;
 
-        // Pass 1: Install all dependencies and track resolved remote packages
-        let mut resolved_remote: std::collections::HashMap<
-            PackageName,
-            (Package, RegistryUri, String),
-        > = std::collections::HashMap::new();
+        // 1. Install all dependencies and track resolved remote packages
+        let mut resolved_remote_packages: HashMap<PackageName, ResolvedRemotePackage> = HashMap::new();
 
-        for dependency_node in dependencies {
+        for dependency in dependencies {
             // Iterate through the dependencies in order and install them
-            let package = match dependency_node.node.source {
+            let package = match dependency.node.source {
                 DependencySource::Local { path } => self.install_local_dependency(&path).await?,
                 DependencySource::Remote {
                     repository,
                     registry,
                 } => {
-                    let package_name = &dependency_node.node.name;
-                    let version = &dependency_node.node.version;
+                    let package_name = &dependency.node.name;
+                    let version = &dependency.node.version;
 
                     let resolved_package = self
                         .install_remote_dependency(
@@ -280,13 +282,13 @@ impl Installer {
                         .await?;
 
                     // Track this resolved remote package
-                    resolved_remote.insert(
+                    resolved_remote_packages.insert(
                         package_name.clone(),
-                        (
-                            resolved_package.clone(),
-                            registry.clone(),
-                            repository.clone(),
-                        ),
+                        ResolvedRemotePackage {
+                            package: resolved_package.clone(),
+                            registry: registry.clone(),
+                            repository: repository.clone(),
+                        },
                     );
 
                     resolved_package
@@ -298,31 +300,27 @@ impl Installer {
                 .await
                 .wrap_err_with(|| format!("failed to unpack package {}", package.name()))?;
 
-            tracing::info!(
-                ":: installed {}@{}",
-                dependency_node.name,
-                package.version()
-            );
+            tracing::info!(":: installed {}@{}", dependency.name, package.version());
         }
 
-        // Pass 2: Create LockedPackages with dependency information
-        let mut locked = Vec::new();
+        // 2. Create LockedPackages with dependency information
+        let mut locked_packages = Vec::new();
 
-        for (pkg_name, (pkg, registry, repository)) in &resolved_remote {
+        for (pkg_name, resolved) in &resolved_remote_packages {
             let node = graph
                 .nodes
                 .get(pkg_name)
                 .ok_or_else(|| miette::miette!("Package {} not found in graph", pkg_name))?;
 
             // Map dependency names to their resolved versions (only remote ones)
-            let deps: Vec<crate::lock::LockedDependency> = node
+            let deps: Vec<LockedDependency> = node
                 .dependencies
                 .iter()
                 .filter_map(|dep_name| {
-                    resolved_remote.get(dep_name).map(|(dep_pkg, _, _)| {
-                        crate::lock::LockedDependency::new(
+                    resolved_remote_packages.get(dep_name).map(|dep_resolved| {
+                        LockedDependency::new(
                             dep_name.clone(),
-                            dep_pkg.version().clone(),
+                            dep_resolved.package.version().clone(),
                         )
                     })
                 })
@@ -334,49 +332,30 @@ impl Installer {
 
             // Create WorkspaceLockedPackage with dependencies
             let workspace_locked = WorkspaceLockedPackage {
-                name: pkg.name().clone(),
-                version: pkg.version().clone(),
-                digest: crate::lock::DigestAlgorithm::SHA256.digest(&pkg.tgz),
-                registry: registry.clone(),
-                repository: repository.clone(),
+                name: resolved.package.name().clone(),
+                version: resolved.package.version().clone(),
+                digest: DigestAlgorithm::SHA256.digest(&resolved.package.tgz),
+                registry: resolved.registry.clone(),
+                repository: resolved.repository.clone(),
                 dependencies: deps,
                 dependants: dependants_count,
             };
 
-            locked.push(workspace_locked);
+            locked_packages.push(workspace_locked);
         }
 
         // Write lockfile based on mode (convert to package lockfile format)
         match write_mode {
             LockfileWriteMode::Write => {
-                // Convert to LockedPackage for writing package lockfile
-                let package_locked: Vec<LockedPackage> = locked
-                    .iter()
-                    .map(|ws_locked| LockedPackage {
-                        name: ws_locked.name.clone(),
-                        version: ws_locked.version.clone(),
-                        digest: ws_locked.digest.clone(),
-                        registry: ws_locked.registry.clone(),
-                        repository: ws_locked.repository.clone(),
-                        dependencies: ws_locked
-                            .dependencies
-                            .iter()
-                            .map(|d| d.name.clone())
-                            .collect(),
-                        dependants: ws_locked.dependants,
-                    })
-                    .collect();
-
-                Lockfile::from_iter(package_locked.into_iter())
-                    .write(package_path)
-                    .await?;
+                let package_lockfile: PackageLockfile = locked_packages.clone().try_into()?;
+                package_lockfile.write(package_path).await?;
             }
             LockfileWriteMode::Skip => {
                 // Workspace will handle lockfile writing
             }
         }
 
-        Ok(locked)
+        Ok(locked_packages)
     }
 
     /// Installs a local dependency
@@ -395,14 +374,13 @@ impl Installer {
         repository: &str,
         version: &VersionReq,
         workspace_mode: WorkspaceLockfileMode<'_>,
-        lockfile: &Lockfile,
+        lockfile: &PackageLockfile,
     ) -> miette::Result<Package> {
-        // Priority 1: Check workspace lockfile
+        // Prio 1: Check workspace lockfile
         if let WorkspaceLockfileMode::UseExisting(ws_lockfile) = workspace_mode
             && let Some(locked) =
                 Self::find_matching_workspace_locked(ws_lockfile, package_name, version)
         {
-            // Validate registry consistency
             ensure!(
                 registry == &locked.registry,
                 "registry mismatch for {}: manifest specifies {} but workspace lockfile requires {}",
@@ -419,21 +397,17 @@ impl Installer {
 
             // Try to get from cache
             if let Some(cached_pkg) = self.cache.get(locked.into()).await? {
-                // Validate the cached package digest
                 locked.validate(&cached_pkg)?;
                 return Ok(cached_pkg);
             }
 
-            // Download the exact version from workspace lockfile
             return self
                 .download_exact_version(package_name, registry, repository, &locked.version)
                 .await;
         }
 
-        // Priority 2: Check package lockfile (for backward compatibility)
-        let mut resolved_package = None;
+        // Prio 2: Check package lockfile (for backward compatibility)
         if let Some(locked_entry) = lockfile.get(package_name) {
-            // Validate registry consistency
             ensure!(
                 registry == &locked_entry.registry,
                 "registry mismatch for {}: manifest specifies {} but lockfile requires {}",
@@ -443,30 +417,24 @@ impl Installer {
             );
 
             // Try to retrieve from cache if version matches lockfile
-            if version.matches(&locked_entry.version)
-                && let Some(cached_pkg) = self.cache.get(locked_entry.into()).await?
-            {
-                // Validate the cached package digest
-                locked_entry.validate(&cached_pkg)?;
+            if version.matches(&locked_entry.version) {
+                if let Some(cached_pkg) = self.cache.get(locked_entry.into()).await? {
+                    locked_entry.validate(&cached_pkg)?;
 
-                tracing::debug!(
-                    ":: using cached package for {}@{}",
-                    package_name,
-                    cached_pkg.version()
-                );
+                    tracing::debug!(
+                        ":: using cached package for {}@{}",
+                        package_name,
+                        cached_pkg.version()
+                    );
 
-                resolved_package = Some(cached_pkg);
+                    return Ok(cached_pkg);
+                }
             }
         }
 
-        // Priority 3: Download from registry if not cached
-        match resolved_package {
-            Some(pkg) => Ok(pkg),
-            None => {
-                self.download_and_cache(package_name, registry, repository, version)
-                    .await
-            }
-        }
+        // Prio 3: Download from registry
+        self.download_and_cache(package_name, registry, repository, version)
+            .await
     }
 
     /// Finds a matching version in the workspace lockfile
@@ -482,7 +450,7 @@ impl Installer {
             .max_by_key(|pkg| &pkg.version) // Highest matching version (tiebreaker)
     }
 
-    /// Downloads a specific exact version (used when workspace lockfile specifies it)
+    /// Downloads a specific exact version (used for workspace lockfile specifies it)
     async fn download_exact_version(
         &self,
         package_name: &PackageName,
@@ -550,7 +518,7 @@ mod tests {
         version: &str,
         registry: &str,
         repository: &str,
-    ) -> Lockfile {
+    ) -> PackageLockfile {
         let locked_pkg = LockedPackage {
             name: PackageName::unchecked(package_name),
             version: Version::parse(version).unwrap(),
@@ -562,7 +530,7 @@ mod tests {
             dependencies: Default::default(),
             dependants: 1,
         };
-        Lockfile::from_iter(vec![locked_pkg])
+        PackageLockfile::from_iter(vec![locked_pkg])
     }
 
     #[tokio::test]
@@ -588,7 +556,14 @@ mod tests {
         let version = VersionReq::parse("1.0.0").unwrap();
 
         let result = installer
-            .install_remote_dependency(&pkg_name, &registry_b, "repo", &version, WorkspaceLockfileMode::CreateNew, &lockfile)
+            .install_remote_dependency(
+                &pkg_name,
+                &registry_b,
+                "repo",
+                &version,
+                WorkspaceLockfileMode::CreateNew,
+                &lockfile,
+            )
             .await;
 
         // Should fail with registry mismatch error
@@ -621,7 +596,14 @@ mod tests {
         let version = VersionReq::parse("2.0.0").unwrap();
 
         let result = installer
-            .install_remote_dependency(&pkg_name, &registry, "repo", &version, WorkspaceLockfileMode::CreateNew, &lockfile)
+            .install_remote_dependency(
+                &pkg_name,
+                &registry,
+                "repo",
+                &version,
+                WorkspaceLockfileMode::CreateNew,
+                &lockfile,
+            )
             .await;
 
         // Should try to download (will fail because no actual registry)
@@ -638,7 +620,7 @@ mod tests {
         let cache = Cache::open().await.unwrap();
 
         // Empty lockfile
-        let lockfile = Lockfile::default();
+        let lockfile = PackageLockfile::default();
 
         let installer = Installer {
             preserve_mtime: false,
@@ -653,7 +635,14 @@ mod tests {
         let version = VersionReq::parse("1.0.0").unwrap();
 
         let result = installer
-            .install_remote_dependency(&pkg_name, &registry, "repo", &version, WorkspaceLockfileMode::CreateNew, &lockfile)
+            .install_remote_dependency(
+                &pkg_name,
+                &registry,
+                "repo",
+                &version,
+                WorkspaceLockfileMode::CreateNew,
+                &lockfile,
+            )
             .await;
 
         // Should try to download (will fail because no actual registry)
