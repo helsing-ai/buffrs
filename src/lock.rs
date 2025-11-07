@@ -34,6 +34,59 @@ pub use digest::{Digest, DigestAlgorithm};
 /// File name of the lockfile
 pub const LOCKFILE: &str = "Proto.lock";
 
+/// A locked dependency with exact name and version
+///
+/// Serializes as "name version" string (Cargo format)
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LockedDependency {
+    /// The name of the dependency package
+    pub name: PackageName,
+    /// The exact version of the dependency package
+    pub version: Version,
+}
+
+impl LockedDependency {
+    /// Creates a new LockedDependency
+    pub fn new(name: PackageName, version: Version) -> Self {
+        Self { name, version }
+    }
+}
+
+// Custom serialization to match Cargo's "name version" format
+impl Serialize for LockedDependency {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&format!("{} {}", self.name, self.version))
+    }
+}
+
+// Custom deserialization from "name version" format
+impl<'de> Deserialize<'de> for LockedDependency {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let parts: Vec<&str> = s.split_whitespace().collect();
+
+        if parts.len() != 2 {
+            return Err(serde::de::Error::custom(format!(
+                "invalid locked dependency format: expected 'name version', got '{}'",
+                s
+            )));
+        }
+
+        let name = PackageName::new(parts[0])
+            .map_err(|e| serde::de::Error::custom(format!("invalid package name: {}", e)))?;
+        let version = Version::parse(parts[1])
+            .map_err(|e| serde::de::Error::custom(format!("invalid version: {}", e)))?;
+
+        Ok(LockedDependency { name, version })
+    }
+}
+
 /// Captures immutable metadata about a given package
 ///
 /// It is used to ensure that future installations will use the exact same dependencies.
@@ -242,6 +295,152 @@ impl FromIterator<LockedPackage> for Lockfile {
     }
 }
 
+/// Captures immutable metadata about a package in a workspace lockfile
+///
+/// Similar to LockedPackage, but includes versioned dependencies to support
+/// multiple versions of the same package in a workspace.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct WorkspaceLockedPackage {
+    /// The name of the package
+    pub name: PackageName,
+    /// The cryptographic digest of the package contents
+    pub digest: Digest,
+    /// The URI of the registry that contains the package
+    pub registry: RegistryUri,
+    /// The identifier of the repository where the package was published
+    pub repository: String,
+    /// The exact version of the package
+    pub version: Version,
+    /// Locked dependencies with exact versions
+    #[serde(default)]
+    pub dependencies: Vec<LockedDependency>,
+    /// Count of dependant packages in the workspace
+    pub dependants: usize,
+}
+
+impl WorkspaceLockedPackage {
+    /// Creates a WorkspaceLockedPackage from a LockedPackage
+    pub fn from_locked_package(
+        locked: LockedPackage,
+        dependencies: Vec<LockedDependency>,
+    ) -> Self {
+        Self {
+            name: locked.name,
+            digest: locked.digest,
+            registry: locked.registry,
+            repository: locked.repository,
+            version: locked.version,
+            dependencies,
+            dependants: locked.dependants,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RawWorkspaceLockfile {
+    version: u16,
+    packages: Vec<WorkspaceLockedPackage>,
+}
+
+/// Captures metadata about packages installed in a workspace
+///
+/// Unlike package lockfiles which can only store one version per package,
+/// workspace lockfiles use (name, version) as the key to support multiple
+/// versions of the same package.
+#[derive(Default, Debug, PartialEq)]
+pub struct WorkspaceLockfile {
+    packages: BTreeMap<(PackageName, Version), WorkspaceLockedPackage>,
+}
+
+impl WorkspaceLockfile {
+    /// Checks if the workspace lockfile exists at the given path
+    pub async fn exists_at(path: impl AsRef<Path>) -> miette::Result<bool> {
+        fs::try_exists(path)
+            .await
+            .into_diagnostic()
+            .wrap_err(FileExistsError(LOCKFILE))
+    }
+
+    /// Loads the workspace lockfile from a specific path
+    pub async fn read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
+        match fs::read_to_string(path).await {
+            Ok(contents) => {
+                let raw: RawWorkspaceLockfile = toml::from_str(&contents)
+                    .into_diagnostic()
+                    .wrap_err(DeserializationError(ManagedFile::Lock))?;
+                Ok(Self::from_iter(raw.packages.into_iter()))
+            }
+            Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
+                Err(FileNotFound(LOCKFILE.into()).into())
+            }
+            Err(err) => Err(err).into_diagnostic(),
+        }
+    }
+
+    /// Loads the workspace lockfile from a path, or returns empty if not found
+    pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
+        if WorkspaceLockfile::exists_at(&path).await? {
+            WorkspaceLockfile::read_from(path).await
+        } else {
+            Ok(WorkspaceLockfile::default())
+        }
+    }
+
+    /// Persists the workspace lockfile to the filesystem
+    pub async fn write(&self, path: impl AsRef<Path>) -> miette::Result<()> {
+        let mut packages: Vec<_> = self
+            .packages
+            .values()
+            .map(|pkg| {
+                let mut locked = pkg.clone();
+                locked.dependencies.sort();
+                locked
+            })
+            .collect();
+
+        packages.sort();
+
+        let raw = RawWorkspaceLockfile {
+            version: 1,
+            packages,
+        };
+
+        let lockfile_path = path.as_ref().join(LOCKFILE);
+
+        fs::write(
+            lockfile_path,
+            toml::to_string(&raw)
+                .into_diagnostic()
+                .wrap_err(SerializationError(ManagedFile::Lock))?
+                .into_bytes(),
+        )
+        .await
+        .into_diagnostic()
+        .wrap_err(WriteError(LOCKFILE))
+    }
+
+    /// Locates a package by name and version
+    pub fn get(&self, name: &PackageName, version: &Version) -> Option<&WorkspaceLockedPackage> {
+        self.packages.get(&(name.clone(), version.clone()))
+    }
+
+    /// Returns all packages in the lockfile
+    pub fn packages(&self) -> impl Iterator<Item = &WorkspaceLockedPackage> {
+        self.packages.values()
+    }
+}
+
+impl FromIterator<WorkspaceLockedPackage> for WorkspaceLockfile {
+    fn from_iter<I: IntoIterator<Item = WorkspaceLockedPackage>>(iter: I) -> Self {
+        Self {
+            packages: iter
+                .into_iter()
+                .map(|locked| ((locked.name.clone(), locked.version.clone()), locked))
+                .collect(),
+        }
+    }
+}
+
 impl From<Lockfile> for Vec<FileRequirement> {
     /// Converts lockfile into list of required files
     ///
@@ -328,7 +527,7 @@ mod tests {
 
     use crate::{package::PackageName, registry::RegistryUri};
 
-    use super::{Digest, DigestAlgorithm, FileRequirement, LockedPackage, Lockfile};
+    use super::{Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, Lockfile, WorkspaceLockedPackage, WorkspaceLockfile};
 
     fn simple_lockfile() -> Lockfile {
         Lockfile {
@@ -512,5 +711,156 @@ mod tests {
                 .packages
                 .contains_key(&PackageName::new("package4").unwrap())
         );
+    }
+
+    #[test]
+    fn test_locked_dependency_serialization() {
+        // Test serialization within a vector (how it's actually used)
+        let deps = vec![
+            LockedDependency::new(
+                PackageName::unchecked("remote-lib-a"),
+                Version::new(1, 5, 0),
+            ),
+            LockedDependency::new(
+                PackageName::unchecked("remote-lib-b"),
+                Version::new(2, 0, 1),
+            ),
+        ];
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct TestWrapper {
+            dependencies: Vec<LockedDependency>,
+        }
+
+        let wrapper = TestWrapper { dependencies: deps };
+        let serialized = toml::to_string(&wrapper).unwrap();
+
+        // Verify Cargo-style "name version" format
+        assert!(serialized.contains("dependencies = ["));
+        assert!(serialized.contains("\"remote-lib-a 1.5.0\""));
+        assert!(serialized.contains("\"remote-lib-b 2.0.1\""));
+
+        // Verify round-trip
+        let deserialized: TestWrapper = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.dependencies.len(), 2);
+        assert_eq!(deserialized.dependencies[0].name, PackageName::unchecked("remote-lib-a"));
+        assert_eq!(deserialized.dependencies[0].version, Version::new(1, 5, 0));
+        assert_eq!(deserialized.dependencies[1].name, PackageName::unchecked("remote-lib-b"));
+        assert_eq!(deserialized.dependencies[1].version, Version::new(2, 0, 1));
+    }
+
+    #[test]
+    fn test_workspace_lockfile_serialization() {
+        // Create a workspace lockfile with two packages, one with dependencies
+        let pkg1 = WorkspaceLockedPackage {
+            name: PackageName::unchecked("remote-lib-a"),
+            version: Version::new(1, 0, 0),
+            registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
+            )
+            .unwrap(),
+            dependencies: vec![LockedDependency::new(
+                PackageName::unchecked("remote-lib-b"),
+                Version::new(1, 5, 0),
+            )],
+            dependants: 2,
+        };
+
+        let pkg2 = WorkspaceLockedPackage {
+            name: PackageName::unchecked("remote-lib-b"),
+            version: Version::new(1, 5, 0),
+            registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353bce3",
+            )
+            .unwrap(),
+            dependencies: vec![], // Leaf package
+            dependants: 1,
+        };
+
+        let lockfile = WorkspaceLockfile::from_iter(vec![pkg1, pkg2]);
+
+        // Serialize to TOML
+        let serialized = toml::to_string(&super::RawWorkspaceLockfile {
+            version: 1,
+            packages: lockfile.packages.values().cloned().collect(),
+        })
+        .unwrap();
+
+        // Verify format matches expected structure
+        assert!(serialized.contains("version = 1"));
+        assert!(serialized.contains("[[packages]]"));
+        assert!(serialized.contains("name = \"remote-lib-a\""));
+        assert!(serialized.contains("version = \"1.0.0\""));
+        assert!(serialized.contains("dependencies = [\"remote-lib-b 1.5.0\"]"));
+        assert!(serialized.contains("dependants = 2"));
+        assert!(serialized.contains("name = \"remote-lib-b\""));
+        assert!(serialized.contains("version = \"1.5.0\""));
+        assert!(serialized.contains("dependencies = []"));
+        assert!(serialized.contains("dependants = 1"));
+
+        // Verify round-trip deserialization
+        let raw: super::RawWorkspaceLockfile = toml::from_str(&serialized).unwrap();
+        assert_eq!(raw.version, 1);
+        assert_eq!(raw.packages.len(), 2);
+
+        let restored = WorkspaceLockfile::from_iter(raw.packages);
+        assert_eq!(restored.packages.len(), 2);
+
+        // Verify we can look up by (name, version)
+        let found = restored.get(&PackageName::unchecked("remote-lib-a"), &Version::new(1, 0, 0));
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().dependencies.len(), 1);
+    }
+
+    #[test]
+    fn test_workspace_lockfile_supports_multiple_versions() {
+        // Create two versions of the same package
+        let pkg_v1 = WorkspaceLockedPackage {
+            name: PackageName::unchecked("remote-lib"),
+            version: Version::new(1, 0, 0),
+            registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+
+        let pkg_v2 = WorkspaceLockedPackage {
+            name: PackageName::unchecked("remote-lib"),
+            version: Version::new(2, 0, 0),
+            registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353bce3",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+
+        let lockfile = WorkspaceLockfile::from_iter(vec![pkg_v1, pkg_v2]);
+
+        // Both versions should be stored
+        assert_eq!(lockfile.packages.len(), 2);
+
+        // Should be able to look up each version independently
+        let v1 = lockfile.get(&PackageName::unchecked("remote-lib"), &Version::new(1, 0, 0));
+        assert!(v1.is_some());
+        assert_eq!(v1.unwrap().version, Version::new(1, 0, 0));
+
+        let v2 = lockfile.get(&PackageName::unchecked("remote-lib"), &Version::new(2, 0, 0));
+        assert!(v2.is_some());
+        assert_eq!(v2.unwrap().version, Version::new(2, 0, 0));
     }
 }
