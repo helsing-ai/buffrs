@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use colored::*;
 use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
-use colored::*;
 
 use crate::{
     cache::{Cache, Entry as CacheEntry},
@@ -127,7 +127,10 @@ impl Installer {
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if Lockfile::exists_at(&pkg_lockfile_path).await? {
-                let warn = format!("[WARN] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile", pkg_lockfile_path.display());
+                let warn = format!(
+                    "[WARN] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
+                    pkg_lockfile_path.display()
+                );
                 eprintln!("{}", warn.bright_yellow());
             }
 
@@ -173,7 +176,10 @@ impl Installer {
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if Lockfile::exists_at(&pkg_lockfile_path).await? {
-                let warn = format!("package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile", pkg_lockfile_path.display());
+                let warn = format!(
+                    "package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
+                    pkg_lockfile_path.display()
+                );
                 eprintln!("{}", warn.bright_yellow());
             }
 
