@@ -1,6 +1,5 @@
 // (c) Copyright 2025 Helsing GmbH. All rights reserved.
 
-use colored::*;
 use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
 use std::collections::HashMap;
@@ -145,11 +144,10 @@ impl Installer {
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if PackageLockfile::exists_at(&pkg_lockfile_path).await? {
-                let warn = format!(
+                tracing::warn!(
                     "[WARN] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
                     pkg_lockfile_path.display()
                 );
-                eprintln!("{}", warn.bright_yellow());
             }
 
             let store = PackageStore::open(&package).await?;
@@ -194,11 +192,10 @@ impl Installer {
             // WARN if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if PackageLockfile::exists_at(&pkg_lockfile_path).await? {
-                let warn = format!(
+                tracing::warn!(
                     "package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
                     pkg_lockfile_path.display()
                 );
-                eprintln!("{}", warn.bright_yellow());
             }
 
             let pkg_lockfile = PackageLockfile::read_from_or_default(&pkg_lockfile_path).await?;
