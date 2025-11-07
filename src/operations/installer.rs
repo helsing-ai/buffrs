@@ -1,18 +1,19 @@
 // (c) Copyright 2025 Helsing GmbH. All rights reserved.
 
+use colored::*;
+use miette::{Context as _, IntoDiagnostic, ensure};
+use semver::VersionReq;
+use std::collections::HashMap;
 use std::{
     env,
     path::{Path, PathBuf},
 };
-use std::collections::HashMap;
-use colored::*;
-use miette::{Context as _, IntoDiagnostic, ensure};
-use semver::VersionReq;
 
+use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{LOCKFILE, LockedPackage, PackageLockfile, WorkspaceLockedPackage, WorkspaceLockfile},
+    lock::{LOCKFILE, PackageLockfile, WorkspaceLockedPackage, WorkspaceLockfile},
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
         RemoteDependencyManifest, WorkspaceManifest,
@@ -21,7 +22,6 @@ use crate::{
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
-use crate::lock::{DigestAlgorithm, LockedDependency};
 
 /// Controls whether the lockfile is written to disk during package installation
 #[derive(Debug, Clone, Copy)]
@@ -257,7 +257,8 @@ impl Installer {
         let dependencies = graph.ordered_dependencies()?;
 
         // 1. Install all dependencies and track resolved remote packages
-        let mut resolved_remote_packages: HashMap<PackageName, ResolvedRemotePackage> = HashMap::new();
+        let mut resolved_remote_packages: HashMap<PackageName, ResolvedRemotePackage> =
+            HashMap::new();
 
         for dependency in dependencies {
             // Iterate through the dependencies in order and install them
@@ -417,18 +418,18 @@ impl Installer {
             );
 
             // Try to retrieve from cache if version matches lockfile
-            if version.matches(&locked_entry.version) {
-                if let Some(cached_pkg) = self.cache.get(locked_entry.into()).await? {
-                    locked_entry.validate(&cached_pkg)?;
+            if version.matches(&locked_entry.version)
+                && let Some(cached_pkg) = self.cache.get(locked_entry.into()).await?
+            {
+                locked_entry.validate(&cached_pkg)?;
 
-                    tracing::debug!(
-                        ":: using cached package for {}@{}",
-                        package_name,
-                        cached_pkg.version()
-                    );
+                tracing::debug!(
+                    ":: using cached package for {}@{}",
+                    package_name,
+                    cached_pkg.version()
+                );
 
-                    return Ok(cached_pkg);
-                }
+                return Ok(cached_pkg);
             }
         }
 

@@ -311,8 +311,7 @@ impl TryFrom<Vec<WorkspaceLockedPackage>> for PackageLockfile {
     type Error = miette::Error;
 
     fn try_from(locked: Vec<WorkspaceLockedPackage>) -> Result<Self, Self::Error> {
-        let package_locked: Vec<LockedPackage> =
-            locked.iter().map(LockedPackage::from).collect();
+        let package_locked: Vec<LockedPackage> = locked.iter().map(LockedPackage::from).collect();
 
         Ok(PackageLockfile::from_iter(package_locked))
     }
