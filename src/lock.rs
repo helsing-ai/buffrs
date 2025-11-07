@@ -320,10 +320,7 @@ pub struct WorkspaceLockedPackage {
 
 impl WorkspaceLockedPackage {
     /// Creates a WorkspaceLockedPackage from a LockedPackage
-    pub fn from_locked_package(
-        locked: LockedPackage,
-        dependencies: Vec<LockedDependency>,
-    ) -> Self {
+    pub fn from_locked_package(locked: LockedPackage, dependencies: Vec<LockedDependency>) -> Self {
         Self {
             name: locked.name,
             digest: locked.digest,
@@ -333,6 +330,48 @@ impl WorkspaceLockedPackage {
             dependencies,
             dependants: locked.dependants,
         }
+    }
+
+    /// Validates if another WorkspaceLockedPackage matches this one
+    pub fn validate(&self, package: &Package) -> miette::Result<()> {
+        let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
+
+        #[derive(Error, Debug)]
+        #[error("{property} mismatch - expected {expected}, actual {actual}")]
+        struct ValidationError {
+            property: &'static str,
+            expected: String,
+            actual: String,
+        }
+
+        ensure!(
+            &self.name == package.name(),
+            ValidationError {
+                property: "name",
+                expected: self.name.to_string(),
+                actual: package.name().to_string(),
+            }
+        );
+
+        ensure!(
+            &self.version == package.version(),
+            ValidationError {
+                property: "version",
+                expected: self.version.to_string(),
+                actual: package.version().to_string(),
+            }
+        );
+
+        ensure!(
+            self.digest == digest,
+            ValidationError {
+                property: "digest",
+                expected: self.digest.to_string(),
+                actual: digest.to_string(),
+            }
+        );
+
+        Ok(())
     }
 }
 
@@ -519,6 +558,30 @@ impl From<&LockedPackage> for FileRequirement {
     }
 }
 
+impl From<WorkspaceLockedPackage> for FileRequirement {
+    fn from(package: WorkspaceLockedPackage) -> Self {
+        Self::new(
+            &package.registry,
+            &package.repository,
+            &package.name,
+            &package.version,
+            &package.digest,
+        )
+    }
+}
+
+impl From<&WorkspaceLockedPackage> for FileRequirement {
+    fn from(package: &WorkspaceLockedPackage) -> Self {
+        Self::new(
+            &package.registry,
+            &package.repository,
+            &package.name,
+            &package.version,
+            &package.digest,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, str::FromStr};
@@ -527,7 +590,10 @@ mod tests {
 
     use crate::{package::PackageName, registry::RegistryUri};
 
-    use super::{Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, Lockfile, WorkspaceLockedPackage, WorkspaceLockfile};
+    use super::{
+        Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, Lockfile,
+        WorkspaceLockedPackage, WorkspaceLockfile,
+    };
 
     fn simple_lockfile() -> Lockfile {
         Lockfile {
@@ -743,9 +809,15 @@ mod tests {
         // Verify round-trip
         let deserialized: TestWrapper = toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized.dependencies.len(), 2);
-        assert_eq!(deserialized.dependencies[0].name, PackageName::unchecked("remote-lib-a"));
+        assert_eq!(
+            deserialized.dependencies[0].name,
+            PackageName::unchecked("remote-lib-a")
+        );
         assert_eq!(deserialized.dependencies[0].version, Version::new(1, 5, 0));
-        assert_eq!(deserialized.dependencies[1].name, PackageName::unchecked("remote-lib-b"));
+        assert_eq!(
+            deserialized.dependencies[1].name,
+            PackageName::unchecked("remote-lib-b")
+        );
         assert_eq!(deserialized.dependencies[1].version, Version::new(2, 0, 1));
     }
 
@@ -813,7 +885,10 @@ mod tests {
         assert_eq!(restored.packages.len(), 2);
 
         // Verify we can look up by (name, version)
-        let found = restored.get(&PackageName::unchecked("remote-lib-a"), &Version::new(1, 0, 0));
+        let found = restored.get(
+            &PackageName::unchecked("remote-lib-a"),
+            &Version::new(1, 0, 0),
+        );
         assert!(found.is_some());
         assert_eq!(found.unwrap().dependencies.len(), 1);
     }
@@ -855,11 +930,17 @@ mod tests {
         assert_eq!(lockfile.packages.len(), 2);
 
         // Should be able to look up each version independently
-        let v1 = lockfile.get(&PackageName::unchecked("remote-lib"), &Version::new(1, 0, 0));
+        let v1 = lockfile.get(
+            &PackageName::unchecked("remote-lib"),
+            &Version::new(1, 0, 0),
+        );
         assert!(v1.is_some());
         assert_eq!(v1.unwrap().version, Version::new(1, 0, 0));
 
-        let v2 = lockfile.get(&PackageName::unchecked("remote-lib"), &Version::new(2, 0, 0));
+        let v2 = lockfile.get(
+            &PackageName::unchecked("remote-lib"),
+            &Version::new(2, 0, 0),
+        );
         assert!(v2.is_some());
         assert_eq!(v2.unwrap().version, Version::new(2, 0, 0));
     }
