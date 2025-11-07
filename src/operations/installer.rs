@@ -7,6 +7,7 @@ use std::{
 
 use miette::{Context as _, IntoDiagnostic, ensure};
 use semver::VersionReq;
+use colored::*;
 
 use crate::{
     cache::{Cache, Entry as CacheEntry},
@@ -126,10 +127,8 @@ impl Installer {
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if Lockfile::exists_at(&pkg_lockfile_path).await? {
-                tracing::warn!(
-                    ":: package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
-                    pkg_lockfile_path.display()
-                );
+                let warn = format!("[WARN] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile", pkg_lockfile_path.display());
+                eprintln!("{}", warn.bright_yellow());
             }
 
             let store = PackageStore::open(&package).await?;
@@ -174,10 +173,8 @@ impl Installer {
             // Warn if package lockfile exists
             let pkg_lockfile_path = package.join(LOCKFILE);
             if Lockfile::exists_at(&pkg_lockfile_path).await? {
-                tracing::warn!(
-                    ":: package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
-                    pkg_lockfile_path.display()
-                );
+                let warn = format!("package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile", pkg_lockfile_path.display());
+                eprintln!("{}", warn.bright_yellow());
             }
 
             let pkg_lockfile = Lockfile::read_from_or_default(&pkg_lockfile_path).await?;
