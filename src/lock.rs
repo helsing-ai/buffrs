@@ -303,14 +303,14 @@ impl FromIterator<LockedPackage> for Lockfile {
 pub struct WorkspaceLockedPackage {
     /// The name of the package
     pub name: PackageName,
+    /// The exact version of the package
+    pub version: Version,
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
     pub registry: RegistryUri,
     /// The identifier of the repository where the package was published
     pub repository: String,
-    /// The exact version of the package
-    pub version: Version,
     /// Locked dependencies with exact versions
     #[serde(default)]
     pub dependencies: Vec<LockedDependency>,
@@ -323,10 +323,10 @@ impl WorkspaceLockedPackage {
     pub fn from_locked_package(locked: LockedPackage, dependencies: Vec<LockedDependency>) -> Self {
         Self {
             name: locked.name,
+            version: locked.version,
             digest: locked.digest,
             registry: locked.registry,
             repository: locked.repository,
-            version: locked.version,
             dependencies,
             dependants: locked.dependants,
         }
@@ -386,7 +386,7 @@ struct RawWorkspaceLockfile {
 /// Unlike package lockfiles which can only store one version per package,
 /// workspace lockfiles use (name, version) as the key to support multiple
 /// versions of the same package.
-#[derive(Default, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct WorkspaceLockfile {
     packages: BTreeMap<(PackageName, Version), WorkspaceLockedPackage>,
 }
@@ -413,15 +413,6 @@ impl WorkspaceLockfile {
                 Err(FileNotFound(LOCKFILE.into()).into())
             }
             Err(err) => Err(err).into_diagnostic(),
-        }
-    }
-
-    /// Loads the workspace lockfile from a path, or returns empty if not found
-    pub async fn read_from_or_default(path: impl AsRef<Path>) -> miette::Result<Self> {
-        if WorkspaceLockfile::exists_at(&path).await? {
-            WorkspaceLockfile::read_from(path).await
-        } else {
-            Ok(WorkspaceLockfile::default())
         }
     }
 
@@ -469,6 +460,7 @@ impl WorkspaceLockfile {
     }
 }
 
+/// This converts the results of package install to a workspace lockfile
 impl FromIterator<WorkspaceLockedPackage> for WorkspaceLockfile {
     fn from_iter<I: IntoIterator<Item = WorkspaceLockedPackage>>(iter: I) -> Self {
         Self {
@@ -477,6 +469,66 @@ impl FromIterator<WorkspaceLockedPackage> for WorkspaceLockfile {
                 .map(|locked| ((locked.name.clone(), locked.version.clone()), locked))
                 .collect(),
         }
+    }
+}
+
+/// Aggregates locked packages from multiple workspace members into a workspace lockfile
+///
+/// Merges packages by (name, version), deduplicating and summing dependants counts.
+impl TryFrom<Vec<WorkspaceLockedPackage>> for WorkspaceLockfile {
+    type Error = miette::Report;
+
+    fn try_from(locked_packages: Vec<WorkspaceLockedPackage>) -> Result<Self, Self::Error> {
+        use std::collections::BTreeMap;
+
+        let mut workspace_packages: BTreeMap<
+            (PackageName, semver::Version),
+            WorkspaceLockedPackage,
+        > = BTreeMap::new();
+
+        for locked in locked_packages {
+            let key = (locked.name.clone(), locked.version.clone());
+
+            workspace_packages
+                .entry(key)
+                .and_modify(|existing| {
+                    // Same package (name, version) - sum dependants
+                    existing.dependants += locked.dependants;
+
+                    // Verify consistency of other fields
+                    if existing.registry != locked.registry {
+                        tracing::warn!(
+                            "registry mismatch for {}@{}: {} vs {}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.registry,
+                            locked.registry
+                        );
+                    }
+                    if existing.digest != locked.digest {
+                        tracing::warn!(
+                            "digest mismatch for {}@{}: {} vs {}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.digest,
+                            locked.digest
+                        );
+                    }
+                    // Dependencies should be identical for same (name, version)
+                    if existing.dependencies != locked.dependencies {
+                        tracing::warn!(
+                            "dependencies mismatch for {}@{}: {:?} vs {:?}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.dependencies,
+                            locked.dependencies
+                        );
+                    }
+                })
+                .or_insert(locked);
+        }
+
+        Ok(Self::from_iter(workspace_packages.into_values()))
     }
 }
 
