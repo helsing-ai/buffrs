@@ -11,7 +11,7 @@ use semver::VersionReq;
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{LOCKFILE, Lockfile},
+    lock::{LOCKFILE, LockedPackage, Lockfile, WorkspaceLockedPackage, WorkspaceLockfile},
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
         RemoteDependencyManifest, WorkspaceManifest,
@@ -20,6 +20,15 @@ use crate::{
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
+
+/// Controls whether the lockfile is written to disk during package installation
+#[derive(Debug, Clone, Copy)]
+enum LockfileWriteMode {
+    /// Write the lockfile to the package directory (for standalone package installs)
+    Write,
+    /// Skip writing the lockfile (for workspace members - workspace handles lockfile)
+    Skip,
+}
 
 /// Helper for installing package dependencies
 ///
@@ -58,8 +67,16 @@ impl Installer {
                     .into_diagnostic()
                     .wrap_err("current dir could not be retrieved")?;
 
-                self.install_package(packages_manifest, &lockfile, &store, &current_path)
-                    .await
+                self.install_package(
+                    packages_manifest,
+                    &lockfile,
+                    &store,
+                    &current_path,
+                    LockfileWriteMode::Write,
+                )
+                .await?;
+
+                Ok(())
             }
             BuffrsManifest::Workspace(workspace_manifest) => {
                 self.install_workspace(workspace_manifest).await
@@ -73,34 +90,125 @@ impl Installer {
             .into_diagnostic()
             .wrap_err("current dir could not be retrieved")?;
 
-        let packages = manifest.workspace.resolve_members(root_path)?;
+        let packages = manifest.workspace.resolve_members(&root_path)?;
         tracing::info!(
             ":: workspace found. running install for {} packages in workspace",
             packages.len()
         );
 
+        let mut all_locked_packages = Vec::new();
+
         for package in packages {
             let pkg_manifest =
                 BuffrsManifest::require_package_manifest(&package.join(MANIFEST_FILE)).await?;
-            let pkg_lockfile = Lockfile::read_from_or_default(package.join(LOCKFILE)).await?;
+
+            // Warn if package lockfile exists
+            let pkg_lockfile_path = package.join(LOCKFILE);
+            if Lockfile::exists_at(&pkg_lockfile_path).await? {
+                tracing::warn!(
+                    ":: package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
+                    pkg_lockfile_path.display()
+                );
+            }
+
+            let pkg_lockfile = Lockfile::read_from_or_default(&pkg_lockfile_path).await?;
             let store = PackageStore::open(&package).await?;
 
             tracing::info!(":: running install for package: {}", package.display());
-            self.install_package(&pkg_manifest, &pkg_lockfile, &store, &package)
-                .await?
+
+            // Install without writing package lockfile (workspace will write workspace lockfile)
+            let locked = self
+                .install_package(
+                    &pkg_manifest,
+                    &pkg_lockfile,
+                    &store,
+                    &package,
+                    LockfileWriteMode::Skip,
+                )
+                .await?;
+
+            all_locked_packages.extend(locked);
         }
+
+        // Aggregate into workspace lockfile
+        let workspace_lockfile = Self::aggregate_workspace_lockfile(all_locked_packages)?;
+
+        // Write workspace lockfile
+        workspace_lockfile.write(&root_path).await?;
+
+        tracing::info!(":: wrote workspace lockfile at {}", root_path.join(LOCKFILE).display());
 
         Ok(())
     }
 
+    /// Aggregates package lockfiles into a workspace lockfile
+    ///
+    /// Merges locked packages from multiple members, deduplicating by (name, version)
+    /// and summing dependants counts.
+    fn aggregate_workspace_lockfile(
+        locked_packages: Vec<LockedPackage>,
+    ) -> miette::Result<WorkspaceLockfile> {
+        use std::collections::HashMap;
+
+        let mut workspace_packages: HashMap<(PackageName, semver::Version), WorkspaceLockedPackage> =
+            HashMap::new();
+
+        for locked in locked_packages {
+            let key = (locked.name.clone(), locked.version.clone());
+
+            workspace_packages
+                .entry(key)
+                .and_modify(|existing| {
+                    // Same package (name, version) - sum dependants
+                    existing.dependants += locked.dependants;
+
+                    // Verify consistency of other fields
+                    if existing.registry != locked.registry {
+                        tracing::warn!(
+                            "registry mismatch for {}@{}: {} vs {}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.registry,
+                            locked.registry
+                        );
+                    }
+                    if existing.digest != locked.digest {
+                        tracing::warn!(
+                            "digest mismatch for {}@{}: {} vs {}. Using first seen.",
+                            locked.name,
+                            locked.version,
+                            existing.digest,
+                            locked.digest
+                        );
+                    }
+                })
+                .or_insert_with(|| WorkspaceLockedPackage {
+                    name: locked.name,
+                    version: locked.version,
+                    registry: locked.registry,
+                    repository: locked.repository,
+                    digest: locked.digest,
+                    dependencies: vec![], // Empty for now - will add dependency graph capture later
+                    dependants: locked.dependants,
+                });
+        }
+
+        Ok(WorkspaceLockfile::from_iter(
+            workspace_packages.into_values(),
+        ))
+    }
+
     /// Installs dependencies of a package
+    ///
+    /// Returns the lockfile data. Lockfile persistence depends on `write_mode`.
     async fn install_package(
         &self,
         manifest: &PackagesManifest,
         lockfile: &Lockfile,
         store: &PackageStore,
         package_path: &PathBuf,
-    ) -> miette::Result<()> {
+        write_mode: LockfileWriteMode,
+    ) -> miette::Result<Vec<LockedPackage>> {
         store.clear().await?;
 
         if let Some(ref pkg) = manifest.package {
@@ -155,10 +263,19 @@ impl Installer {
             );
         }
 
-        // Write lockfile
-        Lockfile::from_iter(locked.into_iter())
-            .write(package_path)
-            .await
+        // Write lockfile based on mode
+        match write_mode {
+            LockfileWriteMode::Write => {
+                Lockfile::from_iter(locked.iter().cloned())
+                    .write(package_path)
+                    .await?;
+            }
+            LockfileWriteMode::Skip => {
+                // Workspace will handle lockfile writing
+            }
+        }
+
+        Ok(locked)
     }
 
     /// Installs a local dependency
@@ -455,5 +572,75 @@ mod tests {
 
         // Should succeed (actual mtime preservation is tested in PackageStore tests)
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_aggregate_workspace_lockfile_multiple_versions() {
+        use crate::lock::{Digest, DigestAlgorithm};
+
+        // Create two different versions of the same package from different members
+        let pkg_v1 = LockedPackage {
+            name: PackageName::unchecked("remote-lib"),
+            version: Version::new(1, 0, 0),
+            registry: RegistryUri::from_str("https://registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+
+        let pkg_v2 = LockedPackage {
+            name: PackageName::unchecked("remote-lib"),
+            version: Version::new(2, 0, 0),
+            registry: RegistryUri::from_str("https://registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+
+        // Also add the same version from two different members
+        let pkg_v1_dup = LockedPackage {
+            name: PackageName::unchecked("remote-lib"),
+            version: Version::new(1, 0, 0),
+            registry: RegistryUri::from_str("https://registry.com").unwrap(),
+            repository: "test-repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+
+        let locked_packages = vec![pkg_v1, pkg_v2, pkg_v1_dup];
+
+        let workspace_lockfile = Installer::aggregate_workspace_lockfile(locked_packages).unwrap();
+
+        // Should have 2 entries (v1.0.0 and v2.0.0), not 3
+        assert_eq!(workspace_lockfile.packages().count(), 2);
+
+        // v1.0.0 should have dependants=2 (merged from two members)
+        let v1 = workspace_lockfile
+            .get(&PackageName::unchecked("remote-lib"), &Version::new(1, 0, 0))
+            .expect("v1.0.0 should exist");
+        assert_eq!(v1.version, Version::new(1, 0, 0));
+        assert_eq!(v1.dependants, 2); // Summed from two members
+
+        // v2.0.0 should have dependants=1
+        let v2 = workspace_lockfile
+            .get(&PackageName::unchecked("remote-lib"), &Version::new(2, 0, 0))
+            .expect("v2.0.0 should exist");
+        assert_eq!(v2.version, Version::new(2, 0, 0));
+        assert_eq!(v2.dependants, 1);
     }
 }
