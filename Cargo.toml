@@ -57,7 +57,7 @@ human-panic = "2"
 miette = { version = "7", features = ["fancy"] }
 protobuf = { version = "3.7.2", optional = true }
 protobuf-parse = { version = "3.7.2", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
+reqwest = { version = "=0.12.20", default-features = false, features = ["rustls-tls-native-roots"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
