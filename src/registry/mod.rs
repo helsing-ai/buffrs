@@ -14,13 +14,13 @@
 
 use std::{
     fmt::{self, Display},
-    ops::{Deref, DerefMut},
     str::FromStr,
 };
 
 mod artifactory;
 #[cfg(test)]
 mod cache;
+mod http;
 mod maven;
 
 pub use artifactory::Artifactory;
@@ -35,6 +35,12 @@ use crate::{
     manifest::{Dependency, DependencyManifest},
     package::{Package, PackageName},
 };
+
+/// Full prefix for Artifactory registry URIs
+const ARTIFACTORY_PREFIX: &str = "artifactory+";
+
+/// Full prefix for Maven registry URIs
+const MAVEN_PREFIX: &str = "maven+";
 
 /// Trait for registry backends
 #[async_trait::async_trait]
@@ -69,16 +75,16 @@ impl RegistryType {
     /// Get the prefix string for this registry type
     fn prefix(&self) -> &'static str {
         match self {
-            RegistryType::Artifactory => "artifactory+",
-            RegistryType::Maven => "maven+",
+            RegistryType::Artifactory => ARTIFACTORY_PREFIX,
+            RegistryType::Maven => MAVEN_PREFIX,
         }
     }
 
     /// Remove the registry type prefix from a URL string
     fn strip_prefix(s: &str) -> (&str, Option<Self>) {
-        if let Some(rest) = s.strip_prefix("artifactory+") {
+        if let Some(rest) = s.strip_prefix(ARTIFACTORY_PREFIX) {
             (rest, Some(RegistryType::Artifactory))
-        } else if let Some(rest) = s.strip_prefix("maven+") {
+        } else if let Some(rest) = s.strip_prefix(MAVEN_PREFIX) {
             (rest, Some(RegistryType::Maven))
         } else {
             (s, None)
@@ -124,15 +130,55 @@ impl RegistryUri {
     pub fn url(&self) -> &Url {
         &self.url
     }
+}
 
-    /// Creates a registry instance based on the RegistryUri type
-    pub fn get_registry(
-        &self,
-        credentials: &crate::credentials::Credentials,
-    ) -> miette::Result<Box<dyn Registry>> {
-        match self.registry_type {
-            RegistryType::Artifactory => Ok(Box::new(Artifactory::new(self.clone(), credentials)?)),
-            RegistryType::Maven => Ok(Box::new(Maven::new(self.clone(), credentials)?)),
+/// Builder for creating registry instances
+#[derive(Default)]
+pub struct RegistryBuilder<'a> {
+    kind: Option<RegistryType>,
+    uri: Option<RegistryUri>,
+    credentials: Option<&'a crate::credentials::Credentials>,
+}
+
+impl<'a> RegistryBuilder<'a> {
+    /// Creates a new RegistryBuilder
+    pub fn builder() -> Self {
+        Self::default()
+    }
+
+    /// Sets the registry type/kind
+    pub fn kind(mut self, kind: RegistryType) -> Self {
+        self.kind = Some(kind);
+        self
+    }
+
+    /// Sets the registry URI
+    pub fn uri(mut self, uri: RegistryUri) -> Self {
+        self.uri = Some(uri);
+        self
+    }
+
+    /// Sets the credentials
+    pub fn credentials(mut self, credentials: &'a crate::credentials::Credentials) -> Self {
+        self.credentials = Some(credentials);
+        self
+    }
+
+    /// Builds the registry instance
+    pub fn build(self) -> miette::Result<Box<dyn Registry>> {
+        let kind = self
+            .kind
+            .ok_or_else(|| miette!("registry kind is required"))?;
+        let uri = self
+            .uri
+            .ok_or_else(|| miette!("registry URI is required"))?;
+        let credentials = self
+            .credentials
+            .ok_or_else(|| miette!("credentials are required"))?;
+
+        match kind {
+            RegistryType::Artifactory => Ok(Box::new(Artifactory::new(uri, credentials)?)),
+            RegistryType::Maven => Ok(Box::new(Maven::new(uri, credentials)?)),
         }
     }
 }
@@ -140,20 +186,6 @@ impl RegistryUri {
 impl From<RegistryUri> for Url {
     fn from(value: RegistryUri) -> Self {
         value.url
-    }
-}
-
-impl Deref for RegistryUri {
-    type Target = Url;
-
-    fn deref(&self) -> &Self::Target {
-        &self.url
-    }
-}
-
-impl DerefMut for RegistryUri {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.url
     }
 }
 

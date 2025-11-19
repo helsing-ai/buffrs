@@ -35,7 +35,7 @@ use crate::{
     operations::installer::Installer,
     operations::publisher::Publisher,
     package::{PackageName, PackageStore, PackageType},
-    registry::RegistryUri,
+    registry::{RegistryBuilder, RegistryUri},
 };
 
 const INITIAL_VERSION: Version = Version::new(0, 1, 0);
@@ -196,7 +196,11 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         DependencyLocatorVersion::Latest => {
             // query the registry to retrieve the actual latest version
             let credentials = Credentials::load().await?;
-            let registry_client = registry.get_registry(&credentials)?;
+            let registry_client = RegistryBuilder::builder()
+                .kind(registry.registry_type())
+                .uri(registry.clone())
+                .credentials(&credentials)
+                .build()?;
 
             let latest_version = registry_client
                 .get_latest_version(repository.clone(), package.clone())
@@ -436,8 +440,11 @@ pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     credentials.registry_tokens.insert(registry.clone(), token);
 
     if env::var(BUFFRS_TESTSUITE_VAR).is_err() {
-        registry
-            .get_registry(&credentials)?
+        RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&credentials)
+            .build()?
             .ping()
             .await
             .wrap_err("failed to validate token")?;

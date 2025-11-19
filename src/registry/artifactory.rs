@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
+use super::{
+    RegistryUri,
+    http::{RequestBuilder, ValidatedResponse},
+};
 use crate::{
     credentials::Credentials,
     lock::DigestAlgorithm,
@@ -20,7 +23,7 @@ use crate::{
     package::{Package, PackageName},
 };
 use miette::{Context, IntoDiagnostic, ensure, miette};
-use reqwest::{Body, Method, Response};
+use reqwest::Method;
 use semver::Version;
 use serde::Deserialize;
 use url::Url;
@@ -59,10 +62,10 @@ impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
-            let path = &format!("{}/api/repositories", uri.path());
-            uri.set_path(path);
-            uri.into()
+            let mut url = self.registry.url().clone();
+            let path = &format!("{}/api/repositories", url.path());
+            url.set_path(path);
+            url
         };
 
         self.new_request(Method::GET, repositories_url)
@@ -79,10 +82,10 @@ impl Artifactory {
     ) -> miette::Result<Version> {
         // First retrieve all packages matching the given name
         let search_query_url: Url = {
-            let mut url = self.registry.clone();
+            let mut url = self.registry.url().clone();
             url.set_path("artifactory/api/search/artifact");
             url.set_query(Some(&format!("name={name}&repos={repository}")));
-            url.into()
+            url
         };
 
         let response = self
@@ -162,15 +165,15 @@ impl Artifactory {
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = manifest.registry.path().to_owned();
+            let path = manifest.registry.url().path().to_owned();
 
-            let mut url = manifest.registry.clone();
+            let mut url = manifest.registry.url().clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
                 path, manifest.repository, dependency.package, dependency.package, version
             ));
 
-            url.into()
+            url
         };
 
         tracing::debug!("Hitting download URL: {artifact_url}");
@@ -285,49 +288,6 @@ impl Artifactory {
         );
 
         Ok(())
-    }
-}
-
-struct RequestBuilder(reqwest::RequestBuilder);
-
-impl RequestBuilder {
-    fn new(client: reqwest::Client, method: reqwest::Method, url: Url) -> Self {
-        Self(client.request(method, url))
-    }
-
-    fn auth(mut self, token: String) -> Self {
-        self.0 = self.0.bearer_auth(token);
-        self
-    }
-
-    fn body(mut self, payload: impl Into<Body>) -> Self {
-        self.0 = self.0.body(payload);
-        self
-    }
-
-    async fn send(self) -> miette::Result<ValidatedResponse> {
-        self.0.send().await.into_diagnostic()?.try_into()
-    }
-}
-
-#[derive(Debug)]
-struct ValidatedResponse(reqwest::Response);
-
-impl TryFrom<Response> for ValidatedResponse {
-    type Error = miette::Report;
-
-    fn try_from(value: Response) -> Result<Self, Self::Error> {
-        ensure!(
-            !value.status().is_redirection(),
-            "remote server attempted to redirect request - is this registry URL valid?"
-        );
-
-        ensure!(
-            value.status() != 401,
-            "unauthorized - please provide registry credentials with `buffrs login`"
-        );
-
-        value.error_for_status().into_diagnostic().map(Self)
     }
 }
 
