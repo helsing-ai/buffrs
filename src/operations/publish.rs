@@ -19,7 +19,7 @@ use crate::{
     },
     operations::install::NetworkMode,
     package::PackageStore,
-    registry::{Registry, RegistryUri},
+    registry::{Registry, RegistryBuilder, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
 
@@ -50,7 +50,13 @@ impl Publisher {
         tracing::debug!("credentials loaded successfully");
 
         tracing::debug!("creating registry client for registry: {}", registry);
-        let registry_client: Arc<dyn Registry> = Arc::from(registry.get_registry(&credentials)?);
+        let registry_client: Arc<dyn Registry> = Arc::from(
+            RegistryBuilder::builder()
+                .kind(registry.registry_type())
+                .uri(registry.clone())
+                .credentials(&credentials)
+                .build()?,
+        );
         tracing::debug!("registry client created successfully");
 
         tracing::debug!("publisher instance created successfully");
@@ -783,8 +789,14 @@ mod tests {
         let credentials = Credentials {
             registry_tokens: HashMap::new(),
         };
-        let registry_client: Arc<dyn Registry> =
-            Arc::from(registry.get_registry(&credentials).unwrap());
+        let registry_client: Arc<dyn Registry> = Arc::from(
+            RegistryBuilder::builder()
+                .kind(registry.registry_type())
+                .uri(registry.clone())
+                .credentials(&credentials)
+                .build()
+                .unwrap(),
+        );
 
         Publisher {
             registry,

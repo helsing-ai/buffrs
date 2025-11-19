@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
+use super::{
+    RegistryUri,
+    http::{RequestBuilder, ValidatedResponse},
+};
 use crate::{
     credentials::Credentials,
     lock::DigestAlgorithm,
@@ -20,7 +23,7 @@ use crate::{
     package::{Package, PackageName},
 };
 use miette::{Context, IntoDiagnostic, ensure, miette};
-use reqwest::{Body, Method, Response};
+use reqwest::Method;
 use semver::Version;
 use serde::Deserialize;
 use url::Url;
@@ -47,13 +50,12 @@ impl Maven {
     }
 
     fn new_request(&self, method: Method, url: Url) -> RequestBuilder {
-        let mut request_builder = RequestBuilder::new(self.client.clone(), method, url);
+        let request_builder = RequestBuilder::new(self.client.clone(), method, url);
 
-        if let Some(token) = &self.token {
-            request_builder = request_builder.auth(token.clone());
+        match &self.token {
+            Some(token) => request_builder.auth(token.clone()),
+            None => request_builder,
         }
-
-        request_builder
     }
 
     /// Pings the Maven registry to ensure access is working
@@ -61,7 +63,7 @@ impl Maven {
         // For Maven, we just try to access the base URL
         let ping_url: Url = self.registry.url().clone();
 
-        self.new_request(Method::HEAD, ping_url)
+        self.new_request(Method::GET, ping_url)
             .send()
             .await
             .map(|_| ())
@@ -74,7 +76,7 @@ impl Maven {
         name: PackageName,
     ) -> miette::Result<Version> {
         let metadata_url: Url = {
-            let mut url = self.registry.clone();
+            let mut url = self.registry.url().clone();
             let path = format!(
                 "{}/{}/{}/maven-metadata.xml",
                 url.path().trim_end_matches('/'),
@@ -82,7 +84,7 @@ impl Maven {
                 name
             );
             url.set_path(&path);
-            url.into()
+            url
         };
 
         let response = self.new_request(Method::GET, metadata_url).send().await?;
@@ -125,15 +127,15 @@ impl Maven {
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = manifest.registry.path().to_owned();
+            let path = manifest.registry.url().path().to_owned();
 
-            let mut url = manifest.registry.clone();
+            let mut url = manifest.registry.url().clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}/{}-{}.tgz",
                 path, manifest.repository, dependency.package, version, dependency.package, version
             ));
 
-            url.into()
+            url
         };
 
         tracing::debug!("Hitting download URL: {artifact_url}");
@@ -147,11 +149,14 @@ impl Maven {
             .get(&reqwest::header::CONTENT_TYPE)
             .ok_or_else(|| miette!("missing content-type header"))?;
 
+        let is_x_gzip =
+            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip");
+        let is_gzip = content_type == reqwest::header::HeaderValue::from_static("application/gzip");
+        let is_octet_stream =
+            content_type == reqwest::header::HeaderValue::from_static("application/octet-stream");
+
         ensure!(
-            content_type == reqwest::header::HeaderValue::from_static("application/x-gzip")
-                || content_type == reqwest::header::HeaderValue::from_static("application/gzip")
-                || content_type
-                    == reqwest::header::HeaderValue::from_static("application/octet-stream"),
+            is_x_gzip || is_gzip || is_octet_stream,
             "server response has incorrect mime type: {content_type:?}"
         );
 
@@ -210,35 +215,34 @@ impl Maven {
 
         // 404 gets wrapped into a DiagnosticError(reqwest::Error(404))
         // so we need to make sure it's OK before unwrapping
-        if let Ok(ValidatedResponse(response)) = response {
-            if response.status().is_success() {
-                // compare hash to make sure the file in the registry is the same
-                let alg = DigestAlgorithm::SHA256;
-                let package_hash = alg.digest(&package.tgz);
-                let expected_hash =
-                    alg.digest(&response.bytes().await.into_diagnostic().wrap_err(miette!(
-                        "unexpected error: failed to read the bytes back from Maven"
-                    ))?);
-                if package_hash == expected_hash {
-                    tracing::info!(
-                        ":: {}/{}@{} is already published, skipping",
-                        repository,
-                        package.name(),
-                        package.version()
-                    );
-                    return Ok(());
-                } else {
-                    tracing::error!(
-                        %package_hash,
-                        %expected_hash,
-                        package = %package.name(),
-                        "publishing failed, hash mismatch"
-                    );
-                    return Err(miette!(
-                        "unable to publish {} to Maven: package is already published with a different hash",
-                        package.name()
-                    ));
-                }
+        if let Ok(ValidatedResponse(response)) = response
+            && response.status().is_success()
+        {
+            // compare hash to make sure the file in the registry is the same
+            let alg = DigestAlgorithm::SHA256;
+            let package_hash = alg.digest(&package.tgz);
+            let expected_hash = alg.digest(&response.bytes().await.into_diagnostic().wrap_err(
+                miette!("unexpected error: failed to read the bytes back from Maven"),
+            )?);
+            if package_hash == expected_hash {
+                tracing::info!(
+                    ":: {}/{}@{} is already published, skipping",
+                    repository,
+                    package.name(),
+                    package.version()
+                );
+                return Ok(());
+            } else {
+                tracing::error!(
+                    %package_hash,
+                    %expected_hash,
+                    package = %package.name(),
+                    "publishing failed, hash mismatch"
+                );
+                return Err(miette!(
+                    "unable to publish {} to Maven: package is already published with a different hash",
+                    package.name()
+                ));
             }
         }
 
@@ -271,7 +275,7 @@ impl Maven {
         new_version: &Version,
     ) -> miette::Result<()> {
         let metadata_url: Url = {
-            let mut url = self.registry.clone();
+            let mut url = self.registry.url().clone();
             let path = format!(
                 "{}/{}/{}/maven-metadata.xml",
                 url.path().trim_end_matches('/'),
@@ -279,7 +283,7 @@ impl Maven {
                 package_name
             );
             url.set_path(&path);
-            url.into()
+            url
         };
 
         // Try to fetch existing metadata
@@ -288,19 +292,14 @@ impl Maven {
             .send()
             .await;
 
-        let mut metadata = if let Ok(ValidatedResponse(response)) = existing_metadata {
-            if response.status().is_success() {
+        let mut metadata = match existing_metadata {
+            Ok(ValidatedResponse(response)) if response.status().is_success() => {
                 let xml = response.text().await.into_diagnostic()?;
                 quick_xml::de::from_str::<MavenMetadata>(&xml)
                     .into_diagnostic()
-                    .wrap_err(miette!("failed to parse existing maven-metadata.xml"))?
-            } else {
-                // Create new metadata
-                MavenMetadata::new(package_name.to_string())
+                    .wrap_err_with(|| miette!("failed to parse existing maven-metadata.xml"))?
             }
-        } else {
-            // Create new metadata
-            MavenMetadata::new(package_name.to_string())
+            _ => MavenMetadata::new(package_name.to_string()),
         };
 
         // Add the new version if it doesn't exist
@@ -340,49 +339,6 @@ impl Maven {
         tracing::debug!("Updated maven-metadata.xml for {}", package_name);
 
         Ok(())
-    }
-}
-
-struct RequestBuilder(reqwest::RequestBuilder);
-
-impl RequestBuilder {
-    fn new(client: reqwest::Client, method: reqwest::Method, url: Url) -> Self {
-        Self(client.request(method, url))
-    }
-
-    fn auth(mut self, token: String) -> Self {
-        self.0 = self.0.bearer_auth(token);
-        self
-    }
-
-    fn body(mut self, payload: impl Into<Body>) -> Self {
-        self.0 = self.0.body(payload);
-        self
-    }
-
-    async fn send(self) -> miette::Result<ValidatedResponse> {
-        self.0.send().await.into_diagnostic()?.try_into()
-    }
-}
-
-#[derive(Debug)]
-struct ValidatedResponse(reqwest::Response);
-
-impl TryFrom<Response> for ValidatedResponse {
-    type Error = miette::Report;
-
-    fn try_from(value: Response) -> Result<Self, Self::Error> {
-        ensure!(
-            !value.status().is_redirection(),
-            "remote server attempted to redirect request - is this registry URL valid?"
-        );
-
-        ensure!(
-            value.status() != 401,
-            "unauthorized - please provide registry credentials with `buffrs login`"
-        );
-
-        value.error_for_status().into_diagnostic().map(Self)
     }
 }
 

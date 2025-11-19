@@ -21,7 +21,7 @@ use crate::{
     },
     operations::install::NetworkMode,
     package::{PackageName, PackageType},
-    registry::{Registry, RegistryUri},
+    registry::{Registry, RegistryBuilder, RegistryUri},
 };
 
 /// Models the source of a dependency
@@ -385,7 +385,7 @@ impl<'a> GraphBuilder<'a> {
                 && let Some(file_req) = lockfile.get(package_name, &version)
             {
                 // Verify registry matches (lockfile vs manifest)
-                if file_req.url().as_str().starts_with(registry.as_str()) {
+                if file_req.url().as_str().starts_with(registry.url().as_str()) {
                     let cache = Cache::open().await?;
                     if let Ok(Some(pkg)) = cache.get(file_req).await {
                         tracing::debug!("resolved {}@{} from local cache", package_name, version);
@@ -404,10 +404,16 @@ impl<'a> GraphBuilder<'a> {
                     {
                         client.clone()
                     } else {
-                        let client: Arc<dyn Registry> =
-                            Arc::from(registry.get_registry(self.credentials).wrap_err_with(
-                                || format!("failed to initialize registry {}", registry),
-                            )?);
+                        let client: Arc<dyn Registry> = Arc::from(
+                            RegistryBuilder::builder()
+                                .kind(registry.registry_type())
+                                .uri(registry.clone())
+                                .credentials(self.credentials)
+                                .build()
+                                .wrap_err_with(|| {
+                                    format!("failed to initialize registry {}", registry)
+                                })?,
+                        );
                         self.registry_clients
                             .insert(registry.clone(), client.clone());
                         client

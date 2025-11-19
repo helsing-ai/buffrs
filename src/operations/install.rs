@@ -19,7 +19,7 @@ use crate::{
         workspace::WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
-    registry::RegistryUri,
+    registry::{RegistryBuilder, RegistryUri},
     resolver::{DependencyError, DependencyGraph, DependencySource},
 };
 
@@ -334,8 +334,11 @@ mod utils {
         }
 
         // 1. Download the package from the configured registry
-        let registry_client = registry
-            .get_registry(&ctx.credentials)
+        let registry_client = RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&ctx.credentials)
+            .build()
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let dependency = Dependency {
