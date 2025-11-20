@@ -127,15 +127,18 @@ impl Maven {
         let artifact_url = {
             let version = super::dependency_version_string(&dependency)?;
 
-            let path = manifest.registry.url().path().to_owned();
-
-            let mut url = manifest.registry.url().clone();
-            url.set_path(&format!(
+            format!(
                 "{}/{}/{}/{}/{}-{}.tgz",
-                path, manifest.repository, dependency.package, version, dependency.package, version
-            ));
-
-            url
+                manifest.registry.url(),
+                manifest.repository,
+                dependency.package,
+                version,
+                dependency.package,
+                version
+            )
+            .parse()
+            .into_diagnostic()
+            .wrap_err_with(|| miette!("unexpected error: failed to construct artifact URL"))?
         };
 
         tracing::debug!("Hitting download URL: {artifact_url}");
@@ -194,7 +197,7 @@ impl Maven {
         // Construct the artifact URL
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}/{}-{}.tgz",
-            self.registry,
+            self.registry.url(),
             repository,
             package.name(),
             version,
@@ -304,10 +307,14 @@ impl Maven {
 
         // Add the new version if it doesn't exist
         let version_str = new_version.to_string();
-        if !metadata.versioning.versions.contains(&version_str) {
-            metadata.versioning.versions.push(version_str.clone());
+        if !metadata.versioning.versions.version.contains(&version_str) {
+            metadata
+                .versioning
+                .versions
+                .version
+                .push(version_str.clone());
             // Sort versions
-            metadata.versioning.versions.sort_by(|a, b| {
+            metadata.versioning.versions.version.sort_by(|a, b| {
                 let va = Version::parse(a).ok();
                 let vb = Version::parse(b).ok();
                 match (va, vb) {
@@ -360,7 +367,9 @@ impl MavenMetadata {
             versioning: Versioning {
                 latest: None,
                 release: None,
-                versions: Vec::new(),
+                versions: Versions {
+                    version: Vec::new(),
+                },
                 last_updated: None,
             },
         }
@@ -373,10 +382,15 @@ struct Versioning {
     latest: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release: Option<String>,
-    #[serde(rename = "versions")]
-    versions: Vec<String>,
+    versions: Versions,
     #[serde(rename = "lastUpdated", skip_serializing_if = "Option::is_none")]
     last_updated: Option<String>,
+}
+
+#[derive(Debug, Deserialize, serde::Serialize, Clone, PartialEq, Eq)]
+struct Versions {
+    #[serde(rename = "version", default)]
+    version: Vec<String>,
 }
 
 #[async_trait::async_trait]

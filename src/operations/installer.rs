@@ -17,7 +17,7 @@ use crate::{
         RemoteDependencyManifest, WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, RegistryUri},
+    registry::{RegistryBuilder, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
 
@@ -225,7 +225,11 @@ impl Installer {
         repository: &str,
         version: &VersionReq,
     ) -> miette::Result<Package> {
-        let artifactory = Artifactory::new(registry.clone(), &self.credentials)
+        let registry_client = RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&self.credentials)
+            .build()
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let dependency = Dependency {
@@ -237,7 +241,7 @@ impl Installer {
             }),
         };
 
-        let downloaded_package = artifactory.download(dependency).await?;
+        let downloaded_package = registry_client.download(dependency).await?;
 
         // Cache the downloaded package for future installs
         let cache_key = CacheEntry::from(&downloaded_package);

@@ -17,7 +17,7 @@ use crate::{
         PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
     package::PackageStore,
-    registry::{Artifactory, RegistryUri},
+    registry::{Registry, RegistryBuilder, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
 
@@ -25,7 +25,7 @@ use crate::{
 pub struct Publisher {
     registry: RegistryUri,
     repository: String,
-    artifactory: Artifactory,
+    registry_client: Box<dyn Registry>,
     preserve_mtime: bool,
     /// Mapping from local dependency paths to their remote published locations
     manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest>,
@@ -39,12 +39,16 @@ impl Publisher {
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
         let credentials = Credentials::load().await?;
-        let artifactory = Artifactory::new(registry.clone(), &credentials)?;
+        let registry_client = RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&credentials)
+            .build()?;
 
         Ok(Self {
             registry,
             repository,
-            artifactory,
+            registry_client,
             preserve_mtime,
             manifest_mappings: HashMap::new(),
         })
@@ -273,7 +277,7 @@ impl Publisher {
             .release(&remote_deps_manifest, self.preserve_mtime)
             .await?;
 
-        self.artifactory
+        self.registry_client
             .publish(package.clone(), self.repository.clone())
             .await
             .wrap_err_with(|| format!("publishing of package {} failed", package.name()))?;
@@ -354,12 +358,17 @@ mod tests {
         let credentials = Credentials {
             registry_tokens: HashMap::new(),
         };
-        let artifactory = Artifactory::new(registry.clone(), &credentials).unwrap();
+        let registry_client = RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&credentials)
+            .build()
+            .unwrap();
 
         Publisher {
             registry,
             repository: "test-repo".to_string(),
-            artifactory,
+            registry_client,
             preserve_mtime: false,
             manifest_mappings: HashMap::new(),
         }
