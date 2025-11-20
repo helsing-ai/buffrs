@@ -23,8 +23,8 @@ mod cache;
 mod http;
 mod maven;
 
-pub use artifactory::Artifactory;
-pub use maven::Maven;
+use artifactory::Artifactory;
+use maven::Maven;
 use miette::{Context, IntoDiagnostic, ensure, miette};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
