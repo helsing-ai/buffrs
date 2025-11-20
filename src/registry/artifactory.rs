@@ -313,7 +313,7 @@ impl Artifactory {
 
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.registry,
+            self.registry.url(),
             repository,
             package.name(),
             package.name(),
