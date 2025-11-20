@@ -276,21 +276,21 @@ impl FileRequirement {
         version: &Version,
         digest: &Digest,
     ) -> Self {
-        let mut url = url.clone();
+        let mut constructed_url = url.url().clone();
         let new_path = format!(
             "{}/{}/{}/{}-{}.tgz",
-            url.path(),
+            constructed_url.path(),
             repository,
             name,
             name,
             version
         );
 
-        url.set_path(&new_path);
+        constructed_url.set_path(&new_path);
 
         Self {
             package: name.to_owned(),
-            url: url.into(),
+            url: constructed_url,
             digest: digest.clone(),
         }
     }

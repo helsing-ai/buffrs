@@ -5,6 +5,7 @@ mod lint;
 mod login;
 mod logout;
 mod ls;
+mod mixed_registries;
 mod package;
 mod publish;
 mod remove;
