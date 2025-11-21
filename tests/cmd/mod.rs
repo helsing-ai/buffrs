@@ -1,6 +1,7 @@
 mod add;
 mod init;
-mod install;
+mod install_package;
+mod install_workspace;
 mod lint;
 mod login;
 mod logout;

@@ -1,0 +1,10 @@
+version = 1
+
+[[packages]]
+name = "remote-lib"
+version = "1.0.0"
+digest = "DIGEST"
+registry = "REGISTRY_URL"
+repository = "test-repo"
+dependencies = []
+dependants = 2
