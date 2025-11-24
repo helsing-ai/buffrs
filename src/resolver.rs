@@ -209,6 +209,7 @@ struct GraphBuilder<'a> {
     /// Track which packages we're currently visiting to detect cycles during construction
     visiting: HashSet<PackageName>,
     credentials: &'a Credentials,
+    registry_clients: HashMap<RegistryUri, Artifactory>,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -218,6 +219,7 @@ impl<'a> GraphBuilder<'a> {
             base_path,
             visiting: HashSet::new(),
             credentials,
+            registry_clients: HashMap::new(),
         }
     }
 
@@ -341,8 +343,16 @@ impl<'a> GraphBuilder<'a> {
         let version = &remote_manifest.version;
 
         // Download the package to read its manifest and discover dependencies
-        let artifactory = Artifactory::new(registry.clone(), self.credentials)
-            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+        // Reuse Artifactory client per registry to share connection pools (reqwest::Client uses Arc internally)
+        let artifactory = if let Some(client) = self.registry_clients.get(registry) {
+            client.clone()
+        } else {
+            let client = Artifactory::new(registry.clone(), self.credentials)
+                .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+            self.registry_clients
+                .insert(registry.clone(), client.clone());
+            client
+        };
 
         let downloaded_package = artifactory.download(dependency.clone()).await?;
 
