@@ -11,7 +11,9 @@ use semver::VersionReq;
 use thiserror::Error;
 
 use crate::{
+    cache::Cache,
     credentials::Credentials,
+    lock::FileRequirement,
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
         PackagesManifest,
@@ -209,7 +211,6 @@ struct GraphBuilder<'a> {
     /// Track which packages we're currently visiting to detect cycles during construction
     visiting: HashSet<PackageName>,
     credentials: &'a Credentials,
-    registry_clients: HashMap<RegistryUri, Artifactory>,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -219,7 +220,6 @@ impl<'a> GraphBuilder<'a> {
             base_path,
             visiting: HashSet::new(),
             credentials,
-            registry_clients: HashMap::new(),
         }
     }
 
@@ -342,22 +342,74 @@ impl<'a> GraphBuilder<'a> {
         let repository = &remote_manifest.repository;
         let version = &remote_manifest.version;
 
-        // Download the package to read its manifest and discover dependencies
-        // Reuse Artifactory client per registry to share connection pools (reqwest::Client uses Arc internally)
-        let artifactory = if let Some(client) = self.registry_clients.get(registry) {
-            client.clone()
-        } else {
-            let client = Artifactory::new(registry.clone(), self.credentials)
-                .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
-            self.registry_clients
-                .insert(registry.clone(), client.clone());
-            client
+        let package = {
+            let cache = Cache::open().await?;
+
+            let reformatted = version
+                .to_string()
+                .chars()
+                .skip_while(|c| *c == '=')
+                .collect::<String>();
+
+            let version = reformatted
+                .parse()
+                .map_err(|e| miette::miette!("{e}"))
+                .wrap_err_with(|| {
+                    format!("expected only exact version requirements: {package_name}@{version}")
+                })?;
+
+            dbg!(&version);
+
+            if let Ok(lock) = dbg!(
+                crate::lock::WorkspaceLockfile::nasty_hack(
+                    &std::env::current_dir().unwrap().join(crate::lock::LOCKFILE),
+                )
+                .await
+            ) && let Some(pkg) = dbg!(lock.get(package_name, &version))
+                && let Ok(Some(cached)) = dbg!(
+                    cache
+                        .get(FileRequirement::new(
+                            registry,
+                            repository,
+                            package_name,
+                            &version,
+                            &pkg.digest,
+                        ))
+                        .await
+                )
+            {
+                println!("USING WS LOCK DURING RESOLUTION");
+                cached
+            } else if let Ok(lock) = dbg!(
+                crate::lock::PackageLockfile::read_from(
+                    &self.base_path.join(crate::lock::LOCKFILE)
+                )
+                .await
+            ) && let Some(pkg) = dbg!(lock.get(package_name))
+                && let Ok(Some(cached)) = dbg!(
+                    cache
+                        .get(FileRequirement::new(
+                            registry,
+                            repository,
+                            package_name,
+                            &version,
+                            &pkg.digest,
+                        ))
+                        .await
+                )
+            {
+                println!("USING PKG LOCK DURING RESOLUTION");
+                cached
+            } else {
+                panic!("USING ARTIFACTORY DURING RESOLUTION");
+                let artifactory = Artifactory::new(registry.clone(), self.credentials)
+                    .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+                artifactory.download(dependency.clone()).await?
+            }
         };
 
-        let downloaded_package = artifactory.download(dependency.clone()).await?;
-
         // Read the package manifest to discover dependencies and package type
-        let manifest = downloaded_package.manifest;
+        let manifest = package.manifest;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;

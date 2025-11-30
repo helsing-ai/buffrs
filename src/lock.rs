@@ -434,6 +434,20 @@ pub struct WorkspaceLockfile {
 }
 
 impl WorkspaceLockfile {
+    /// Loads the workspace lockfile from a specific path
+    pub async fn nasty_hack(path: impl AsRef<Path>) -> miette::Result<Self> {
+        let p = path.as_ref().canonicalize().unwrap();
+
+        if let Ok(x) = Self::read_from(dbg!(&p)).await {
+            return Ok(x);
+        }
+
+        if let Ok(x) = Self::read_from(dbg!(&p.join("../Proto.lock"))).await {
+            return Ok(x);
+        }
+
+        Self::read_from(dbg!(p.join("../../Proto.lock"))).await
+    }
     /// Checks if the workspace lockfile exists at the given path
     pub async fn exists_at(path: impl AsRef<Path>) -> miette::Result<bool> {
         fs::try_exists(path)
