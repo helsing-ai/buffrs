@@ -18,8 +18,7 @@ pub use test_registry::{with_test_maven_registry, with_test_registry};
 #[macro_export]
 macro_rules! cli {
     () => {
-        assert_cmd::Command::cargo_bin(assert_cmd::crate_name!())
-            .unwrap()
+        assert_cmd::cargo::cargo_bin_cmd!(assert_cmd::pkg_name!())
             .env(
                 "BUFFRS_HOME",
                 &format!("./{}", $crate::VirtualFileSystem::VIRTUAL_HOME),

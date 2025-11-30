@@ -93,7 +93,7 @@ fn serve_maven_metadata(state: &State, path: &str) -> Result<GetResponse, Status
     }
 
     // Get the artifact name from the path
-    let artifact_id = package_key.split('/').last().unwrap_or("unknown");
+    let artifact_id = package_key.split('/').next_back().unwrap_or("unknown");
     let latest = versions.last().unwrap();
 
     let metadata = format!(
