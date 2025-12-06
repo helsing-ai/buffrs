@@ -434,20 +434,6 @@ pub struct WorkspaceLockfile {
 }
 
 impl WorkspaceLockfile {
-    /// Loads the workspace lockfile from a specific path
-    pub async fn nasty_hack(path: impl AsRef<Path>) -> miette::Result<Self> {
-        let p = path.as_ref().canonicalize().unwrap();
-
-        if let Ok(x) = Self::read_from(dbg!(&p)).await {
-            return Ok(x);
-        }
-
-        if let Ok(x) = Self::read_from(dbg!(&p.join("../Proto.lock"))).await {
-            return Ok(x);
-        }
-
-        Self::read_from(dbg!(p.join("../../Proto.lock"))).await
-    }
     /// Checks if the workspace lockfile exists at the given path
     pub async fn exists_at(path: impl AsRef<Path>) -> miette::Result<bool> {
         fs::try_exists(path)
@@ -509,6 +495,28 @@ impl WorkspaceLockfile {
     /// Returns all packages in the lockfile
     pub fn packages(&self) -> impl Iterator<Item = &WorkspaceLockedPackage> {
         self.packages.values()
+    }
+}
+
+/// A unified view over either a package or workspace lockfile
+#[derive(Debug, Clone, Copy)]
+pub enum ResolvedLockfile<'a> {
+    /// A single-package lockfile
+    Package(&'a PackageLockfile),
+    /// A workspace-level lockfile
+    Workspace(&'a WorkspaceLockfile),
+}
+
+impl<'a> ResolvedLockfile<'a> {
+    /// Locates a package by name and version
+    pub fn get(&self, name: &PackageName, version: &Version) -> Option<FileRequirement> {
+        match self {
+            Self::Package(lock) => lock
+                .get(name)
+                .filter(|p| p.version == *version)
+                .map(FileRequirement::from),
+            Self::Workspace(lock) => lock.get(name, version).map(FileRequirement::from),
+        }
     }
 }
 
@@ -1049,5 +1057,67 @@ mod tests {
         );
         assert!(v2.is_some());
         assert_eq!(v2.unwrap().version, Version::new(2, 0, 0));
+    }
+
+    #[test]
+    fn test_resolved_lockfile_package_returns_file_requirement() {
+        let lockfile = simple_lockfile();
+        let resolved = super::ResolvedLockfile::Package(&lockfile);
+
+        // Should find package1 at version 0.1.0
+        let result = resolved.get(
+            &PackageName::new("package1").unwrap(),
+            &Version::new(0, 1, 0),
+        );
+        assert!(result.is_some());
+        let file_req = result.unwrap();
+        assert!(file_req.url().as_str().contains("package1"));
+
+        // Should return None for wrong version
+        let result = resolved.get(
+            &PackageName::new("package1").unwrap(),
+            &Version::new(9, 9, 9),
+        );
+        assert!(result.is_none());
+
+        // Should return None for unknown package
+        let result = resolved.get(
+            &PackageName::new("unknown").unwrap(),
+            &Version::new(0, 1, 0),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolved_lockfile_workspace_returns_file_requirement() {
+        let pkg = WorkspaceLockedPackage {
+            name: PackageName::unchecked("ws-pkg"),
+            version: Version::new(1, 0, 0),
+            registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
+            repository: "repo".to_string(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
+            )
+            .unwrap(),
+            dependencies: vec![],
+            dependants: 1,
+        };
+        let lockfile = WorkspaceLockfile::from_iter(vec![pkg]);
+        let resolved = super::ResolvedLockfile::Workspace(&lockfile);
+
+        // Should find ws-pkg at version 1.0.0
+        let result = resolved.get(
+            &PackageName::unchecked("ws-pkg"),
+            &Version::new(1, 0, 0),
+        );
+        assert!(result.is_some());
+
+        // Should return None for wrong version
+        let result = resolved.get(
+            &PackageName::unchecked("ws-pkg"),
+            &Version::new(2, 0, 0),
+        );
+        assert!(result.is_none());
     }
 }

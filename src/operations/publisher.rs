@@ -157,7 +157,7 @@ impl Publisher {
 
         // Build dependency graph
         let credentials = Credentials::load().await?;
-        let graph = DependencyGraph::build(&root_manifest, package_path, &credentials).await?;
+        let graph = DependencyGraph::build(&root_manifest, package_path, &credentials, None).await?;
         let ordered_dependencies = graph.ordered_dependencies()?;
 
         // Publish local dependencies first
@@ -206,7 +206,7 @@ impl Publisher {
 
             // Build dependency graph for this member
             let graph =
-                DependencyGraph::build(&member_manifest, &member_path, &credentials).await?;
+                DependencyGraph::build(&member_manifest, &member_path, &credentials, None).await?;
             let dependencies = graph.ordered_dependencies()?;
 
             // Publish local dependencies first

@@ -47,7 +47,7 @@ async fn test_empty_graph() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let credentials = Credentials::default();
 
-    let graph = DependencyGraph::build(&manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
@@ -86,7 +86,7 @@ async fn test_single_local_dependency() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
@@ -155,7 +155,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
@@ -212,7 +212,7 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials).await;
+    let result = DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -254,7 +254,7 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials).await;
+    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None).await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
@@ -316,7 +316,7 @@ async fn test_circular_dependency_direct() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -410,7 +410,7 @@ async fn test_circular_dependency_indirect() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -511,7 +511,7 @@ async fn test_diamond_dependency() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
@@ -602,7 +602,7 @@ async fn test_multiple_dependencies_from_single_package() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
@@ -666,7 +666,7 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials).await;
+    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None).await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());
@@ -718,7 +718,7 @@ async fn test_relative_path_resolution() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
         .await
         .expect("build graph");
 
