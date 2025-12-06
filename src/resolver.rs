@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::{
     cache::Cache,
     credentials::Credentials,
-    lock::ResolvedLockfile,
+    lock::Lockfile,
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
         PackagesManifest,
@@ -81,7 +81,7 @@ impl DependencyGraph {
         manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
-        lockfile: Option<ResolvedLockfile<'_>>,
+        lockfile: Option<Lockfile>,
     ) -> miette::Result<Self> {
         let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile);
 
@@ -212,16 +212,12 @@ struct GraphBuilder<'a> {
     /// Track which packages we're currently visiting to detect cycles during construction
     visiting: HashSet<PackageName>,
     credentials: &'a Credentials,
-    lockfile: Option<ResolvedLockfile<'a>>,
+    lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
 }
 
 impl<'a> GraphBuilder<'a> {
-    fn new(
-        base_path: PathBuf,
-        credentials: &'a Credentials,
-        lockfile: Option<ResolvedLockfile<'a>>,
-    ) -> Self {
+    fn new(base_path: PathBuf, credentials: &'a Credentials, lockfile: Option<Lockfile>) -> Self {
         Self {
             nodes: HashMap::new(),
             base_path,
@@ -368,15 +364,20 @@ impl<'a> GraphBuilder<'a> {
             let mut cached_package = None;
 
             // Try to resolve from lockfile + cache first
-            if let Some(lockfile) = self.lockfile
+            if let Some(lockfile) = &self.lockfile
                 && let Some(file_req) = lockfile.get(package_name, &version)
-                // Verify registry matches (lockfile vs manifest)
-                && file_req.url().as_str().starts_with(registry.as_str())
             {
-                let cache = Cache::open().await?;
-                if let Ok(Some(pkg)) = cache.get(file_req).await {
-                    tracing::debug!(":: resolved {}@{} from local cache", package_name, version);
-                    cached_package = Some(pkg);
+                // Verify registry matches (lockfile vs manifest)
+                if file_req.url().as_str().starts_with(registry.as_str()) {
+                    let cache = Cache::open().await?;
+                    if let Ok(Some(pkg)) = cache.get(file_req).await {
+                        tracing::debug!(
+                            ":: resolved {}@{} from local cache",
+                            package_name,
+                            version
+                        );
+                        cached_package = Some(pkg);
+                    }
                 }
             }
 
@@ -384,17 +385,20 @@ impl<'a> GraphBuilder<'a> {
                 Some(pkg) => pkg,
                 None => {
                     tracing::debug!(":: downloading {}@{} from registry", package_name, version);
-                    
+
                     // Reuse or create artifactory client
                     let artifactory = if let Some(client) = self.registry_clients.get(registry) {
                         client.clone()
                     } else {
                         let client = Artifactory::new(registry.clone(), self.credentials)
-                            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
-                        self.registry_clients.insert(registry.clone(), client.clone());
+                            .wrap_err_with(|| {
+                                format!("failed to initialize registry {}", registry)
+                            })?;
+                        self.registry_clients
+                            .insert(registry.clone(), client.clone());
                         client
                     };
-                    
+
                     artifactory.download(dependency.clone()).await?
                 }
             }
