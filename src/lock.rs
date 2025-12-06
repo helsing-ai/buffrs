@@ -214,7 +214,7 @@ impl RawPackageLockfile {
 /// Captures metadata about currently installed Packages
 ///
 /// Used to ensure future installations will deterministically select the exact same packages.
-#[derive(Default, Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq, Clone)]
 pub struct PackageLockfile {
     packages: BTreeMap<PackageName, LockedPackage>,
 }
@@ -428,7 +428,7 @@ impl RawWorkspaceLockfile {
 /// Unlike package lockfiles which can only store one version per package,
 /// workspace lockfiles use (name, version) as the key to support multiple
 /// versions of the same package.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct WorkspaceLockfile {
     packages: BTreeMap<(PackageName, Version), WorkspaceLockedPackage>,
 }
@@ -499,15 +499,15 @@ impl WorkspaceLockfile {
 }
 
 /// A unified view over either a package or workspace lockfile
-#[derive(Debug, Clone, Copy)]
-pub enum ResolvedLockfile<'a> {
+#[derive(Debug, Clone)]
+pub enum Lockfile {
     /// A single-package lockfile
-    Package(&'a PackageLockfile),
+    Package(PackageLockfile),
     /// A workspace-level lockfile
-    Workspace(&'a WorkspaceLockfile),
+    Workspace(WorkspaceLockfile),
 }
 
-impl<'a> ResolvedLockfile<'a> {
+impl Lockfile {
     /// Locates a package by name and version
     pub fn get(&self, name: &PackageName, version: &Version) -> Option<FileRequirement> {
         match self {
@@ -1060,9 +1060,9 @@ mod tests {
     }
 
     #[test]
-    fn test_resolved_lockfile_package_returns_file_requirement() {
+    fn test_lockfile_package_returns_file_requirement() {
         let lockfile = simple_lockfile();
-        let resolved = super::ResolvedLockfile::Package(&lockfile);
+        let resolved = super::Lockfile::Package(lockfile);
 
         // Should find package1 at version 0.1.0
         let result = resolved.get(
@@ -1089,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolved_lockfile_workspace_returns_file_requirement() {
+    fn test_lockfile_workspace_returns_file_requirement() {
         let pkg = WorkspaceLockedPackage {
             name: PackageName::unchecked("ws-pkg"),
             version: Version::new(1, 0, 0),
@@ -1104,20 +1104,14 @@ mod tests {
             dependants: 1,
         };
         let lockfile = WorkspaceLockfile::from_iter(vec![pkg]);
-        let resolved = super::ResolvedLockfile::Workspace(&lockfile);
+        let resolved = super::Lockfile::Workspace(lockfile);
 
         // Should find ws-pkg at version 1.0.0
-        let result = resolved.get(
-            &PackageName::unchecked("ws-pkg"),
-            &Version::new(1, 0, 0),
-        );
+        let result = resolved.get(&PackageName::unchecked("ws-pkg"), &Version::new(1, 0, 0));
         assert!(result.is_some());
 
         // Should return None for wrong version
-        let result = resolved.get(
-            &PackageName::unchecked("ws-pkg"),
-            &Version::new(2, 0, 0),
-        );
+        let result = resolved.get(&PackageName::unchecked("ws-pkg"), &Version::new(2, 0, 0));
         assert!(result.is_none());
     }
 }

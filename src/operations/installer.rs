@@ -12,9 +12,7 @@ use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{
-        LOCKFILE, PackageLockfile, ResolvedLockfile, WorkspaceLockedPackage, WorkspaceLockfile,
-    },
+    lock::{LOCKFILE, Lockfile, PackageLockfile, WorkspaceLockedPackage, WorkspaceLockfile},
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
         RemoteDependencyManifest, WorkspaceManifest,
@@ -254,9 +252,9 @@ impl Installer {
 
         let resolved_lockfile = match workspace_mode {
             WorkspaceLockfileMode::UseExisting(ws_lock) => {
-                Some(ResolvedLockfile::Workspace(ws_lock))
+                Some(Lockfile::Workspace(ws_lock.clone()))
             }
-            WorkspaceLockfileMode::CreateNew => Some(ResolvedLockfile::Package(lockfile)),
+            WorkspaceLockfileMode::CreateNew => Some(Lockfile::Package(lockfile.clone())),
         };
 
         let graph =
