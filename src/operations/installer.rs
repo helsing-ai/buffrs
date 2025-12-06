@@ -12,7 +12,9 @@ use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{LOCKFILE, PackageLockfile, WorkspaceLockedPackage, WorkspaceLockfile},
+    lock::{
+        LOCKFILE, PackageLockfile, ResolvedLockfile, WorkspaceLockedPackage, WorkspaceLockfile,
+    },
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, MANIFEST_FILE, PackagesManifest,
         RemoteDependencyManifest, WorkspaceManifest,
@@ -250,7 +252,16 @@ impl Installer {
             tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
         }
 
-        let graph = DependencyGraph::build(manifest, package_path, &self.credentials).await?;
+        let resolved_lockfile = match workspace_mode {
+            WorkspaceLockfileMode::UseExisting(ws_lock) => {
+                Some(ResolvedLockfile::Workspace(ws_lock))
+            }
+            WorkspaceLockfileMode::CreateNew => Some(ResolvedLockfile::Package(lockfile)),
+        };
+
+        let graph =
+            DependencyGraph::build(manifest, package_path, &self.credentials, resolved_lockfile)
+                .await?;
         let dependencies = graph.ordered_dependencies()?;
 
         // 1. Install all dependencies and track resolved remote packages
