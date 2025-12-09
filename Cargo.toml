@@ -75,7 +75,7 @@ tokio = { version = "^1.26", features = [
 ] }
 toml = "0.8.0"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = "0.3.22"
 url = { version = "2.4", features = ["serde"] }
 walkdir = "2"
 sha2 = "0.10.8"
