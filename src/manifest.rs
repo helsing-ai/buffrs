@@ -107,20 +107,28 @@ impl From<Edition> for &'static str {
     }
 }
 
-/// Determine the ManifestType based on dependencies and workspace
+/// Determine the ManifestType based on dependencies, workspace, and package
 fn try_manifest_type(
     dependencies: &Option<Vec<Dependency>>,
     workspace: &Option<Workspace>,
+    package: &Option<PackageManifest>,
 ) -> miette::Result<ManifestType> {
     match (&dependencies, &workspace) {
         (&Some(_), &Some(_)) => Err(miette!(
             "manifest cannot have both dependencies and workspace sections"
         ))
         .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
-        (None, None) => Err(miette!(
-            "manifest should have either dependencies or a workspace section"
-        ))
-        .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
+        (None, None) => {
+            // Allow package with no dependencies only if package section exists
+            if package.is_some() {
+                Ok(ManifestType::Package)
+            } else {
+                Err(miette!(
+                    "manifest should have either a package or a workspace section"
+                ))
+                .wrap_err(InvalidManifestError(ManagedFile::Manifest))
+            }
+        }
         (&Some(_), None) => Ok(ManifestType::Package),
         (None, &Some(_)) => Ok(ManifestType::Workspace),
     }
@@ -692,7 +700,8 @@ impl TryFrom<RawManifest> for BuffrsManifest {
     fn try_from(raw: RawManifest) -> Result<BuffrsManifest, Self::Error> {
         let dependencies = raw.dependencies_as_vec();
         let workspace = raw.workspace().cloned();
-        let manifest_type = try_manifest_type(&dependencies, &workspace)?;
+        let package = raw.package().cloned();
+        let manifest_type = try_manifest_type(&dependencies, &workspace, &package)?;
 
         let manifest = match manifest_type {
             ManifestType::Package => BuffrsManifest::Package(raw.try_into()?),
@@ -918,7 +927,8 @@ mod tests {
         fn manifest_type_package() {
             let deps = Some(vec![]);
             let workspace = None;
-            let result = try_manifest_type(&deps, &workspace);
+            let package = None;
+            let result = try_manifest_type(&deps, &workspace, &package);
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), ManifestType::Package);
         }
@@ -930,7 +940,8 @@ mod tests {
                 members: vec!["pkg1".to_string()],
                 exclude: None,
             });
-            let result = try_manifest_type(&deps, &workspace);
+            let package = None;
+            let result = try_manifest_type(&deps, &workspace, &package);
             assert!(result.is_ok());
             assert_eq!(result.unwrap(), ManifestType::Workspace);
         }
@@ -942,20 +953,35 @@ mod tests {
                 members: vec!["pkg1".to_string()],
                 exclude: None,
             });
-            let result = try_manifest_type(&deps, &workspace);
+            let package = None;
+            let result = try_manifest_type(&deps, &workspace, &package);
             assert!(result.is_err());
             let err_msg = result.unwrap_err().to_string();
             assert!(err_msg.contains("manifest") && err_msg.contains("invalid"));
         }
 
         #[test]
-        fn manifest_type_neither_dependencies_nor_workspace_errors() {
+        fn manifest_type_package_with_no_dependencies() {
             let deps = None;
             let workspace = None;
-            let result = try_manifest_type(&deps, &workspace);
+            let package = Some(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::new("test").unwrap(),
+                version: semver::Version::new(1, 0, 0),
+                description: None,
+            });
+            let result = try_manifest_type(&deps, &workspace, &package);
+            assert!(result.is_ok());
+            assert_eq!(result.unwrap(), ManifestType::Package);
+        }
+
+        #[test]
+        fn manifest_type_neither_dependencies_nor_workspace_nor_package_errors() {
+            let deps = None;
+            let workspace = None;
+            let package = None;
+            let result = try_manifest_type(&deps, &workspace, &package);
             assert!(result.is_err());
-            let err_msg = result.unwrap_err().to_string();
-            assert!(err_msg.contains("manifest") && err_msg.contains("invalid"));
         }
     }
 

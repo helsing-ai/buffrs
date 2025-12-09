@@ -11,7 +11,9 @@ use semver::VersionReq;
 use thiserror::Error;
 
 use crate::{
+    cache::Cache,
     credentials::Credentials,
+    lock::Lockfile,
     manifest::{
         BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
         PackagesManifest,
@@ -79,8 +81,9 @@ impl DependencyGraph {
         manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
+        lockfile: Option<Lockfile>,
     ) -> miette::Result<Self> {
-        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials);
+        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -209,15 +212,19 @@ struct GraphBuilder<'a> {
     /// Track which packages we're currently visiting to detect cycles during construction
     visiting: HashSet<PackageName>,
     credentials: &'a Credentials,
+    lockfile: Option<Lockfile>,
+    registry_clients: HashMap<RegistryUri, Artifactory>,
 }
 
 impl<'a> GraphBuilder<'a> {
-    fn new(base_path: PathBuf, credentials: &'a Credentials) -> Self {
+    fn new(base_path: PathBuf, credentials: &'a Credentials, lockfile: Option<Lockfile>) -> Self {
         Self {
             nodes: HashMap::new(),
             base_path,
             visiting: HashSet::new(),
             credentials,
+            lockfile,
+            registry_clients: HashMap::new(),
         }
     }
 
@@ -340,14 +347,65 @@ impl<'a> GraphBuilder<'a> {
         let repository = &remote_manifest.repository;
         let version = &remote_manifest.version;
 
-        // Download the package to read its manifest and discover dependencies
-        let artifactory = Artifactory::new(registry.clone(), self.credentials)
-            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+        let package = {
+            let reformatted = version
+                .to_string()
+                .chars()
+                .skip_while(|c| *c == '=')
+                .collect::<String>();
 
-        let downloaded_package = artifactory.download(dependency.clone()).await?;
+            let version = reformatted
+                .parse()
+                .map_err(|e| miette::miette!("{e}"))
+                .wrap_err_with(|| {
+                    format!("expected only exact version requirements: {package_name}@{version}")
+                })?;
+
+            let mut cached_package = None;
+
+            // Try to resolve from lockfile + cache first
+            if let Some(lockfile) = &self.lockfile
+                && let Some(file_req) = lockfile.get(package_name, &version)
+            {
+                // Verify registry matches (lockfile vs manifest)
+                if file_req.url().as_str().starts_with(registry.as_str()) {
+                    let cache = Cache::open().await?;
+                    if let Ok(Some(pkg)) = cache.get(file_req).await {
+                        tracing::debug!(
+                            ":: resolved {}@{} from local cache",
+                            package_name,
+                            version
+                        );
+                        cached_package = Some(pkg);
+                    }
+                }
+            }
+
+            match cached_package {
+                Some(pkg) => pkg,
+                None => {
+                    tracing::debug!(":: downloading {}@{} from registry", package_name, version);
+
+                    // Reuse or create artifactory client
+                    let artifactory = if let Some(client) = self.registry_clients.get(registry) {
+                        client.clone()
+                    } else {
+                        let client = Artifactory::new(registry.clone(), self.credentials)
+                            .wrap_err_with(|| {
+                                format!("failed to initialize registry {}", registry)
+                            })?;
+                        self.registry_clients
+                            .insert(registry.clone(), client.clone());
+                        client
+                    };
+
+                    artifactory.download(dependency.clone()).await?
+                }
+            }
+        };
 
         // Read the package manifest to discover dependencies and package type
-        let manifest = downloaded_package.manifest;
+        let manifest = package.manifest;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
