@@ -1349,6 +1349,46 @@ mod tests {
             assert!(serialized.contains("[package]"));
             assert!(serialized.contains("test"));
         }
+
+        #[test]
+        fn packages_manifest_serialization_is_consistent_regardless_of_empty_dependencies_section() {
+            // A manifest with an empty [dependencies] section should serialize
+            // identically to a manifest without a [dependencies] section.
+            // This is important for reproducible package hashes.
+
+            let toml_with_empty_deps = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+
+                [dependencies]
+            "#;
+
+            let toml_without_deps = r#"
+                edition = "0.12"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+            "#;
+
+            let manifest_with = PackagesManifest::from_str(toml_with_empty_deps).expect("should parse");
+            let manifest_without = PackagesManifest::from_str(toml_without_deps).expect("should parse");
+
+            let serialized_with: String = manifest_with.try_into().expect("should serialize");
+            let serialized_without: String = manifest_without.try_into().expect("should serialize");
+
+            assert_eq!(
+                serialized_with, serialized_without,
+                "Serialization must be consistent for reproducible package hashes.\n\
+                 With [dependencies]:\n{}\n\nWithout [dependencies]:\n{}",
+                serialized_with, serialized_without
+            );
+        }
     }
 
     // ===== WorkspaceManifest Tests =====
