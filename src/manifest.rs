@@ -1355,6 +1355,7 @@ mod tests {
             // A manifest with an empty [dependencies] section should serialize
             // identically to a manifest without a [dependencies] section.
             // This is important for reproducible package hashes.
+            use crate::lock::DigestAlgorithm;
 
             let toml_with_empty_deps = r#"
                 edition = "0.12"
@@ -1382,11 +1383,16 @@ mod tests {
             let serialized_with: String = manifest_with.try_into().expect("should serialize");
             let serialized_without: String = manifest_without.try_into().expect("should serialize");
 
+            let hash_with = DigestAlgorithm::SHA256.digest(serialized_with.as_bytes());
+            let hash_without = DigestAlgorithm::SHA256.digest(serialized_without.as_bytes());
+
             assert_eq!(
-                serialized_with, serialized_without,
-                "Serialization must be consistent for reproducible package hashes.\n\
+                hash_with, hash_without,
+                "Package hashes must be identical for reproducible builds.\n\
+                 Hash with [dependencies]:    {}\n\
+                 Hash without [dependencies]: {}\n\n\
                  With [dependencies]:\n{}\n\nWithout [dependencies]:\n{}",
-                serialized_with, serialized_without
+                hash_with, hash_without, serialized_with, serialized_without
             );
         }
     }
