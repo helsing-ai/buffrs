@@ -236,7 +236,7 @@ impl Publisher {
                 tracing::warn!(":: recursively publishing local dependency: {}", absolute_path.display());
                 tracing::debug!("  dependency name: {}", dependency.node.name);
                 tracing::debug!("  dependency path: {}", absolute_path.display());
-                self.publish_package_at_path(&absolute_path).await?;
+                self.publish_package_at_path(&absolute_path, None).await?;
                 tracing::debug!("local dependency {} published successfully", dependency.node.name);
             }
         }
@@ -251,7 +251,8 @@ impl Publisher {
         }
 
         tracing::debug!("publishing root package at path: {}", package_path.display());
-        self.publish_package_at_path(package_path).await?;
+        tracing::debug!("passing modified root_manifest with potentially overridden version");
+        self.publish_package_at_path(package_path, Some(&root_manifest)).await?;
         tracing::debug!("root package published successfully");
 
         Ok(())
@@ -330,7 +331,7 @@ impl Publisher {
                     tracing::warn!(":: recursively publishing local dependency from workspace: {}", absolute_path.display());
                     tracing::debug!("  dependency name: {}", dependency.node.name);
                     tracing::debug!("  dependency path: {}", absolute_path.display());
-                    self.publish_package_at_path(&absolute_path).await?;
+                    self.publish_package_at_path(&absolute_path, None).await?;
                     tracing::debug!("local dependency {} published successfully", dependency.node.name);
                 }
             }
@@ -346,7 +347,7 @@ impl Publisher {
             }
 
             tracing::debug!("publishing workspace member at path: {}", member_path.display());
-            self.publish_package_at_path(member_path).await?;
+            self.publish_package_at_path(member_path, None).await?;
             tracing::debug!("workspace member published successfully");
         }
 
@@ -358,14 +359,19 @@ impl Publisher {
     ///
     /// This method:
     /// 1. Checks if already published (idempotent)
-    /// 2. Reads the package manifest
+    /// 2. Reads the package manifest (or uses provided manifest)
     /// 3. Replaces local dependencies with their published remote versions
     /// 4. Creates a package with the updated manifest
     /// 5. Publishes to the registry
     /// 6. Records the mapping of local path to remote location
-    async fn publish_package_at_path(&mut self, package_path: &Path) -> miette::Result<()> {
+    async fn publish_package_at_path(
+        &mut self,
+        package_path: &Path,
+        manifest_override: Option<&PackagesManifest>,
+    ) -> miette::Result<()> {
         tracing::debug!("publish_package_at_path() called");
         tracing::debug!("  package_path: {}", package_path.display());
+        tracing::debug!("  manifest_override provided: {}", manifest_override.is_some());
 
         let manifest_path = package_path.join(MANIFEST_FILE);
         tracing::debug!("  manifest_path: {}", manifest_path.display());
@@ -386,13 +392,18 @@ impl Publisher {
         }
         tracing::debug!("package not yet published in this session, proceeding");
 
-        tracing::debug!("IO: reading manifest from {}", manifest_path.display());
-        let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
-            .await
-            .wrap_err_with(|| {
-                format!("failed to read manifest file at {}", package_path.display())
-            })?;
-        tracing::debug!("manifest loaded successfully");
+        let manifest = if let Some(manifest_override) = manifest_override {
+            tracing::debug!("using provided manifest override instead of reading from disk");
+            manifest_override.clone()
+        } else {
+            tracing::debug!("IO: reading manifest from {}", manifest_path.display());
+            BuffrsManifest::require_package_manifest(&manifest_path)
+                .await
+                .wrap_err_with(|| {
+                    format!("failed to read manifest file at {}", package_path.display())
+                })?
+        };
+        tracing::debug!("manifest obtained successfully");
 
         if let Some(ref pkg) = manifest.package {
             tracing::debug!("  package name: {}", pkg.name);
