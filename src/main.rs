@@ -15,6 +15,7 @@
 use clap::{Parser, Subcommand};
 use miette::{WrapErr, miette};
 use semver::Version;
+use uuid::Uuid;
 
 use buffrs::{
     command,
@@ -174,11 +175,60 @@ enum LockfileCommand {
     PrintFiles,
 }
 
+struct UuidEventFormatter {
+    uuid_prefix: String,
+    verbose: bool,
+}
+
+impl<S, N> tracing_subscriber::fmt::FormatEvent<S, N> for UuidEventFormatter
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+    N: for<'a> tracing_subscriber::fmt::FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &tracing_subscriber::fmt::FmtContext<'_, S, N>,
+        mut writer: tracing_subscriber::fmt::format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        // Write UUID prefix
+        write!(writer, "[{}] ", self.uuid_prefix)?;
+
+        // Write level
+        let metadata = event.metadata();
+        if self.verbose {
+            write!(writer, "{:5} ", metadata.level())?;
+        }
+
+        // Write target, file, and line if verbose
+        if self.verbose {
+            if let Some(file) = metadata.file() {
+                write!(writer, "{}:", file)?;
+                if let Some(line) = metadata.line() {
+                    write!(writer, "{} ", line)?;
+                } else {
+                    write!(writer, " ")?;
+                }
+            }
+            write!(writer, "{}: ", metadata.target())?;
+        }
+
+        // Write the actual message and fields
+        ctx.field_format().format_fields(writer.by_ref(), event)?;
+        writeln!(writer)
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
 
     let cli = Cli::parse();
+
+    // Generate a unique UUID for this invocation
+    let invocation_uuid = Uuid::new_v4();
+    let uuid_str = invocation_uuid.to_string();
+    let uuid_prefix = &uuid_str[..8]; // Use first 8 chars for brevity
 
     tracing_subscriber::fmt()
         .compact()
@@ -192,8 +242,16 @@ async fn main() -> miette::Result<()> {
         } else {
             tracing::Level::INFO
         })
+        .fmt_fields(tracing_subscriber::fmt::format::DefaultFields::new())
+        .event_format(UuidEventFormatter {
+            uuid_prefix: uuid_prefix.to_string(),
+            verbose: cli.verbose,
+        })
         .try_init()
         .unwrap();
+
+    tracing::info!("invocation id: {}", invocation_uuid);
+
     let package = BuffrsManifest::current_dir_display_name()
         .await
         .unwrap_or("unknown package".into());
