@@ -249,6 +249,7 @@ impl Artifactory {
             let expected_hash = alg.digest(&response.bytes().await.into_diagnostic().wrap_err(
                 miette!("unexpected error: failed to read the bytes back from artifactory"),
             )?);
+
             if package_hash == expected_hash {
                 tracing::info!(
                     ":: {}/{}@{} is already published, skipping",
@@ -262,8 +263,9 @@ impl Artifactory {
                     %package_hash,
                     %expected_hash,
                     package = %package.name(),
-                    "publishing failed, hash mismatch"
+                    ":: publishing failed, hash mismatch"
                 );
+
                 return Err(miette!(
                     "unable to publish {} to artifactory: package is already published with a different hash",
                     package.name()

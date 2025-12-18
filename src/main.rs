@@ -28,6 +28,10 @@ use buffrs::{
 #[command(author, version, about, long_about)]
 #[command(propagate_version = true)]
 struct Cli {
+    /// Enable verbose logging (debug level)
+    #[clap(short, long)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -174,17 +178,22 @@ enum LockfileCommand {
 async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
 
+    let cli = Cli::parse();
+
     tracing_subscriber::fmt()
         .compact()
         .without_time()
-        .with_level(false)
-        .with_file(false)
-        .with_target(false)
-        .with_line_number(false)
+        .with_level(cli.verbose)
+        .with_file(cli.verbose)
+        .with_target(cli.verbose)
+        .with_line_number(cli.verbose)
+        .with_max_level(if cli.verbose {
+            tracing::Level::DEBUG
+        } else {
+            tracing::Level::INFO
+        })
         .try_init()
         .unwrap();
-
-    let cli = Cli::parse();
     let package = BuffrsManifest::current_dir_display_name()
         .await
         .unwrap_or("unknown package".into());

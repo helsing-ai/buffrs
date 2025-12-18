@@ -38,6 +38,8 @@ impl Publisher {
         repository: String,
         preserve_mtime: bool,
     ) -> miette::Result<Self> {
+        tracing::debug!("creating publisher: registry={}, repository={}", registry, repository);
+
         let credentials = Credentials::load().await?;
         let artifactory = Artifactory::new(registry.clone(), &credentials)?;
 
@@ -145,6 +147,8 @@ impl Publisher {
         package_path: &Path,
         version: Option<Version>,
     ) -> miette::Result<()> {
+        tracing::debug!("publishing package from path: {}", package_path.display());
+
         let mut root_manifest = manifest.clone();
         let store = PackageStore::current().await?;
 
@@ -152,27 +156,41 @@ impl Publisher {
             && let Some(ref mut package) = root_manifest.package
         {
             tracing::info!(":: modified version in published manifest to {version}");
+            tracing::debug!("manifest mutation: overriding version {} -> {}", package.version, version);
             package.version = version;
         }
 
         // Build dependency graph
+        tracing::debug!("building dependency graph for package at {}", package_path.display());
         let credentials = Credentials::load().await?;
         let graph =
             DependencyGraph::build(&root_manifest, package_path, &credentials, None).await?;
         let ordered_dependencies = graph.ordered_dependencies()?;
+        tracing::debug!("dependency graph built with {} dependencies", ordered_dependencies.len());
 
         // Publish local dependencies first
+        let local_deps: Vec<_> = ordered_dependencies
+            .iter()
+            .filter(|d| matches!(d.node.source, DependencySource::Local { .. }))
+            .collect();
+
+        if !local_deps.is_empty() {
+            tracing::debug!("found {} local dependencies to publish recursively", local_deps.len());
+        }
+
         for dependency in ordered_dependencies {
             if let DependencySource::Local {
                 path: absolute_path,
             } = dependency.node.source
             {
+                tracing::debug!("recursively publishing local dependency: {}", absolute_path.display());
                 self.publish_package_at_path(&absolute_path).await?;
             }
         }
 
         // Populate and publish the root package
         if let Some(ref pkg) = root_manifest.package {
+            tracing::debug!("populating package store for {}", pkg.name);
             store.populate(pkg).await?;
         }
 
@@ -195,38 +213,54 @@ impl Publisher {
             ":: workspace found. publishing {} packages in workspace",
             packages.len()
         );
+        tracing::debug!("workspace members: {:?}", packages.iter().map(|p| p.display().to_string()).collect::<Vec<_>>());
 
         let credentials = Credentials::load().await?;
 
         // Iterate through each workspace member
-        for member_path in packages {
+        for (idx, member_path) in packages.iter().enumerate() {
             tracing::info!(":: processing workspace member: {}", member_path.display());
+            tracing::debug!("workspace progress: {}/{}", idx + 1, packages.len());
 
+            tracing::debug!("IO: reading manifest from {}", member_path.join(MANIFEST_FILE).display());
             let member_manifest =
                 BuffrsManifest::require_package_manifest(&member_path.join(MANIFEST_FILE)).await?;
 
             // Build dependency graph for this member
+            tracing::debug!("building dependency graph for workspace member: {}", member_path.display());
             let graph =
-                DependencyGraph::build(&member_manifest, &member_path, &credentials, None).await?;
+                DependencyGraph::build(&member_manifest, member_path, &credentials, None).await?;
             let dependencies = graph.ordered_dependencies()?;
+            tracing::debug!("workspace member has {} dependencies", dependencies.len());
 
             // Publish local dependencies first
+            let local_deps: Vec<_> = dependencies
+                .iter()
+                .filter(|d| matches!(d.node.source, DependencySource::Local { .. }))
+                .collect();
+
+            if !local_deps.is_empty() {
+                tracing::debug!("workspace member has {} local dependencies to publish", local_deps.len());
+            }
+
             for dependency in dependencies {
                 if let DependencySource::Local {
                     path: absolute_path,
                 } = dependency.node.source
                 {
+                    tracing::debug!("recursively publishing local dependency from workspace: {}", absolute_path.display());
                     self.publish_package_at_path(&absolute_path).await?;
                 }
             }
 
             // Populate and publish the member itself
             if let Some(ref pkg) = member_manifest.package {
-                let member_store = PackageStore::open(&member_path).await?;
+                tracing::debug!("populating workspace member package store for {}", pkg.name);
+                let member_store = PackageStore::open(member_path).await?;
                 member_store.populate(pkg).await?;
             }
 
-            self.publish_package_at_path(&member_path).await?;
+            self.publish_package_at_path(member_path).await?;
         }
 
         Ok(())
@@ -243,6 +277,7 @@ impl Publisher {
     /// 6. Records the mapping of local path to remote location
     async fn publish_package_at_path(&mut self, package_path: &Path) -> miette::Result<()> {
         let manifest_path = package_path.join(MANIFEST_FILE);
+        tracing::debug!("publish_package_at_path: {}", package_path.display());
 
         // Check if this package has already been published (idempotent)
         let local_manifest = LocalDependencyManifest {
@@ -256,6 +291,7 @@ impl Publisher {
             return Ok(());
         }
 
+        tracing::debug!("IO: reading manifest from {}", manifest_path.display());
         let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
             .await
             .wrap_err_with(|| {
@@ -265,29 +301,48 @@ impl Publisher {
         // Create a store at the package's path
         let package_store = PackageStore::open(package_path).await?;
 
+        let local_deps_count = manifest.get_local_dependencies().len();
+        if local_deps_count > 0 {
+            tracing::debug!("manifest mutation: replacing {} local dependencies with remote versions", local_deps_count);
+        }
+
         let remote_dependencies =
             self.replace_local_with_remote_dependencies(&manifest, package_path)?;
 
         // Clone manifest with local dependencies replaced by their remote locations
+        tracing::debug!("manifest mutation: creating manifest with {} remote dependencies", remote_dependencies.len());
         let remote_deps_manifest = manifest.with_dependencies(remote_dependencies);
+
+        tracing::debug!("creating release package from store");
         let package = package_store
             .release(&remote_deps_manifest, self.preserve_mtime)
             .await?;
 
+        tracing::debug!("IO: uploading package {} v{} to registry", package.name(), package.version());
         self.artifactory
             .publish(package.clone(), self.repository.clone())
             .await
             .wrap_err_with(|| format!("publishing of package {} failed", package.name()))?;
+
+        tracing::debug!("upload complete: {} v{}", package.name(), package.version());
 
         // Store the mapping for this package
         let package_version =
             VersionReq::from_str(&package.version().to_string()).into_diagnostic()?;
 
         let remote_manifest = RemoteDependencyManifest {
-            version: package_version,
+            version: package_version.clone(),
             registry: self.registry.clone(),
             repository: self.repository.clone(),
         };
+
+        tracing::debug!(
+            "recording manifest mapping: {} -> {}:{}@{}",
+            manifest_path.display(),
+            self.registry,
+            self.repository,
+            package_version
+        );
 
         self.manifest_mappings
             .insert(local_manifest, remote_manifest);
@@ -307,6 +362,12 @@ impl Publisher {
         let mut remote_dependencies: Vec<Dependency> = manifest.get_remote_dependencies();
         let local_dependencies: Vec<Dependency> = manifest.get_local_dependencies();
 
+        tracing::debug!(
+            "replacing local dependencies: {} local, {} existing remote",
+            local_dependencies.len(),
+            remote_dependencies.len()
+        );
+
         // Replace all local dependencies with the corresponding remote manifests created as part of their own processing
         for local_dep in local_dependencies {
             match local_dep.manifest {
@@ -315,6 +376,8 @@ impl Publisher {
                     let absolute_path_manifest = LocalDependencyManifest {
                         path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
                     };
+
+                    tracing::debug!("looking up remote mapping for local dependency: {}", local_dep.package);
 
                     let remote_manifest = self
                         .manifest_mappings
@@ -325,6 +388,15 @@ impl Publisher {
                                 local_dep.package
                             )
                         })?;
+
+                    tracing::debug!(
+                        "manifest mutation: {} (local:{}) -> (remote:{}:{}@{})",
+                        local_dep.package,
+                        local_manifest.path.display(),
+                        remote_manifest.registry,
+                        remote_manifest.repository,
+                        remote_manifest.version
+                    );
 
                     let remote_dependency = Dependency {
                         package: local_dep.package.clone(),
