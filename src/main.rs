@@ -102,9 +102,9 @@ enum Command {
         #[clap(long)]
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_mtime: Option<bool>,
+        #[arg(default_value_t = false)]
+        preserve_mtime: bool,
     },
 
     /// Packages and uploads this api to the registry
@@ -127,9 +127,9 @@ enum Command {
         #[clap(long)]
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_mtime: Option<bool>,
+        #[arg(default_value_t = false)]
+        preserve_mtime: bool,
     },
 
     /// Installs dependencies
@@ -243,7 +243,7 @@ async fn main() -> miette::Result<()> {
             output_directory,
             dry_run,
             set_version,
-            preserve_mtime.unwrap_or(true),
+            preserve_mtime,
         )
         .await
         .wrap_err(miette!(
@@ -262,7 +262,7 @@ async fn main() -> miette::Result<()> {
             allow_dirty,
             dry_run,
             set_version,
-            preserve_mtime.unwrap_or(true),
+            preserve_mtime,
         )
         .await
         .wrap_err(miette!(
