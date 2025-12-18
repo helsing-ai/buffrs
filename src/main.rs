@@ -250,7 +250,7 @@ async fn main() -> miette::Result<()> {
         .try_init()
         .unwrap();
 
-    tracing::info!("invocation id: {}", invocation_uuid);
+    tracing::debug!("invocation id: {}", invocation_uuid);
 
     let package = BuffrsManifest::current_dir_display_name()
         .await
@@ -297,16 +297,11 @@ async fn main() -> miette::Result<()> {
             dry_run,
             set_version,
             preserve_mtime,
-        } => command::package(
-            output_directory,
-            dry_run,
-            set_version,
-            preserve_mtime,
-        )
-        .await
-        .wrap_err(miette!(
-            "failed to export `{package}` into the buffrs package format"
-        )),
+        } => command::package(output_directory, dry_run, set_version, preserve_mtime)
+            .await
+            .wrap_err(miette!(
+                "failed to export `{package}` into the buffrs package format"
+            )),
         Command::Publish {
             registry,
             repository,
