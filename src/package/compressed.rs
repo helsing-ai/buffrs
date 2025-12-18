@@ -126,9 +126,9 @@ impl Package {
             .into_diagnostic()
             .wrap_err(miette!("failed to assemble tar package"))?;
 
-        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-
-        encoder
+        let encoder = flate2::GzBuilder::new()
+            .mtime(0)
+            .write(Vec::new(), flate2::Compression::default())
             .write_all(&tar)
             .into_diagnostic()
             .wrap_err(miette!("failed to compress release"))?;

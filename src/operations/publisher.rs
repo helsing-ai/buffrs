@@ -183,7 +183,7 @@ impl Publisher {
                 path: absolute_path,
             } = dependency.node.source
             {
-                tracing::debug!("recursively publishing local dependency: {}", absolute_path.display());
+                tracing::warn!(":: recursively publishing local dependency: {}", absolute_path.display());
                 self.publish_package_at_path(&absolute_path).await?;
             }
         }
@@ -248,7 +248,7 @@ impl Publisher {
                     path: absolute_path,
                 } = dependency.node.source
                 {
-                    tracing::debug!("recursively publishing local dependency from workspace: {}", absolute_path.display());
+                    tracing::warn!(":: recursively publishing local dependency from workspace: {}", absolute_path.display());
                     self.publish_package_at_path(&absolute_path).await?;
                 }
             }
