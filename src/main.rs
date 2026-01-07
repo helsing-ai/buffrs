@@ -29,7 +29,7 @@ use buffrs::{
 #[command(propagate_version = true)]
 struct Cli {
     /// Enable verbose logging
-    #[clap(short, long, default_value_t = false)]
+    #[clap(short, long, env = "BUFFRS_VERBOSE", default_value_t = false)]
     verbose: bool,
 
     #[command(subcommand)]
