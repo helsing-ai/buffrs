@@ -372,7 +372,7 @@ impl<'a> GraphBuilder<'a> {
                     let cache = Cache::open().await?;
                     if let Ok(Some(pkg)) = cache.get(file_req).await {
                         tracing::debug!(
-                            ":: resolved {}@{} from local cache",
+                            "resolved {}@{} from local cache",
                             package_name,
                             version
                         );
@@ -384,7 +384,7 @@ impl<'a> GraphBuilder<'a> {
             match cached_package {
                 Some(pkg) => pkg,
                 None => {
-                    tracing::debug!(":: downloading {}@{} from registry", package_name, version);
+                    tracing::debug!("downloading {}@{} from registry", package_name, version);
 
                     // Reuse or create artifactory client
                     let artifactory = if let Some(client) = self.registry_clients.get(registry) {

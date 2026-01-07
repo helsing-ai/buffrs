@@ -342,7 +342,7 @@ impl Artifactory {
 
                 if package_hash == expected_hash {
                     tracing::info!(
-                        ":: {}/{}@{} is already published with identical hash, skipping",
+                        "{}/{}@{} is already published with identical hash, skipping",
                         repository,
                         package.name(),
                         package.version()
@@ -354,7 +354,7 @@ impl Artifactory {
                         %package_hash,
                         %expected_hash,
                         package = %package.name(),
-                        ":: publishing failed, hash mismatch"
+                        "publishing failed, hash mismatch"
                     );
                     tracing::error!("local and remote packages have different content but same version");
 
@@ -384,7 +384,7 @@ impl Artifactory {
         tracing::debug!("  uploaded to: {}", artifact_uri);
 
         tracing::info!(
-            ":: published {}/{}@{}",
+            "published {}/{}@{}",
             repository,
             package.name(),
             package.version()

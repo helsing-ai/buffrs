@@ -30,6 +30,8 @@ pub mod credentials;
 pub mod errors;
 /// Lockfile implementation
 pub mod lock;
+/// Log subscriber implementation
+pub mod logs;
 /// Manifest format and IO
 pub mod manifest;
 /// Dedicated helpers to deal with more complicated CLI operations

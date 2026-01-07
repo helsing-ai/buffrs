@@ -87,7 +87,7 @@ impl LocalRegistry {
             .wrap_err(miette!("could not write to file: {}", path.display()))?;
 
         tracing::info!(
-            ":: published {}/{}@{} to {:?}",
+            "published {}/{}@{} to {:?}",
             repository,
             package.name(),
             package.version(),

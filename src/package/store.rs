@@ -143,7 +143,7 @@ impl PackageStore {
         package.unpack(&pkg_dir).await?;
 
         tracing::debug!(
-            ":: unpacked {}@{} into {}",
+            "unpacked {}@{} into {}",
             package.name(),
             package.version(),
             pkg_dir.display()
@@ -272,7 +272,7 @@ impl PackageStore {
 
         let package = Package::create(manifest.clone(), entries, preserve_mtime)?;
 
-        tracing::info!(":: packaged {}@{}", package.name(), package.version());
+        tracing::info!("packaged {}@{}", package.name(), package.version());
 
         Ok(package)
     }
