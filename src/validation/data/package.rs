@@ -31,7 +31,7 @@ pub struct Package {
 
 /// Error parsing package.
 #[derive(Error, Debug, Diagnostic)]
-#[allow(missing_docs)]
+#[allow(missing_docs, unused)]
 pub enum PackageError {
     #[error("duplicate entity {entity} in package {package}")]
     #[diagnostic(
