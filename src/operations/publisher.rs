@@ -252,11 +252,12 @@ impl Publisher {
                 ordered_dependencies.len(),
                 dependency.node.name
             );
+
             if let DependencySource::Local {
                 path: absolute_path,
             } = &dependency.node.source
             {
-                tracing::warn!(
+                tracing::debug!(
                     "recursively publishing local dependency: {}",
                     absolute_path.display()
                 );
@@ -549,7 +550,7 @@ impl Publisher {
         tracing::debug!("  package version: {}", package.version());
         tracing::debug!("  registry: {}", self.registry);
         tracing::debug!("  repository: {}", self.repository);
-        tracing::info!(
+        tracing::debug!(
             "uploading {} v{} to {}:{}",
             package.name(),
             package.version(),
@@ -562,16 +563,13 @@ impl Publisher {
             .await
             .wrap_err_with(|| format!("publishing of package {} failed", package.name()))?;
 
-        tracing::info!(
-            "upload complete: {} v{}",
-            package.name(),
-            package.version()
-        );
+        tracing::debug!("upload complete: {} v{}", package.name(), package.version());
         tracing::debug!("package uploaded successfully to registry");
 
         // Store the mapping for this package
         let package_version =
             VersionReq::from_str(&package.version().to_string()).into_diagnostic()?;
+
         tracing::debug!(
             "converted package version to version requirement: {}",
             package_version
@@ -593,6 +591,7 @@ impl Publisher {
 
         self.manifest_mappings
             .insert(local_manifest, remote_manifest);
+
         tracing::debug!(
             "manifest mapping recorded, total mappings: {}",
             self.manifest_mappings.len()

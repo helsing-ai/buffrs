@@ -15,7 +15,6 @@
 use clap::{Parser, Subcommand};
 use miette::{WrapErr, miette};
 use semver::Version;
-use uuid::Uuid;
 
 use buffrs::{
     command,
@@ -29,8 +28,8 @@ use buffrs::{
 #[command(author, version, about, long_about)]
 #[command(propagate_version = true)]
 struct Cli {
-    /// Enable verbose logging (debug level)
-    #[clap(short, long)]
+    /// Enable verbose logging
+    #[clap(short, long, default_value_t = false)]
     verbose: bool,
 
     #[command(subcommand)]

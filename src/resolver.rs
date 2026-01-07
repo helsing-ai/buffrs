@@ -371,11 +371,7 @@ impl<'a> GraphBuilder<'a> {
                 if file_req.url().as_str().starts_with(registry.as_str()) {
                     let cache = Cache::open().await?;
                     if let Ok(Some(pkg)) = cache.get(file_req).await {
-                        tracing::debug!(
-                            "resolved {}@{} from local cache",
-                            package_name,
-                            version
-                        );
+                        tracing::debug!("resolved {}@{} from local cache", package_name, version);
                         cached_package = Some(pkg);
                     }
                 }

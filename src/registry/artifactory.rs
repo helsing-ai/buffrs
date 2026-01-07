@@ -200,7 +200,10 @@ impl Artifactory {
         tracing::debug!("  package name: {}", dependency.package);
 
         let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
-            tracing::error!("attempted to download local dependency {} from artifactory", dependency.package);
+            tracing::error!(
+                "attempted to download local dependency {} from artifactory",
+                dependency.package
+            );
             return Err(miette!(
                 "unable to download local dependency ({}) from artifactory",
                 dependency.package
@@ -278,13 +281,25 @@ impl Artifactory {
             .collect();
 
         tracing::debug!("checking for local dependencies in package manifest");
-        tracing::debug!("  total dependencies: {}", package.manifest.dependencies.as_ref().map(|d| d.len()).unwrap_or(0));
+        tracing::debug!(
+            "  total dependencies: {}",
+            package
+                .manifest
+                .dependencies
+                .as_ref()
+                .map(|d| d.len())
+                .unwrap_or(0)
+        );
         tracing::debug!("  local dependencies found: {}", local_deps.len());
 
         // abort publishing if we have local dependencies
         if !local_deps.is_empty() {
             let names: Vec<String> = local_deps.iter().map(|d| d.package.to_string()).collect();
-            tracing::error!("cannot publish package {} with local dependencies: {}", package.name(), names.join(", "));
+            tracing::error!(
+                "cannot publish package {} with local dependencies: {}",
+                package.name(),
+                names.join(", ")
+            );
 
             return Err(miette!(
                 "unable to publish {} to artifactory due having the following local dependencies: {}",
@@ -333,16 +348,16 @@ impl Artifactory {
                 tracing::debug!("  local package hash: {}", package_hash);
 
                 tracing::debug!("fetching and hashing remote package");
-                let remote_bytes = response.bytes().await.into_diagnostic().wrap_err(
-                    miette!("unexpected error: failed to read the bytes back from artifactory"),
-                )?;
+                let remote_bytes = response.bytes().await.into_diagnostic().wrap_err(miette!(
+                    "unexpected error: failed to read the bytes back from artifactory"
+                ))?;
                 tracing::debug!("  remote package size: {} bytes", remote_bytes.len());
                 let expected_hash = alg.digest(&remote_bytes);
                 tracing::debug!("  remote package hash: {}", expected_hash);
 
                 if package_hash == expected_hash {
                     tracing::info!(
-                        "{}/{}@{} is already published with identical hash, skipping",
+                        "{}/{}@{} is already published, skipping",
                         repository,
                         package.name(),
                         package.version()
@@ -356,7 +371,9 @@ impl Artifactory {
                         package = %package.name(),
                         "publishing failed, hash mismatch"
                     );
-                    tracing::error!("local and remote packages have different content but same version");
+                    tracing::error!(
+                        "local and remote packages have different content but same version"
+                    );
 
                     return Err(miette!(
                         "unable to publish {} to artifactory: package is already published with a different hash",
@@ -365,7 +382,9 @@ impl Artifactory {
                 }
             }
         } else {
-            tracing::debug!("package not found in registry (expected for new packages), proceeding with upload");
+            tracing::debug!(
+                "package not found in registry (expected for new packages), proceeding with upload"
+            );
         }
 
         tracing::debug!("uploading package to artifactory (PUT request)");
