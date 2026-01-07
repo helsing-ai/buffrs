@@ -129,7 +129,7 @@ enum Command {
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
         #[clap(long)]
-        #[arg(default_value_t = false)]
+        #[arg(default_value_t = true)]
         preserve_mtime: bool,
     },
 
@@ -191,16 +191,15 @@ where
         mut writer: tracing_subscriber::fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
-        // Write UUID prefix
-        write!(writer, "[{}] ", self.uuid_prefix)?;
+        if self.verbose {
+            write!(writer, "[{}] ", self.uuid_prefix)?;
+        }
 
-        // Write level
         let metadata = event.metadata();
         if self.verbose {
             write!(writer, "{:5} ", metadata.level())?;
         }
 
-        // Write target, file, and line if verbose
         if self.verbose {
             if let Some(file) = metadata.file() {
                 write!(writer, "{}:", file)?;
@@ -213,7 +212,6 @@ where
             write!(writer, "{}: ", metadata.target())?;
         }
 
-        // Write the actual message and fields
         ctx.field_format().format_fields(writer.by_ref(), event)?;
         writeln!(writer)
     }
