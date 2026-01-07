@@ -1,3 +1,5 @@
+#![allow(unused_assignments)]
+
 // Copyright 2023 Helsing GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +33,7 @@ pub struct Package {
 
 /// Error parsing package.
 #[derive(Error, Debug, Diagnostic)]
-#[allow(missing_docs, unused)]
+#[allow(missing_docs)]
 pub enum PackageError {
     #[error("duplicate entity {entity} in package {package}")]
     #[diagnostic(

@@ -1,3 +1,5 @@
+#![allow(unused_assignments)]
+
 // Copyright 2023 Helsing GmbH
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
