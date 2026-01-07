@@ -397,7 +397,7 @@ impl Publisher {
                     );
                     tracing::debug!("  dependency name: {}", dependency.node.name);
                     tracing::debug!("  dependency path: {}", absolute_path.display());
-                    self.publish_package_at_path(&absolute_path, None).await?;
+                    self.publish_package_at_path(absolute_path, None).await?;
                     tracing::debug!(
                         "local dependency {} published successfully",
                         dependency.node.name
