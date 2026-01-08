@@ -1,3 +1,4 @@
+// NOTE: `PackagesError` fields are allowed unused as they are only used for err formatting
 #![allow(unused_assignments)]
 
 // Copyright 2023 Helsing GmbH
