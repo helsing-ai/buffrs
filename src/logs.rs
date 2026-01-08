@@ -1,3 +1,6 @@
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
+use rand::{Rng, rng};
 use tracing::Level;
 
 /// BuffrsEventFormatter applies common formatting to tracing logs.
@@ -10,8 +13,9 @@ pub struct BuffrsEventFormatter {
 impl BuffrsEventFormatter {
     /// Create a new buffrs event formatter, optionally in verbose mode
     pub fn new(verbose: bool) -> Self {
-        let uuid = uuid::Uuid::new_v4();
-        let prefix = uuid.to_string()[..8].to_string();
+        let mut rng = rng();
+
+        let prefix = BASE64_STANDARD.encode(rng.random::<[u8; 6]>());
 
         Self { prefix, verbose }
     }
