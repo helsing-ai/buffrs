@@ -256,7 +256,7 @@ pub async fn package(
     if let Some(version) = version
         && let Some(ref mut package) = manifest.package
     {
-        tracing::info!(":: modified version in published manifest to {version}");
+        tracing::info!("modified version in published manifest to {version}");
 
         package.version = version;
     }
@@ -338,13 +338,13 @@ pub async fn uninstall() -> miette::Result<()> {
             let packages = workspace_manifest.workspace.resolve_members(root_path)?;
 
             tracing::info!(
-                ":: workspace found. uninstalling dependencies for {} packages in workspace",
+                "workspace found. uninstalling dependencies for {} packages in workspace",
                 packages.len()
             );
 
             for package_path in packages {
                 tracing::info!(
-                    ":: uninstalling dependencies for package: {}",
+                    "uninstalling dependencies for package: {}",
                     package_path.display()
                 );
 
@@ -418,7 +418,7 @@ pub async fn lint() -> miette::Result<()> {
 pub async fn login(registry: RegistryUri) -> miette::Result<()> {
     let mut credentials = Credentials::load().await?;
 
-    tracing::info!(":: please enter your artifactory token:");
+    tracing::info!("please enter your artifactory token:");
 
     let token = {
         let mut raw = String::new();

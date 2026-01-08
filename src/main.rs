@@ -18,9 +18,9 @@ use semver::Version;
 
 use buffrs::{
     command,
+    logs::BuffrsEventFormatter,
     manifest::{BuffrsManifest, MANIFEST_FILE},
-    package::PackageType,
-    package::{PackageName, PackageStore},
+    package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
 
@@ -28,6 +28,10 @@ use buffrs::{
 #[command(author, version, about, long_about)]
 #[command(propagate_version = true)]
 struct Cli {
+    /// Enable verbose logging
+    #[clap(short, long, env = "BUFFRS_VERBOSE", default_value_t = false)]
+    verbose: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -98,9 +102,9 @@ enum Command {
         #[clap(long)]
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_mtime: Option<bool>,
+        #[arg(default_value_t = false)]
+        preserve_mtime: bool,
     },
 
     /// Packages and uploads this api to the registry
@@ -123,9 +127,9 @@ enum Command {
         #[clap(long)]
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_mtime: Option<bool>,
+        #[arg(default_value_t = true)]
+        preserve_mtime: bool,
     },
 
     /// Installs dependencies
@@ -174,17 +178,25 @@ enum LockfileCommand {
 async fn main() -> miette::Result<()> {
     human_panic::setup_panic!();
 
+    let cli = Cli::parse();
+
     tracing_subscriber::fmt()
         .compact()
         .without_time()
-        .with_level(false)
-        .with_file(false)
-        .with_target(false)
-        .with_line_number(false)
+        .with_level(cli.verbose)
+        .with_file(cli.verbose)
+        .with_target(cli.verbose)
+        .with_line_number(cli.verbose)
+        .with_max_level(if cli.verbose {
+            tracing::Level::DEBUG
+        } else {
+            tracing::Level::INFO
+        })
+        .fmt_fields(tracing_subscriber::fmt::format::DefaultFields::new())
+        .event_format(BuffrsEventFormatter::new(cli.verbose))
         .try_init()
         .unwrap();
 
-    let cli = Cli::parse();
     let package = BuffrsManifest::current_dir_display_name()
         .await
         .unwrap_or("unknown package".into());
@@ -230,16 +242,11 @@ async fn main() -> miette::Result<()> {
             dry_run,
             set_version,
             preserve_mtime,
-        } => command::package(
-            output_directory,
-            dry_run,
-            set_version,
-            preserve_mtime.unwrap_or(true),
-        )
-        .await
-        .wrap_err(miette!(
-            "failed to export `{package}` into the buffrs package format"
-        )),
+        } => command::package(output_directory, dry_run, set_version, preserve_mtime)
+            .await
+            .wrap_err(miette!(
+                "failed to export `{package}` into the buffrs package format"
+            )),
         Command::Publish {
             registry,
             repository,
@@ -253,7 +260,7 @@ async fn main() -> miette::Result<()> {
             allow_dirty,
             dry_run,
             set_version,
-            preserve_mtime.unwrap_or(true),
+            preserve_mtime,
         )
         .await
         .wrap_err(miette!(

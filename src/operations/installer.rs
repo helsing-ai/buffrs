@@ -111,13 +111,13 @@ impl Installer {
         let workspace_lockfile_path = root_path.join(LOCKFILE);
 
         if WorkspaceLockfile::exists_at(&workspace_lockfile_path).await? {
-            tracing::info!(":: using existing workspace lockfile");
+            tracing::info!("using existing workspace lockfile");
             let workspace_lockfile = WorkspaceLockfile::read_from(&workspace_lockfile_path).await?;
             self.install_with_workspace_lockfile(manifest, &root_path, &workspace_lockfile)
                 .await
         } else {
             tracing::info!(
-                ":: no workspace lockfile found, installing workspace members & creating new one"
+                "no workspace lockfile found, installing workspace members & creating new one"
             );
             self.install_and_create_workspace_lockfile(manifest, &root_path)
                 .await
@@ -133,7 +133,7 @@ impl Installer {
     ) -> miette::Result<()> {
         let packages = manifest.workspace.resolve_members(root_path)?;
         tracing::info!(
-            ":: workspace found. running install for {} packages in workspace",
+            "workspace found. running install for {} packages in workspace",
             packages.len()
         );
 
@@ -152,7 +152,7 @@ impl Installer {
 
             let store = PackageStore::open(&package).await?;
 
-            tracing::info!(":: running install for package: {}", package.display());
+            tracing::info!("running install for package: {}", package.display());
 
             // Install using workspace lockfile (no package lockfile needed)
             self.install_package(
@@ -166,7 +166,7 @@ impl Installer {
             .await?;
         }
 
-        tracing::info!(":: workspace install complete using existing lockfile");
+        tracing::info!("workspace install complete using existing lockfile");
 
         Ok(())
     }
@@ -179,7 +179,7 @@ impl Installer {
     ) -> miette::Result<()> {
         let packages = manifest.workspace.resolve_members(root_path)?;
         tracing::info!(
-            ":: workspace found. running install for {} packages in workspace",
+            "workspace found. running install for {} packages in workspace",
             packages.len()
         );
 
@@ -201,7 +201,7 @@ impl Installer {
             let pkg_lockfile = PackageLockfile::read_from_or_default(&pkg_lockfile_path).await?;
             let store = PackageStore::open(&package).await?;
 
-            tracing::info!(":: running install for package: {}", package.display());
+            tracing::info!("running install for package: {}", package.display());
 
             // Install without workspace lockfile (resolve from registry)
             let locked = self
@@ -225,7 +225,7 @@ impl Installer {
         workspace_lockfile.write(root_path).await?;
 
         tracing::info!(
-            ":: wrote workspace lockfile at {}",
+            "wrote workspace lockfile at {}",
             root_path.join(LOCKFILE).display()
         );
 
@@ -247,7 +247,7 @@ impl Installer {
         if let Some(ref pkg) = manifest.package {
             store.populate(pkg).await?;
 
-            tracing::info!(":: installed {}@{}", pkg.name, pkg.version);
+            tracing::info!("installed {}@{}", pkg.name, pkg.version);
         }
 
         let resolved_lockfile = match workspace_mode {
@@ -307,7 +307,7 @@ impl Installer {
                 .await
                 .wrap_err_with(|| format!("failed to unpack package {}", package.name()))?;
 
-            tracing::info!(":: installed {}@{}", dependency.name, package.version());
+            tracing::info!("installed {}@{}", dependency.name, package.version());
         }
 
         // 2. Create LockedPackages with dependency information
@@ -397,7 +397,7 @@ impl Installer {
             );
 
             tracing::debug!(
-                ":: using workspace lockfile version for {}@{}",
+                "using workspace lockfile version for {}@{}",
                 package_name,
                 locked.version
             );
@@ -430,7 +430,7 @@ impl Installer {
                 locked_entry.validate(&cached_pkg)?;
 
                 tracing::debug!(
-                    ":: using cached package for {}@{}",
+                    "using cached package for {}@{}",
                     package_name,
                     cached_pkg.version()
                 );

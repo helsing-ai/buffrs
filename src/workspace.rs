@@ -80,7 +80,7 @@ impl Workspace {
                     resolved_members.insert(PathBuf::from(pattern));
                 } else {
                     tracing::warn!(
-                        ":: path {} was explicitly provided in members, but contains no buffrs manifest",
+                        "path {} was explicitly provided in members, but contains no buffrs manifest",
                         member_path.display()
                     );
                 }
