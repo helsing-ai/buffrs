@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
     rust-overlay = {
@@ -24,16 +24,10 @@
           inherit (pkgs) lib callPackage;
           rustToolchain = callPackage ./nix/toolchain.nix { };
 
-          darwinFrameworks = with pkgs.darwin.apple_sdk.frameworks; [
-            Security
-            SystemConfiguration
-          ];
-
           devTools = [ rustToolchain ];
 
           dependencies = with pkgs;
-            [ libiconv ]
-            ++ lib.lists.optionals stdenv.isDarwin darwinFrameworks;
+            [ libiconv ] ++ lib.lists.optional stdenv.isDarwin pkgs.apple-sdk;
 
           nativeBuildInputs = with pkgs; [ pkg-config ] ++ dependencies;
 
@@ -93,7 +87,8 @@
         });
     in perSystemOutputs // {
       overlays.default = (final: _prev: {
-        buffrs = perSystemOutputs.packages.${final.stdenv.system}.default;
+        buffrs =
+          perSystemOutputs.packages.${final.stdenv.hostPlatform.system}.default;
       });
     };
 }
