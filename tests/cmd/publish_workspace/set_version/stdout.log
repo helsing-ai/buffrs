@@ -1,4 +1,9 @@
+:: workspace found. publishing 2 packages in workspace
+:: processing workspace member 1/2: pkg-a
+:: modified version in published manifest for pkg-a from 1.0.0 to 9.9.9
 :: packaged pkg-a@9.9.9
 :: published my-repository/pkg-a@9.9.9
+:: processing workspace member 2/2: pkg-b
+:: modified version in published manifest for pkg-b from 2.0.0 to 9.9.9
 :: packaged pkg-b@9.9.9
 :: published my-repository/pkg-b@9.9.9
