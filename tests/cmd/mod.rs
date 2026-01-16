@@ -8,5 +8,6 @@ mod logout;
 mod ls;
 mod package;
 mod publish;
+mod publish_workspace;
 mod remove;
 mod tuto;
