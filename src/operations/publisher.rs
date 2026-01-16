@@ -345,8 +345,8 @@ impl Publisher {
             }
 
             // Apply version override if specified
-            if let Some(ref version) = version {
-                if let Some(ref mut package) = member_manifest.package {
+            if let Some(ref version) = version
+                && let Some(ref mut package) = member_manifest.package {
                     tracing::info!(
                         "modified version in published manifest for {} from {} to {}",
                         package.name,
@@ -355,7 +355,6 @@ impl Publisher {
                     );
                     package.version = version.clone();
                 }
-            }
 
             // Build dependency graph for this member
             tracing::debug!(
