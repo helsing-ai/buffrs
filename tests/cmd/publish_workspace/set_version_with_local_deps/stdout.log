@@ -1,0 +1,4 @@
+:: packaged lib-a@5.0.0
+:: published my-repository/lib-a@5.0.0
+:: packaged api-b@5.0.0
+:: published my-repository/api-b@5.0.0

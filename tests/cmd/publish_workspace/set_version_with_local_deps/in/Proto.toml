@@ -1,0 +1,4 @@
+edition = "0.12"
+
+[workspace]
+members = ["lib-a", "api-b"]

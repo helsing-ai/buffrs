@@ -1,0 +1,4 @@
+:: packaged pkg-a@9.9.9
+:: published my-repository/pkg-a@9.9.9
+:: packaged pkg-b@9.9.9
+:: published my-repository/pkg-b@9.9.9

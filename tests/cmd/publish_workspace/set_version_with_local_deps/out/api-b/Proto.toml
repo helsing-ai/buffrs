@@ -1,0 +1,9 @@
+edition = "0.12"
+
+[package]
+type = "api"
+name = "api-b"
+version = "0.2.0"
+
+[dependencies]
+"lib-a" = { path = "../lib-a" }

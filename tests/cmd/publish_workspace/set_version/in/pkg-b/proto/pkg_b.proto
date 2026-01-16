@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package workspace.pkg_b;
+
+message MessageB {
+  string data = 1;
+}

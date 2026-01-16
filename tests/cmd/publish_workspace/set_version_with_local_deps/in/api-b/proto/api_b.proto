@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package workspace.api_b;
+
+import "lib_a.proto";
+
+message ApiMessage {
+  workspace.lib_a.LibMessage lib_msg = 1;
+}
