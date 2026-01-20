@@ -252,7 +252,7 @@ pub async fn package(
     let manifest_path = PathBuf::from(MANIFEST_FILE);
     let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
         .await?
-        .with_version_override(version);
+        .with_version(version);
     let store = PackageStore::current().await?;
 
     if let Some(ref pkg) = manifest.package {

@@ -186,7 +186,7 @@ impl Publisher {
         let store = PackageStore::current().await?;
         tracing::debug!("package store opened successfully");
 
-        let root_manifest = manifest.clone().with_version_override(version);
+        let root_manifest = manifest.clone().with_version(version);
 
         // Build dependency graph
         tracing::debug!(
@@ -323,7 +323,7 @@ impl Publisher {
 
             let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file)
                 .await?
-                .with_version_override(version.clone());
+                .with_version(version.clone());
 
             tracing::debug!("manifest loaded successfully");
 
@@ -394,7 +394,7 @@ impl Publisher {
                             &absolute_path.join(MANIFEST_FILE),
                         )
                         .await?
-                        .with_version_override(version.clone());
+                        .with_version(version.clone());
 
                         Some(dep_manifest)
                     } else {

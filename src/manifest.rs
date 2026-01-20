@@ -593,7 +593,7 @@ impl PackagesManifest {
     ///
     /// This is a convenience method to hide the `if let Some` logic used when overriding
     /// package versions during publish or package operations.
-    pub fn with_version_override(mut self, version: Option<Version>) -> Self {
+    pub fn with_version(mut self, version: Option<Version>) -> Self {
         if let Some(version) = version
             && let Some(ref mut package) = self.package
         {
