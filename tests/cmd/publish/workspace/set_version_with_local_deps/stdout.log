@@ -2,7 +2,7 @@
 :: processing workspace member 1/2: api-b
 :: modified version in published manifest for api-b from 0.2.0 to 5.0.0
 :: recursively publishing local dependency from workspace: api-b/../lib-a
-:: modified version in published manifest for lib-a to 5.0.0
+:: modified version in published manifest for lib-a from 0.1.0 to 5.0.0
 :: packaged lib-a@5.0.0
 :: published my-repository/lib-a@5.0.0
 :: packaged api-b@5.0.0
