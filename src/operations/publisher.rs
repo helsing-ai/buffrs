@@ -182,26 +182,11 @@ impl Publisher {
             tracing::debug!("  manifest package kind: {:?}", pkg.kind);
         }
 
-        let mut root_manifest = manifest.clone();
-
         tracing::debug!("opening package store at current directory");
         let store = PackageStore::current().await?;
         tracing::debug!("package store opened successfully");
 
-        if let Some(version) = version
-            && let Some(ref mut package) = root_manifest.package
-        {
-            tracing::info!("modified version in published manifest to {version}");
-            tracing::debug!(
-                "manifest mutation: overriding version {} -> {}",
-                package.version,
-                version
-            );
-            tracing::debug!("  package: {}", package.name);
-            tracing::debug!("  old version: {}", package.version);
-            tracing::debug!("  new version: {}", version);
-            package.version = version;
-        }
+        let root_manifest = manifest.clone().with_version_override(version);
 
         // Build dependency graph
         tracing::debug!(
@@ -333,28 +318,19 @@ impl Publisher {
             tracing::debug!("  member path: {}", member_path.display());
 
             let manifest_file = member_path.join(MANIFEST_FILE);
+
             tracing::debug!("IO: reading manifest from {}", manifest_file.display());
-            let mut member_manifest =
-                BuffrsManifest::require_package_manifest(&manifest_file).await?;
+
+            let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file)
+                .await?
+                .with_version_override(version.clone());
+
             tracing::debug!("manifest loaded successfully");
 
             if let Some(ref pkg) = member_manifest.package {
                 tracing::debug!("  workspace member package name: {}", pkg.name);
                 tracing::debug!("  workspace member package version: {}", pkg.version);
                 tracing::debug!("  workspace member package kind: {:?}", pkg.kind);
-            }
-
-            // Apply version override if specified
-            if let Some(ref version) = version
-                && let Some(ref mut package) = member_manifest.package
-            {
-                tracing::info!(
-                    "modified version in published manifest for {} from {} to {}",
-                    package.name,
-                    package.version,
-                    version
-                );
-                package.version = version.clone();
             }
 
             // Build dependency graph for this member
@@ -400,6 +376,7 @@ impl Publisher {
                     dependencies.len(),
                     dependency.node.name
                 );
+
                 if let DependencySource::Local {
                     path: absolute_path,
                 } = &dependency.node.source
@@ -413,17 +390,12 @@ impl Publisher {
 
                     // Apply version override to local dependencies (workspace siblings)
                     let manifest_override = if version.is_some() {
-                        let dep_manifest_file = absolute_path.join(MANIFEST_FILE);
-                        let mut dep_manifest =
-                            BuffrsManifest::require_package_manifest(&dep_manifest_file).await?;
-                        if let Some(ref mut package) = dep_manifest.package {
-                            tracing::info!(
-                                "modified version in published manifest for {} to {}",
-                                package.name,
-                                version.as_ref().unwrap()
-                            );
-                            package.version = version.clone().unwrap();
-                        }
+                        let dep_manifest = BuffrsManifest::require_package_manifest(
+                            &absolute_path.join(MANIFEST_FILE),
+                        )
+                        .await?
+                        .with_version_override(version.clone());
+
                         Some(dep_manifest)
                     } else {
                         None
@@ -431,6 +403,7 @@ impl Publisher {
 
                     self.publish_package_at_path(absolute_path, manifest_override.as_ref())
                         .await?;
+
                     tracing::debug!(
                         "local dependency {} published successfully",
                         dependency.node.name

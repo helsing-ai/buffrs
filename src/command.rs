@@ -250,16 +250,10 @@ pub async fn package(
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let mut manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+    let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+        .await?
+        .with_version_override(version);
     let store = PackageStore::current().await?;
-
-    if let Some(version) = version
-        && let Some(ref mut package) = manifest.package
-    {
-        tracing::info!("modified version in published manifest to {version}");
-
-        package.version = version;
-    }
 
     if let Some(ref pkg) = manifest.package {
         store.populate(pkg).await?;

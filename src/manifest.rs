@@ -588,6 +588,25 @@ impl PackagesManifest {
             .filter(predicate)
             .collect()
     }
+
+    /// Applies a version override to the package manifest if both version and package are present
+    ///
+    /// This is a convenience method to hide the `if let Some` logic used when overriding
+    /// package versions during publish or package operations.
+    pub fn with_version_override(mut self, version: Option<Version>) -> Self {
+        if let Some(version) = version
+            && let Some(ref mut package) = self.package
+        {
+            tracing::info!(
+                "modified version in published manifest for {} from {} to {}",
+                package.name,
+                package.version,
+                version
+            );
+            package.version = version;
+        }
+        self
+    }
 }
 
 impl From<BuffrsManifest> for RawManifest {
