@@ -1,13 +1,11 @@
 mod add;
 mod init;
-mod install_package;
-mod install_workspace;
+mod install;
 mod lint;
 mod login;
 mod logout;
 mod ls;
 mod package;
 mod publish;
-mod publish_workspace;
 mod remove;
 mod tuto;
