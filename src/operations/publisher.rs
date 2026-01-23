@@ -159,10 +159,7 @@ impl Publisher {
             }
             BuffrsManifest::Workspace(workspace_manifest) => {
                 tracing::debug!("manifest type: Workspace");
-                if version.is_some() {
-                    bail!("version flag is not supported for workspace publishing");
-                }
-                self.publish_workspace_from_manifest(workspace_manifest)
+                self.publish_workspace_from_manifest(workspace_manifest, version)
                     .await
             }
         }
@@ -185,26 +182,11 @@ impl Publisher {
             tracing::debug!("  manifest package kind: {:?}", pkg.kind);
         }
 
-        let mut root_manifest = manifest.clone();
-
         tracing::debug!("opening package store at current directory");
         let store = PackageStore::current().await?;
         tracing::debug!("package store opened successfully");
 
-        if let Some(version) = version
-            && let Some(ref mut package) = root_manifest.package
-        {
-            tracing::info!("modified version in published manifest to {version}");
-            tracing::debug!(
-                "manifest mutation: overriding version {} -> {}",
-                package.version,
-                version
-            );
-            tracing::debug!("  package: {}", package.name);
-            tracing::debug!("  old version: {}", package.version);
-            tracing::debug!("  new version: {}", version);
-            package.version = version;
-        }
+        let root_manifest = manifest.clone().with_version(version);
 
         // Build dependency graph
         tracing::debug!(
@@ -296,8 +278,10 @@ impl Publisher {
     async fn publish_workspace_from_manifest(
         &mut self,
         manifest: &WorkspaceManifest,
+        version: Option<Version>,
     ) -> miette::Result<()> {
         tracing::debug!("publish_workspace_from_manifest() called");
+        tracing::debug!("  version override: {:?}", version);
 
         let root_path = env::current_dir()
             .into_diagnostic()
@@ -334,8 +318,13 @@ impl Publisher {
             tracing::debug!("  member path: {}", member_path.display());
 
             let manifest_file = member_path.join(MANIFEST_FILE);
+
             tracing::debug!("IO: reading manifest from {}", manifest_file.display());
-            let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file).await?;
+
+            let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file)
+                .await?
+                .with_version(version.clone());
+
             tracing::debug!("manifest loaded successfully");
 
             if let Some(ref pkg) = member_manifest.package {
@@ -387,6 +376,7 @@ impl Publisher {
                     dependencies.len(),
                     dependency.node.name
                 );
+
                 if let DependencySource::Local {
                     path: absolute_path,
                 } = &dependency.node.source
@@ -397,7 +387,23 @@ impl Publisher {
                     );
                     tracing::debug!("  dependency name: {}", dependency.node.name);
                     tracing::debug!("  dependency path: {}", absolute_path.display());
-                    self.publish_package_at_path(absolute_path, None).await?;
+
+                    // Apply version override to local dependencies (workspace siblings)
+                    let manifest_override = if version.is_some() {
+                        let dep_manifest = BuffrsManifest::require_package_manifest(
+                            &absolute_path.join(MANIFEST_FILE),
+                        )
+                        .await?
+                        .with_version(version.clone());
+
+                        Some(dep_manifest)
+                    } else {
+                        None
+                    };
+
+                    self.publish_package_at_path(absolute_path, manifest_override.as_ref())
+                        .await?;
+
                     tracing::debug!(
                         "local dependency {} published successfully",
                         dependency.node.name
@@ -425,7 +431,8 @@ impl Publisher {
                 "publishing workspace member at path: {}",
                 member_path.display()
             );
-            self.publish_package_at_path(member_path, None).await?;
+            self.publish_package_at_path(member_path, Some(&member_manifest))
+                .await?;
             tracing::debug!("workspace member published successfully");
         }
 
