@@ -50,12 +50,8 @@ let
   cache = map cachePackage fileRequirements;
 in
 {
-  BUFFRS_CACHE =
-    let
-      symlink = symlinkJoin {
-        name = "buffrs-cache";
-        paths = cache;
-      };
-    in
-    builtins.trace symlink symlink;
+  BUFFRS_CACHE = symlinkJoin {
+    name = "buffrs-cache";
+    paths = cache;
+  };
 }
