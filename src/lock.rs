@@ -517,7 +517,7 @@ pub enum Lockfile {
 }
 
 impl Lockfile {
-    // Locates a package by name and version
+    /// Locates a package by name and version
     pub fn get(&self, name: &PackageName, version: &Version) -> Option<FileRequirement> {
         match self {
             Self::Package(lock) => lock
