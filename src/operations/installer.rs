@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::io::File;
 use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
