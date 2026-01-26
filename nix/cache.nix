@@ -11,13 +11,10 @@ let
   fileRequirementsJson =
     runCommand "buffrs-urls" { buildInputs = [ buffrs ]; } ''
       cd ${src}
-      buffrs lock print-files
       buffrs lock print-files > $out
     '';
 
-  fileRequirements =
-    let parsed = builtins.fromJSON (builtins.readFile fileRequirementsJson);
-    in builtins.trace parsed parsed;
+  fileRequirements = builtins.fromJSON (builtins.readFile fileRequirementsJson);
 
   cachePackage = (file:
     let
@@ -32,7 +29,6 @@ let
       };
     in runCommand "cache-${file.package}" { } ''
       mkdir -p $out
-      echo "FETCHED ${file.package} sucessfully into ${file.package}.sha256.${sha256}.tgz"
       cp ${tar} $out/${file.package}.sha256.${sha256}.tgz
     '');
 
