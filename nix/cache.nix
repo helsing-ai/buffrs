@@ -46,11 +46,19 @@ let
     ''
   );
 
-  cache = map cachePackage fileRequirements;
+  cache =
+    let
+      cache = map cachePackage fileRequirements;
+    in
+    builtins.trace cache cache;
 in
 {
-  BUFFRS_CACHE = symlinkJoin {
-    name = "buffrs-cache";
-    paths = cache;
-  };
+  BUFFRS_CACHE =
+    let
+      symlink = symlinkJoin {
+        name = "buffrs-cache";
+        paths = cache;
+      };
+    in
+    builtins.trace symlink symlink;
 }
