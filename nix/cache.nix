@@ -20,9 +20,12 @@ let
     buffrs lock print-files > $out
   '';
 
-  fileRequirements = builtins.fromJSON (
-    builtins.readFile (builtins.trace fileRequirementsJson fileRequirementsJson)
-  );
+  fileRequirements =
+    let
+      parsed = builtins.fromJSON (builtins.readFile fileRequirementsJson);
+    in
+    builtins.trace parsed parsed;
+
   cachePackage = (
     file:
     let
