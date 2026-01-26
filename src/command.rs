@@ -27,7 +27,6 @@ use tokio::{
 
 use crate::{
     credentials::Credentials,
-    lock::PackageLockfile,
     manifest::{
         BuffrsManifest, Dependency, GenericManifest, MANIFEST_FILE, PackageManifest,
         PackagesManifest,

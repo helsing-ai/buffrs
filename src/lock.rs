@@ -23,7 +23,7 @@ use url::Url;
 
 use crate::{
     ManagedFile,
-    errors::{DeserializationError, FileExistsError, FileNotFound, SerializationError, WriteError},
+    errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
     io::File,
     package::{Package, PackageName},
     registry::RegistryUri,
@@ -240,7 +240,7 @@ impl File for PackageLockfile {
                 let raw: RawPackageLockfile = toml::from_str(&contents)
                     .into_diagnostic()
                     .wrap_err(DeserializationError(ManagedFile::Lock))?;
-                Ok(Self::from_iter(raw.packages.into_iter()))
+                Ok(Self::from_iter(raw.packages))
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(FileNotFound(LOCKFILE.into()).into())
@@ -443,7 +443,7 @@ impl File for WorkspaceLockfile {
                 let raw: RawWorkspaceLockfile = toml::from_str(&contents)
                     .into_diagnostic()
                     .wrap_err(DeserializationError(ManagedFile::Lock))?;
-                Ok(Self::from_iter(raw.packages.into_iter()))
+                Ok(Self::from_iter(raw.packages))
             }
             Err(err) if matches!(err.kind(), std::io::ErrorKind::NotFound) => {
                 Err(FileNotFound(LOCKFILE.into()).into())
@@ -727,7 +727,7 @@ mod tests {
 
     use semver::Version;
 
-    use crate::{package::PackageName, registry::RegistryUri};
+    use crate::{io::File, package::PackageName, registry::RegistryUri};
 
     use super::{
         Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, PackageLockfile,
