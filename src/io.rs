@@ -4,7 +4,7 @@ use tokio::fs;
 
 use crate::errors::FileExistsError;
 
-// The `File` trait standardizes the process of reading and writing files.
+/// The `File` trait standardizes the process of reading and writing files.
 #[async_trait::async_trait]
 pub trait File: Sized + Send + Sync + 'static {
     /// The default location of this file
