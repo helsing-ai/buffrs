@@ -1,0 +1,7 @@
+[
+  {
+    "package": "remote-lib",
+    "url": "https://buffrs.local/artifactory/test-repo/remote-lib/remote-lib-0.1.0.tgz",
+    "digest": "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+  }
+]
