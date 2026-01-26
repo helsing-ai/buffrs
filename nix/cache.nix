@@ -42,15 +42,12 @@ let
     in
     runCommand "cache-${file.package}" { } ''
       mkdir -p $out
+      echo "FETCHED ${file.package} sucessfully into ${file.package}.sha256.${sha256}.tgz"
       cp ${tar} $out/${file.package}.sha256.${sha256}.tgz
     ''
   );
 
-  cache =
-    let
-      cache = map cachePackage fileRequirements;
-    in
-    builtins.trace cache cache;
+  cache = map cachePackage fileRequirements;
 in
 {
   BUFFRS_CACHE =
