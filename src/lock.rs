@@ -553,7 +553,7 @@ impl File for Lockfile {
             .await
             .map(Self::Workspace);
 
-        plock.or(wlock)
+        wlock.or(plock)
     }
 
     /// Persists a Lockfile to the filesystem
