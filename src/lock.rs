@@ -231,7 +231,7 @@ impl PackageLockfile {
 impl File for PackageLockfile {
     const DEFAULT_PATH: &str = LOCKFILE;
 
-    async fn read_from<P>(path: P) -> miette::Result<Self>
+    async fn load_from<P>(path: P) -> miette::Result<Self>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -249,7 +249,7 @@ impl File for PackageLockfile {
         }
     }
 
-    async fn write<P>(&self, path: P) -> miette::Result<()>
+    async fn save<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -287,7 +287,11 @@ impl From<PackageLockfile> for Vec<FileRequirement> {
     /// Must return files with a stable order to ensure identical lockfiles lead to identical
     /// buffrs-cache nix derivations
     fn from(lock: PackageLockfile) -> Self {
-        lock.packages.values().map(FileRequirement::from).collect()
+        let mut unsorted: Vec<_> = lock.packages.values().collect();
+
+        unsorted.sort_by_key(|c| &c.digest);
+
+        unsorted.into_iter().map(FileRequirement::from).collect()
     }
 }
 
@@ -434,7 +438,7 @@ impl File for WorkspaceLockfile {
     const DEFAULT_PATH: &str = LOCKFILE;
 
     /// Loads the workspace lockfile from a specific path
-    async fn read_from<P>(path: P) -> miette::Result<Self>
+    async fn load_from<P>(path: P) -> miette::Result<Self>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -453,7 +457,7 @@ impl File for WorkspaceLockfile {
     }
 
     /// Persists the workspace lockfile to the filesystem
-    async fn write<P>(&self, path: P) -> miette::Result<()>
+    async fn save<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -503,7 +507,11 @@ impl From<WorkspaceLockfile> for Vec<FileRequirement> {
     /// Must return files with a stable order to ensure identical lockfiles lead to identical
     /// buffrs-cache nix derivations
     fn from(lock: WorkspaceLockfile) -> Self {
-        lock.packages.values().map(FileRequirement::from).collect()
+        let mut unsorted: Vec<_> = lock.packages.values().collect();
+
+        unsorted.sort_by_key(|c| &c.digest);
+
+        unsorted.into_iter().map(FileRequirement::from).collect()
     }
 }
 
@@ -534,14 +542,14 @@ impl File for Lockfile {
     const DEFAULT_PATH: &str = LOCKFILE;
 
     /// Loads the Lockfile from a specific path.
-    async fn read_from<P>(path: P) -> miette::Result<Self>
+    async fn load_from<P>(path: P) -> miette::Result<Self>
     where
         P: AsRef<Path> + Send + Sync,
     {
         let path = path.as_ref();
 
-        let plock = PackageLockfile::read_from(path).await.map(Self::Package);
-        let wlock = WorkspaceLockfile::read_from(path)
+        let plock = PackageLockfile::load_from(path).await.map(Self::Package);
+        let wlock = WorkspaceLockfile::load_from(path)
             .await
             .map(Self::Workspace);
 
@@ -549,13 +557,13 @@ impl File for Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    async fn write<P>(&self, path: P) -> miette::Result<()>
+    async fn save<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
         match self {
-            Self::Package(plock) => plock.write(path).await,
-            Self::Workspace(wlock) => wlock.write(path).await,
+            Self::Package(plock) => plock.save(path).await,
+            Self::Workspace(wlock) => wlock.save(path).await,
         }
     }
 }
@@ -873,7 +881,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let lockfile_path = temp_dir.path().join("Proto.lock");
 
-        let lockfile = PackageLockfile::read_from_or_default(&lockfile_path)
+        let lockfile = PackageLockfile::load_from_or_default(&lockfile_path)
             .await
             .unwrap();
 
@@ -890,10 +898,10 @@ mod tests {
 
         // Create and write a lockfile (write expects directory path)
         let original_lockfile = simple_lockfile();
-        original_lockfile.write(temp_dir.path()).await.unwrap();
+        original_lockfile.save(temp_dir.path()).await.unwrap();
 
         // Read it back using read_from_or_default
-        let loaded_lockfile = PackageLockfile::read_from_or_default(&lockfile_path)
+        let loaded_lockfile = PackageLockfile::load_from_or_default(&lockfile_path)
             .await
             .unwrap();
 

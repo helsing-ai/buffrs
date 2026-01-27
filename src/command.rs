@@ -452,7 +452,7 @@ pub mod lock {
 
     /// Prints the file requirements serialized as JSON
     pub async fn print_files() -> miette::Result<()> {
-        let lock = Lockfile::read().await?;
+        let lock = Lockfile::load().await?;
 
         let requirements: Vec<FileRequirement> = lock.into();
 
