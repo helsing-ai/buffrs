@@ -13,7 +13,7 @@
     };
   };
 
-  outputs = { self, flake-utils, rust-overlay, crane, advisory-db, nixpkgs, }:
+  outputs = { flake-utils, rust-overlay, crane, advisory-db, nixpkgs, ... }:
     let
       perSystemOutputs = flake-utils.lib.eachDefaultSystem (system:
         let

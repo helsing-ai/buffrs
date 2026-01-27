@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::io::File;
 use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
@@ -79,7 +80,7 @@ impl Installer {
     pub async fn install(&self, manifest: &BuffrsManifest) -> miette::Result<()> {
         match manifest {
             BuffrsManifest::Package(packages_manifest) => {
-                let lockfile = PackageLockfile::read_or_default().await?;
+                let lockfile = PackageLockfile::load_or_default().await?;
                 let store = PackageStore::current().await?;
                 let current_path = env::current_dir()
                     .into_diagnostic()
@@ -112,7 +113,7 @@ impl Installer {
 
         if WorkspaceLockfile::exists_at(&workspace_lockfile_path).await? {
             tracing::info!("using existing workspace lockfile");
-            let workspace_lockfile = WorkspaceLockfile::read_from(&workspace_lockfile_path).await?;
+            let workspace_lockfile = WorkspaceLockfile::load_from(&workspace_lockfile_path).await?;
             self.install_with_workspace_lockfile(manifest, &root_path, &workspace_lockfile)
                 .await
         } else {
@@ -198,7 +199,7 @@ impl Installer {
                 );
             }
 
-            let pkg_lockfile = PackageLockfile::read_from_or_default(&pkg_lockfile_path).await?;
+            let pkg_lockfile = PackageLockfile::load_from_or_default(&pkg_lockfile_path).await?;
             let store = PackageStore::open(&package).await?;
 
             tracing::info!("running install for package: {}", package.display());
@@ -222,7 +223,7 @@ impl Installer {
         let workspace_lockfile = WorkspaceLockfile::try_from(all_locked_packages)?;
 
         // Write workspace lockfile
-        workspace_lockfile.write(root_path).await?;
+        workspace_lockfile.save(root_path).await?;
 
         tracing::info!(
             "wrote workspace lockfile at {}",
@@ -355,7 +356,7 @@ impl Installer {
         match write_mode {
             LockfileWriteMode::Write => {
                 let package_lockfile: PackageLockfile = locked_packages.clone().try_into()?;
-                package_lockfile.write(package_path).await?;
+                package_lockfile.save(package_path).await?;
             }
             LockfileWriteMode::Skip => {
                 // Workspace will handle lockfile writing

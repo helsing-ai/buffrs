@@ -28,6 +28,8 @@ pub mod command;
 pub mod credentials;
 /// Common error types
 pub mod errors;
+/// IO traits
+pub mod io;
 /// Lockfile implementation
 pub mod lock;
 /// Log subscriber implementation

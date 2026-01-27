@@ -27,7 +27,6 @@ use tokio::{
 
 use crate::{
     credentials::Credentials,
-    lock::PackageLockfile,
     manifest::{
         BuffrsManifest, Dependency, GenericManifest, MANIFEST_FILE, PackageManifest,
         PackagesManifest,
@@ -448,12 +447,12 @@ pub async fn logout(registry: RegistryUri) -> miette::Result<()> {
 
 /// Commands on the lockfile
 pub mod lock {
-    use super::*;
-    use crate::lock::FileRequirement;
+    use crate::io::File;
+    use crate::lock::{FileRequirement, Lockfile};
 
     /// Prints the file requirements serialized as JSON
     pub async fn print_files() -> miette::Result<()> {
-        let lock = PackageLockfile::read().await?;
+        let lock = Lockfile::load().await?;
 
         let requirements: Vec<FileRequirement> = lock.into();
 

@@ -1,4 +1,4 @@
-{ fetchurl, runCommand, lib, buffrs, symlinkJoin }:
+{ fetchurl, runCommand, lib, buffrs, symlinkJoin, }:
 
 lockfile:
 
