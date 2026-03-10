@@ -14,10 +14,9 @@
 
 use std::{collections::BTreeMap, path::Path};
 
-use miette::{Context, IntoDiagnostic, ensure};
+use miette::{Context, IntoDiagnostic};
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tokio::fs;
 use url::Url;
 
@@ -25,6 +24,7 @@ use crate::{
     ManagedFile,
     errors::{DeserializationError, FileNotFound, SerializationError, WriteError},
     io::File,
+    manifest::Manifest,
     package::{Package, PackageName},
     registry::RegistryUri,
 };
@@ -39,17 +39,42 @@ pub const LOCKFILE: &str = "Proto.lock";
 ///
 /// Serializes as "name version" string (Cargo format)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LockedDependency {
-    /// The name of the dependency package
-    pub name: PackageName,
-    /// The exact version of the dependency package
-    pub version: Version,
+pub enum LockedDependency {
+    Named {
+        /// The name of the dependency package
+        name: PackageName,
+    },
+    Qualified {
+        /// The name of the dependency package
+        name: PackageName,
+
+        /// The exact version of the dependency package
+        version: Version,
+    },
 }
 
 impl LockedDependency {
-    /// Creates a new LockedDependency
-    pub fn new(name: PackageName, version: Version) -> Self {
-        Self { name, version }
+    pub fn name(&self) -> &PackageName {
+        match self {
+            Self::Named { name } | Self::Qualified { name, .. } => name,
+        }
+    }
+
+    pub fn version(&self) -> Option<&Version> {
+        match self {
+            Self::Qualified { version, .. } => Some(version),
+            Self::Named { .. } => None,
+        }
+    }
+
+    /// Named lock
+    pub fn named(name: PackageName) -> Self {
+        Self::Named { name }
+    }
+
+    /// Qualified lock
+    pub fn qualified(name: PackageName, version: Version) -> Self {
+        Self::Qualified { name, version }
     }
 }
 
@@ -59,7 +84,12 @@ impl Serialize for LockedDependency {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{} {}", self.name, self.version))
+        match self {
+            Self::Named { name } => serializer.serialize_str(&format!("{name}")),
+            Self::Qualified { name, version } => {
+                serializer.serialize_str(&format!("{name} {version}"))
+            }
+        }
     }
 }
 
@@ -73,18 +103,19 @@ impl<'de> Deserialize<'de> for LockedDependency {
         let parts: Vec<&str> = s.split_whitespace().collect();
 
         if parts.len() != 2 {
-            return Err(serde::de::Error::custom(format!(
-                "invalid locked dependency format: expected 'name version', got '{}'",
-                s
-            )));
+            let name = PackageName::new(parts[0])
+                .map_err(|e| serde::de::Error::custom(format!("invalid package name: {}", e)))?;
+
+            return Ok(Self::Named { name });
         }
 
         let name = PackageName::new(parts[0])
             .map_err(|e| serde::de::Error::custom(format!("invalid package name: {}", e)))?;
+
         let version = Version::parse(parts[1])
             .map_err(|e| serde::de::Error::custom(format!("invalid version: {}", e)))?;
 
-        Ok(LockedDependency { name, version })
+        Ok(LockedDependency::Qualified { name, version })
     }
 }
 
@@ -104,7 +135,7 @@ pub struct LockedPackage {
     /// The exact version of the package
     pub version: Version,
     /// Names of dependency packages
-    pub dependencies: Vec<PackageName>,
+    pub dependencies: Vec<LockedDependency>,
     /// Count of dependant packages in the current graph
     ///
     /// This is used to detect when an entry can be safely removed from the lockfile.
@@ -130,69 +161,9 @@ impl LockedPackage {
                 .dependencies
                 .iter()
                 .flatten()
-                .map(|d| d.package.clone())
+                .map(|d| LockedDependency::named(d.package.clone()))
                 .collect(),
             dependants,
-        }
-    }
-
-    /// Validates if another LockedPackage matches this one
-    pub fn validate(&self, package: &Package) -> miette::Result<()> {
-        let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
-
-        #[derive(Error, Debug)]
-        #[error("{property} mismatch - expected {expected}, actual {actual}")]
-        struct ValidationError {
-            property: &'static str,
-            expected: String,
-            actual: String,
-        }
-
-        ensure!(
-            &self.name == package.name(),
-            ValidationError {
-                property: "name",
-                expected: self.name.to_string(),
-                actual: package.name().to_string(),
-            }
-        );
-
-        ensure!(
-            &self.version == package.version(),
-            ValidationError {
-                property: "version",
-                expected: self.version.to_string(),
-                actual: package.version().to_string(),
-            }
-        );
-
-        ensure!(
-            self.digest == digest,
-            ValidationError {
-                property: "digest",
-                expected: self.digest.to_string(),
-                actual: digest.to_string(),
-            }
-        );
-
-        Ok(())
-    }
-}
-
-impl From<&WorkspaceLockedPackage> for LockedPackage {
-    fn from(ws_locked: &WorkspaceLockedPackage) -> Self {
-        Self {
-            name: ws_locked.name.clone(),
-            version: ws_locked.version.clone(),
-            digest: ws_locked.digest.clone(),
-            registry: ws_locked.registry.clone(),
-            repository: ws_locked.repository.clone(),
-            dependencies: ws_locked
-                .dependencies
-                .iter()
-                .map(|d| d.name.clone())
-                .collect(),
-            dependants: ws_locked.dependants,
         }
     }
 }
@@ -224,6 +195,11 @@ impl PackageLockfile {
     /// Locates a given package in the Lockfile
     pub fn get(&self, name: &PackageName) -> Option<&LockedPackage> {
         self.packages.get(name)
+    }
+
+    /// Returns all packages in the lockfile
+    pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
+        self.packages.values()
     }
 }
 
@@ -295,10 +271,10 @@ impl From<PackageLockfile> for Vec<FileRequirement> {
     }
 }
 
-impl TryFrom<Vec<WorkspaceLockedPackage>> for PackageLockfile {
+impl TryFrom<Vec<LockedPackage>> for PackageLockfile {
     type Error = miette::Error;
 
-    fn try_from(locked: Vec<WorkspaceLockedPackage>) -> Result<Self, Self::Error> {
+    fn try_from(locked: Vec<LockedPackage>) -> Result<Self, Self::Error> {
         let package_locked: Vec<LockedPackage> = locked.iter().map(LockedPackage::from).collect();
 
         Ok(PackageLockfile::from_iter(package_locked))
@@ -316,94 +292,14 @@ impl FromIterator<LockedPackage> for PackageLockfile {
     }
 }
 
-/// Captures immutable metadata about a package in a workspace lockfile
-///
-/// Similar to LockedPackage, but includes versioned dependencies to support
-/// multiple versions of the same package in a workspace.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct WorkspaceLockedPackage {
-    /// The name of the package
-    pub name: PackageName,
-    /// The exact version of the package
-    pub version: Version,
-    /// The cryptographic digest of the package contents
-    pub digest: Digest,
-    /// The URI of the registry that contains the package
-    pub registry: RegistryUri,
-    /// The identifier of the repository where the package was published
-    pub repository: String,
-    /// Locked dependencies with exact versions
-    #[serde(default)]
-    pub dependencies: Vec<LockedDependency>,
-    /// Count of dependant packages in the workspace
-    pub dependants: usize,
-}
-
-impl WorkspaceLockedPackage {
-    /// Creates a WorkspaceLockedPackage from a LockedPackage
-    pub fn from_locked_package(locked: LockedPackage, dependencies: Vec<LockedDependency>) -> Self {
-        Self {
-            name: locked.name,
-            version: locked.version,
-            digest: locked.digest,
-            registry: locked.registry,
-            repository: locked.repository,
-            dependencies,
-            dependants: locked.dependants,
-        }
-    }
-
-    /// Validates if another WorkspaceLockedPackage matches this one
-    pub fn validate(&self, package: &Package) -> miette::Result<()> {
-        let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
-
-        #[derive(Error, Debug)]
-        #[error("{property} mismatch - expected {expected}, actual {actual}")]
-        struct ValidationError {
-            property: &'static str,
-            expected: String,
-            actual: String,
-        }
-
-        ensure!(
-            &self.name == package.name(),
-            ValidationError {
-                property: "name",
-                expected: self.name.to_string(),
-                actual: package.name().to_string(),
-            }
-        );
-
-        ensure!(
-            &self.version == package.version(),
-            ValidationError {
-                property: "version",
-                expected: self.version.to_string(),
-                actual: package.version().to_string(),
-            }
-        );
-
-        ensure!(
-            self.digest == digest,
-            ValidationError {
-                property: "digest",
-                expected: self.digest.to_string(),
-                actual: digest.to_string(),
-            }
-        );
-
-        Ok(())
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 struct RawWorkspaceLockfile {
     version: u16,
-    packages: Vec<WorkspaceLockedPackage>,
+    packages: Vec<LockedPackage>,
 }
 
 impl RawWorkspaceLockfile {
-    pub fn v1(packages: Vec<WorkspaceLockedPackage>) -> Self {
+    pub fn v1(packages: Vec<LockedPackage>) -> Self {
         Self {
             version: 1,
             packages,
@@ -418,17 +314,17 @@ impl RawWorkspaceLockfile {
 /// versions of the same package.
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct WorkspaceLockfile {
-    packages: BTreeMap<(PackageName, Version), WorkspaceLockedPackage>,
+    packages: BTreeMap<(PackageName, Version), LockedPackage>,
 }
 
 impl WorkspaceLockfile {
     /// Locates a package by name and version
-    pub fn get(&self, name: &PackageName, version: &Version) -> Option<&WorkspaceLockedPackage> {
+    pub fn get(&self, name: &PackageName, version: &Version) -> Option<&LockedPackage> {
         self.packages.get(&(name.clone(), version.clone()))
     }
 
     /// Returns all packages in the lockfile
-    pub fn packages(&self) -> impl Iterator<Item = &WorkspaceLockedPackage> {
+    pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
         self.packages.values()
     }
 }
@@ -442,7 +338,15 @@ impl File for WorkspaceLockfile {
     where
         P: AsRef<Path> + Send + Sync,
     {
-        match fs::read_to_string(path).await {
+        let path = path.as_ref();
+
+        let resolved = if !path.is_file() {
+            path.join(Self::DEFAULT_PATH)
+        } else {
+            path.to_path_buf()
+        };
+
+        match fs::read_to_string(resolved).await {
             Ok(contents) => {
                 let raw: RawWorkspaceLockfile = toml::from_str(&contents)
                     .into_diagnostic()
@@ -490,8 +394,8 @@ impl File for WorkspaceLockfile {
 }
 
 /// This converts the results of package install to a workspace lockfile
-impl FromIterator<WorkspaceLockedPackage> for WorkspaceLockfile {
-    fn from_iter<I: IntoIterator<Item = WorkspaceLockedPackage>>(iter: I) -> Self {
+impl FromIterator<LockedPackage> for WorkspaceLockfile {
+    fn from_iter<I: IntoIterator<Item = LockedPackage>>(iter: I) -> Self {
         Self {
             packages: iter
                 .into_iter()
@@ -535,6 +439,75 @@ impl Lockfile {
             Self::Workspace(lock) => lock.get(name, version).map(FileRequirement::from),
         }
     }
+
+    /// Returns all packages in the lockfile
+    pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
+        match self {
+            Self::Package(pkg) => pkg.packages(),
+            Self::Workspace(wrk) => wrk.packages(),
+        }
+    }
+
+    pub async fn load_from_or_infer(path: impl AsRef<Path>) -> miette::Result<Self> {
+        let path = path.as_ref();
+
+        if let Ok(lock) = Self::load_from(path).await {
+            return Ok(lock);
+        }
+
+        let cwd = path.parent().ok_or(miette::miette!(
+            "Current working directory does not have a basename"
+        ))?;
+
+        let manifest = Manifest::try_read_from(cwd)
+            .await
+            .wrap_err(miette::miette!(
+                "Failed to infer lockfile format, no manifest found in cwd {}",
+                cwd.display()
+            ))?;
+
+        let lock = if manifest.to_package_manifest().is_ok() {
+            Lockfile::Package(PackageLockfile::default())
+        } else {
+            Lockfile::Workspace(WorkspaceLockfile::default())
+        };
+
+        lock.save(path).await?;
+
+        Ok(lock)
+    }
+
+    pub fn is_package_lockfile(&self) -> bool {
+        match self {
+            Self::Package(_) => true,
+            Self::Workspace(_) => false,
+        }
+    }
+
+    pub fn is_workspace_lockfile(&self) -> bool {
+        match self {
+            Self::Package(_) => true,
+            Self::Workspace(_) => false,
+        }
+    }
+
+    pub fn into_package_lockfile(self) -> miette::Result<PackageLockfile> {
+        match self {
+            Self::Package(p) => Ok(p),
+            Self::Workspace(_) => Err(miette::miette!(
+                "A package lockfile was expected but a workspace lockfile was found"
+            )),
+        }
+    }
+
+    pub fn into_workspace_lockfile(self) -> miette::Result<WorkspaceLockfile> {
+        match self {
+            Self::Workspace(w) => Ok(w),
+            Self::Package(_) => Err(miette::miette!(
+                "A workspace lockfile was expected but a package lockfile was found"
+            )),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -548,8 +521,14 @@ impl File for Lockfile {
     {
         let path = path.as_ref();
 
-        let plock = PackageLockfile::load_from(path).await.map(Self::Package);
-        let wlock = WorkspaceLockfile::load_from(path)
+        let path = if !path.is_file() {
+            path.join(Self::DEFAULT_PATH)
+        } else {
+            path.to_path_buf()
+        };
+
+        let plock = PackageLockfile::load_from(&path).await.map(Self::Package);
+        let wlock = WorkspaceLockfile::load_from(&path)
             .await
             .map(Self::Workspace);
 
@@ -580,16 +559,14 @@ impl From<Lockfile> for Vec<FileRequirement> {
 /// Aggregates locked packages from multiple workspace members into a workspace lockfile
 ///
 /// Merges packages by (name, version), deduplicating and summing dependants counts.
-impl TryFrom<Vec<WorkspaceLockedPackage>> for WorkspaceLockfile {
+impl TryFrom<Vec<LockedPackage>> for WorkspaceLockfile {
     type Error = miette::Report;
 
-    fn try_from(locked_packages: Vec<WorkspaceLockedPackage>) -> Result<Self, Self::Error> {
+    fn try_from(locked_packages: Vec<LockedPackage>) -> Result<Self, Self::Error> {
         use std::collections::BTreeMap;
 
-        let mut workspace_packages: BTreeMap<
-            (PackageName, semver::Version),
-            WorkspaceLockedPackage,
-        > = BTreeMap::new();
+        let mut workspace_packages: BTreeMap<(PackageName, semver::Version), LockedPackage> =
+            BTreeMap::new();
 
         for locked in locked_packages {
             let key = (locked.name.clone(), locked.version.clone());
@@ -705,30 +682,6 @@ impl From<&LockedPackage> for FileRequirement {
     }
 }
 
-impl From<WorkspaceLockedPackage> for FileRequirement {
-    fn from(package: WorkspaceLockedPackage) -> Self {
-        Self::new(
-            &package.registry,
-            &package.repository,
-            &package.name,
-            &package.version,
-            &package.digest,
-        )
-    }
-}
-
-impl From<&WorkspaceLockedPackage> for FileRequirement {
-    fn from(package: &WorkspaceLockedPackage) -> Self {
-        Self::new(
-            &package.registry,
-            &package.repository,
-            &package.name,
-            &package.version,
-            &package.digest,
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{collections::BTreeMap, str::FromStr};
@@ -739,7 +692,7 @@ mod tests {
 
     use super::{
         Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, PackageLockfile,
-        WorkspaceLockedPackage, WorkspaceLockfile,
+        WorkspaceLockfile,
     };
 
     fn simple_lockfile() -> PackageLockfile {
@@ -932,11 +885,11 @@ mod tests {
     fn test_locked_dependency_serialization() {
         // Test serialization within a vector (how it's actually used)
         let deps = vec![
-            LockedDependency::new(
+            LockedDependency::qualified(
                 PackageName::unchecked("remote-lib-a"),
                 Version::new(1, 5, 0),
             ),
-            LockedDependency::new(
+            LockedDependency::qualified(
                 PackageName::unchecked("remote-lib-b"),
                 Version::new(2, 0, 1),
             ),
@@ -959,21 +912,27 @@ mod tests {
         let deserialized: TestWrapper = toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized.dependencies.len(), 2);
         assert_eq!(
-            deserialized.dependencies[0].name,
+            *deserialized.dependencies[0].name(),
             PackageName::unchecked("remote-lib-a")
         );
-        assert_eq!(deserialized.dependencies[0].version, Version::new(1, 5, 0));
         assert_eq!(
-            deserialized.dependencies[1].name,
+            deserialized.dependencies[0].version().cloned(),
+            Some(Version::new(1, 5, 0))
+        );
+        assert_eq!(
+            *deserialized.dependencies[1].name(),
             PackageName::unchecked("remote-lib-b")
         );
-        assert_eq!(deserialized.dependencies[1].version, Version::new(2, 0, 1));
+        assert_eq!(
+            deserialized.dependencies[1].version().cloned(),
+            Some(Version::new(2, 0, 1))
+        );
     }
 
     #[test]
     fn test_workspace_lockfile_serialization() {
         // Create a workspace lockfile with two packages, one with dependencies
-        let pkg1 = WorkspaceLockedPackage {
+        let pkg1 = LockedPackage {
             name: PackageName::unchecked("remote-lib-a"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
@@ -983,14 +942,14 @@ mod tests {
                 "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
             )
             .unwrap(),
-            dependencies: vec![LockedDependency::new(
+            dependencies: vec![LockedDependency::qualified(
                 PackageName::unchecked("remote-lib-b"),
                 Version::new(1, 5, 0),
             )],
             dependants: 2,
         };
 
-        let pkg2 = WorkspaceLockedPackage {
+        let pkg2 = LockedPackage {
             name: PackageName::unchecked("remote-lib-b"),
             version: Version::new(1, 5, 0),
             registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
@@ -1045,7 +1004,7 @@ mod tests {
     #[test]
     fn test_workspace_lockfile_supports_multiple_versions() {
         // Create two versions of the same package
-        let pkg_v1 = WorkspaceLockedPackage {
+        let pkg_v1 = LockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
@@ -1059,7 +1018,7 @@ mod tests {
             dependants: 1,
         };
 
-        let pkg_v2 = WorkspaceLockedPackage {
+        let pkg_v2 = LockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(2, 0, 0),
             registry: RegistryUri::from_str("https://my-registry.com").unwrap(),
@@ -1125,7 +1084,7 @@ mod tests {
 
     #[test]
     fn test_lockfile_workspace_returns_file_requirement() {
-        let pkg = WorkspaceLockedPackage {
+        let pkg = LockedPackage {
             name: PackageName::unchecked("ws-pkg"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://registry.example.com").unwrap(),
