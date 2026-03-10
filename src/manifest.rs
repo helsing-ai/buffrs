@@ -359,25 +359,27 @@ impl FromStr for RawManifest {
 
 /// A buffrs manifest enum describing the different types of manifests that buffrs understands
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum BuffrsManifest {
+pub enum Manifest {
     /// A package manifest describing a concrete package
     Package(PackagesManifest),
     /// A workspace manifest defining a buffrs workspace
     Workspace(WorkspaceManifest),
 }
 
-impl BuffrsManifest {
-    /// Returns a human friendly representation the current package. Intended to be used in error messages on the CLI top level
-    pub async fn current_dir_display_name() -> Option<String> {
-        let manifest = BuffrsManifest::try_read().await.ok()?;
+impl Manifest {
+    /// Returns a human friendly representation the current package.
+    ///
+    /// Intended to be used in error messages on the CLI top level
+    pub async fn name() -> Option<String> {
+        let manifest = Manifest::try_read().await.ok()?;
 
         let cwd = std::env::current_dir().unwrap();
 
         let path_name = cwd.file_name()?.to_str();
 
         match manifest {
-            BuffrsManifest::Package(p) => Some(p.package?.name.to_string()),
-            BuffrsManifest::Workspace(_) => path_name.map(String::from),
+            Manifest::Package(p) => Some(p.package?.name.to_string()),
+            Manifest::Workspace(_) => path_name.map(String::from),
         }
     }
     /// Ensures the current directory contains a package manifest, not a workspace
@@ -385,21 +387,21 @@ impl BuffrsManifest {
     /// Returns an error if the manifest is a workspace manifest, otherwise the package manifest
     /// Use this at the beginning of commands that don't support workspaces.
     pub async fn require_package_manifest(path: &PathBuf) -> miette::Result<PackagesManifest> {
-        let manifest = BuffrsManifest::try_read_from(path).await?;
+        let manifest = Manifest::try_read_from(path).await?;
 
         match manifest {
-            BuffrsManifest::Package(packages_manifest) => Ok(packages_manifest),
-            BuffrsManifest::Workspace(_) => {
+            Manifest::Package(packages_manifest) => Ok(packages_manifest),
+            Manifest::Workspace(_) => {
                 bail!("A packages manifest is required, but a workspace manifest was found")
             }
         }
     }
 
     /// Returns the packages manifest if correct type, errs otherwise
-    pub async fn to_package_manifest(self) -> miette::Result<PackagesManifest> {
+    pub fn to_package_manifest(self) -> miette::Result<PackagesManifest> {
         match self {
-            BuffrsManifest::Package(packages_manifest) => Ok(packages_manifest),
-            BuffrsManifest::Workspace(_) => {
+            Manifest::Package(packages_manifest) => Ok(packages_manifest),
+            Manifest::Workspace(_) => {
                 bail!("A packages manifest is required, but a workspace manifest was found")
             }
         }
@@ -422,18 +424,26 @@ impl BuffrsManifest {
 
     /// Loads the manifest from the given path
     pub async fn try_read_from(path: impl AsRef<Path>) -> miette::Result<Self> {
-        let contents = match fs::read_to_string(path.as_ref()).await {
+        let path = path.as_ref();
+
+        let resolved = if path.is_file() {
+            path.to_path_buf()
+        } else {
+            path.join(MANIFEST_FILE)
+        };
+
+        let contents = match fs::read_to_string(&resolved).await {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(e).into_diagnostic().wrap_err(miette!(
                     "failed to read non-existent manifest file from `{}`",
-                    path.as_ref().display()
+                    resolved.display()
                 ));
             }
             Err(e) => {
                 return Err(e).into_diagnostic().wrap_err(miette!(
                     "failed to read manifest from `{}`",
-                    path.as_ref().display()
+                    resolved.display()
                 ));
             }
         };
@@ -609,11 +619,11 @@ impl PackagesManifest {
     }
 }
 
-impl From<BuffrsManifest> for RawManifest {
-    fn from(manifest: BuffrsManifest) -> Self {
+impl From<Manifest> for RawManifest {
+    fn from(manifest: Manifest) -> Self {
         match manifest {
-            BuffrsManifest::Package(package_manifest) => package_manifest.into(),
-            BuffrsManifest::Workspace(workspace_manifest) => workspace_manifest.into(),
+            Manifest::Package(package_manifest) => package_manifest.into(),
+            Manifest::Workspace(workspace_manifest) => workspace_manifest.into(),
         }
     }
 }
@@ -713,25 +723,25 @@ impl TryFrom<RawManifest> for PackagesManifest {
     }
 }
 
-impl TryFrom<RawManifest> for BuffrsManifest {
+impl TryFrom<RawManifest> for Manifest {
     type Error = miette::Report;
 
-    fn try_from(raw: RawManifest) -> Result<BuffrsManifest, Self::Error> {
+    fn try_from(raw: RawManifest) -> Result<Manifest, Self::Error> {
         let dependencies = raw.dependencies_as_vec();
         let workspace = raw.workspace().cloned();
         let package = raw.package().cloned();
         let manifest_type = try_manifest_type(&dependencies, &workspace, &package)?;
 
         let manifest = match manifest_type {
-            ManifestType::Package => BuffrsManifest::Package(raw.try_into()?),
-            ManifestType::Workspace => BuffrsManifest::Workspace(raw.try_into()?),
+            ManifestType::Package => Manifest::Package(raw.try_into()?),
+            ManifestType::Workspace => Manifest::Workspace(raw.try_into()?),
         };
 
         Ok(manifest)
     }
 }
 
-impl FromStr for BuffrsManifest {
+impl FromStr for Manifest {
     type Err = miette::Report;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
@@ -742,13 +752,13 @@ impl FromStr for BuffrsManifest {
     }
 }
 
-impl TryInto<String> for BuffrsManifest {
+impl TryInto<String> for Manifest {
     type Error = toml::ser::Error;
 
     fn try_into(self) -> Result<String, Self::Error> {
         match self {
-            BuffrsManifest::Package(p) => p.try_into(),
-            BuffrsManifest::Workspace(w) => w.try_into(),
+            Manifest::Package(p) => p.try_into(),
+            Manifest::Workspace(w) => w.try_into(),
         }
     }
 }
@@ -1116,7 +1126,7 @@ mod tests {
             [dependencies]
             "#;
 
-            let manifest = BuffrsManifest::from_str(manifest).expect("should be valid manifest");
+            let manifest = Manifest::from_str(manifest).expect("should be valid manifest");
             let cloned_raw_manifest_str = toml::to_string(&RawManifest::from(manifest.clone()))
                 .expect("should be convertible to str");
             let raw_manifest_str = toml::to_string(&RawManifest::from(manifest))
@@ -1482,8 +1492,8 @@ mod tests {
                 [dependencies]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
-            assert!(matches!(manifest, BuffrsManifest::Package(_)));
+            let manifest = Manifest::from_str(toml).expect("should parse");
+            assert!(matches!(manifest, Manifest::Package(_)));
         }
 
         #[test]
@@ -1493,8 +1503,8 @@ mod tests {
                 members = ["pkg1"]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
-            assert!(matches!(manifest, BuffrsManifest::Workspace(_)));
+            let manifest = Manifest::from_str(toml).expect("should parse");
+            assert!(matches!(manifest, Manifest::Workspace(_)));
         }
 
         #[test]
@@ -1506,13 +1516,13 @@ mod tests {
                 [dependencies]
             "#;
 
-            let result = BuffrsManifest::from_str(toml);
+            let result = Manifest::from_str(toml);
             assert!(result.is_err());
         }
 
         #[test]
         fn buffrs_manifest_invalid_empty() {
-            let result = BuffrsManifest::from_str("");
+            let result = Manifest::from_str("");
             assert!(result.is_err());
         }
 
@@ -1529,7 +1539,7 @@ mod tests {
                 [dependencies]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let manifest = Manifest::from_str(toml).expect("should parse");
             let result = manifest.to_package_manifest().await;
             assert!(result.is_ok());
         }
@@ -1541,7 +1551,7 @@ mod tests {
                 members = ["pkg1"]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let manifest = Manifest::from_str(toml).expect("should parse");
             let result = manifest.to_package_manifest().await;
             assert!(result.is_err());
             assert!(
@@ -1565,7 +1575,7 @@ mod tests {
                 [dependencies]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let manifest = Manifest::from_str(toml).expect("should parse");
             let serialized: String = manifest.try_into().expect("should serialize");
 
             assert!(serialized.contains("edition"));
@@ -1579,7 +1589,7 @@ mod tests {
                 members = ["pkg1", "pkg2"]
             "#;
 
-            let manifest = BuffrsManifest::from_str(toml).expect("should parse");
+            let manifest = Manifest::from_str(toml).expect("should parse");
             let serialized: String = manifest.try_into().expect("should serialize");
 
             assert!(serialized.contains("[workspace]"));
