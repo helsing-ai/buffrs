@@ -41,10 +41,12 @@ pub const LOCKFILE: &str = "Proto.lock";
 /// Serializes as "name version" string (Cargo format)
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LockedDependency {
+    /// A dependency identified only by name
     Named {
         /// The name of the dependency package
         name: PackageName,
     },
+    /// A dependency identified by name and exact version
     Qualified {
         /// The name of the dependency package
         name: PackageName,
@@ -55,12 +57,14 @@ pub enum LockedDependency {
 }
 
 impl LockedDependency {
+    /// Returns the package name of this locked dependency
     pub fn name(&self) -> &PackageName {
         match self {
             Self::Named { name } | Self::Qualified { name, .. } => name,
         }
     }
 
+    /// Returns the version of this locked dependency, if qualified
     pub fn version(&self) -> Option<&Version> {
         match self {
             Self::Qualified { version, .. } => Some(version),
@@ -491,6 +495,7 @@ impl Lockfile {
         pkgs.into_iter()
     }
 
+    /// Loads an existing lockfile or infers the format from the manifest
     pub async fn load_from_or_infer(path: impl AsRef<Path>) -> miette::Result<Self> {
         let path = path.as_ref();
 
@@ -518,6 +523,7 @@ impl Lockfile {
         Ok(lock)
     }
 
+    /// Returns true if this is a package lockfile
     pub fn is_package_lockfile(&self) -> bool {
         match self {
             Self::Package(_) => true,
@@ -525,6 +531,7 @@ impl Lockfile {
         }
     }
 
+    /// Returns true if this is a workspace lockfile
     pub fn is_workspace_lockfile(&self) -> bool {
         match self {
             Self::Package(_) => true,
@@ -532,6 +539,7 @@ impl Lockfile {
         }
     }
 
+    /// Converts into a package lockfile, returning an error if this is a workspace lockfile
     pub fn into_package_lockfile(self) -> miette::Result<PackageLockfile> {
         match self {
             Self::Package(p) => Ok(p),
@@ -541,6 +549,7 @@ impl Lockfile {
         }
     }
 
+    /// Converts into a workspace lockfile, returning an error if this is a package lockfile
     pub fn into_workspace_lockfile(self) -> miette::Result<WorkspaceLockfile> {
         match self {
             Self::Workspace(w) => Ok(w),

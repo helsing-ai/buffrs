@@ -11,6 +11,7 @@ pub trait File: Sized + Send + Sync + 'static {
     /// The default location of this file
     const DEFAULT_PATH: &str;
 
+    /// Resolves a path to the concrete file location
     fn resolve<P>(path: P) -> miette::Result<PathBuf>
     where
         P: AsRef<Path> + Send + Sync,
@@ -19,6 +20,10 @@ pub trait File: Sized + Send + Sync + 'static {
 
         if path.is_file() {
             return Ok(path.to_path_buf());
+        }
+
+        if path.is_dir() {
+            return Ok(path.join(Self::DEFAULT_PATH));
         }
 
         let parent = path.parent().ok_or(miette::miette!(

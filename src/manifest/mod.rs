@@ -23,8 +23,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::io::File;
 
+/// Package manifest types and dependency definitions
 pub mod package;
+/// Raw manifest serialization format
 pub mod raw;
+/// Workspace manifest types
 pub mod workspace;
 
 pub use package::*;

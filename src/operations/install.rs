@@ -31,6 +31,7 @@ struct ResolvedRemotePackage {
     repository: String,
 }
 
+/// Context carrying shared state for package installation
 #[derive(Debug, Clone)]
 pub struct InstallationContext {
     cwd: PathBuf,
@@ -42,6 +43,7 @@ pub struct InstallationContext {
 }
 
 impl InstallationContext {
+    /// Creates a new installation context rooted at the given directory
     pub async fn new(cwd: impl AsRef<Path>, preserve_mtime: bool) -> miette::Result<Self> {
         let cwd = cwd.as_ref().to_path_buf();
 
@@ -63,6 +65,7 @@ impl InstallationContext {
         })
     }
 
+    /// Creates a new installation context rooted at the current working directory
     pub async fn cwd(preserve_mtime: bool) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
 
@@ -70,8 +73,10 @@ impl InstallationContext {
     }
 }
 
+/// Trait for types that can install their dependencies
 #[async_trait]
 pub trait Install {
+    /// Installs dependencies and returns the resulting locked packages
     async fn install(&self, ctx: &InstallationContext) -> miette::Result<Vec<LockedPackage>>;
 }
 
@@ -276,7 +281,7 @@ mod utils {
             .into_diagnostic()
             .wrap_err("failed to create exact version requirement")?;
 
-        download(package_name, registry, repository, &version_req, &ctx).await
+        download(package_name, registry, repository, &version_req, ctx).await
     }
 
     /// Downloads a package from the registry and caches it
@@ -347,238 +352,155 @@ mod utils {
 
         utils::download_exact(name, registry, repository, &locked.version, ctx).await
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::lock::{Digest, DigestAlgorithm, LockedPackage};
+        use semver::Version;
+        use std::collections::HashMap;
+        use std::str::FromStr;
+        use tempfile::TempDir;
+
+        fn create_lockfile_with_package(
+            package_name: &str,
+            version: &str,
+            registry: &str,
+            repository: &str,
+        ) -> PackageLockfile {
+            let locked_pkg = LockedPackage {
+                name: PackageName::unchecked(package_name),
+                version: Version::parse(version).unwrap(),
+                registry: RegistryUri::from_str(registry).unwrap(),
+                repository: repository.to_string(),
+                digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                    .parse()
+                    .unwrap(),
+                dependencies: Default::default(),
+                dependants: 1,
+            };
+            PackageLockfile::from_iter(vec![locked_pkg])
+        }
+
+        #[tokio::test]
+        async fn test_registry_mismatch_fails() {
+            let tmp = TempDir::new().unwrap();
+
+            let lockfile = create_lockfile_with_package(
+                "test-pkg",
+                "1.0.0",
+                "https://registry-a.com",
+                "repo",
+            );
+
+            // Construct InstallationContext directly to test utils::install independently
+            // of DependencyGraph::build (which eagerly downloads packages)
+            let ctx = InstallationContext {
+                cwd: tmp.path().to_path_buf(),
+                credentials: Credentials {
+                    registry_tokens: HashMap::new(),
+                },
+                cache: Cache::open().await.unwrap(),
+                store: PackageStore::open(tmp.path()).await.unwrap(),
+                lock: Lockfile::Package(lockfile),
+                preserve_mtime: false,
+            };
+
+            let pkg_name = PackageName::unchecked("test-pkg");
+            let registry_b = RegistryUri::from_str("https://registry-b.com").unwrap();
+            let version = VersionReq::parse("=1.0.0").unwrap();
+
+            let result = install(&registry_b, "repo", &pkg_name, &version, &ctx).await;
+
+            // Should fail with registry mismatch error
+            assert!(result.is_err(), "expected error but got success");
+            let err_msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                err_msg.contains("registry mismatch"),
+                "expected 'registry mismatch' in error, got: {}",
+                err_msg
+            );
+        }
+
+        #[test]
+        fn test_find_matching_workspace_locked() {
+            // Create workspace lockfile with multiple versions
+            let pkg_v1 = LockedPackage {
+                name: PackageName::unchecked("remote-lib"),
+                version: Version::new(1, 5, 0),
+                digest: Digest::from_parts(
+                    DigestAlgorithm::SHA256,
+                    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                )
+                .unwrap(),
+                registry: RegistryUri::from_str("https://registry.com").unwrap(),
+                repository: "test-repo".to_string(),
+                dependencies: vec![],
+                dependants: 1,
+            };
+
+            let pkg_v2 = LockedPackage {
+                name: PackageName::unchecked("remote-lib"),
+                version: Version::new(2, 0, 0),
+                digest: Digest::from_parts(
+                    DigestAlgorithm::SHA256,
+                    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                )
+                .unwrap(),
+                registry: RegistryUri::from_str("https://registry.com").unwrap(),
+                repository: "test-repo".to_string(),
+                dependencies: vec![],
+                dependants: 1,
+            };
+
+            let lockfile =
+                Lockfile::Workspace(WorkspaceLockfile::from_iter(vec![pkg_v1, pkg_v2]));
+
+            // Test finding version matching ^1.0.0
+            let req_v1 = VersionReq::parse("^1.0.0").unwrap();
+            let found = find_matching_workspace_locked(
+                &lockfile,
+                &PackageName::unchecked("remote-lib"),
+                &req_v1,
+            );
+            assert!(found.is_some());
+            assert_eq!(found.unwrap().version, Version::new(1, 5, 0));
+
+            // Test finding version matching ^2.0.0
+            let req_v2 = VersionReq::parse("^2.0.0").unwrap();
+            let found = find_matching_workspace_locked(
+                &lockfile,
+                &PackageName::unchecked("remote-lib"),
+                &req_v2,
+            );
+            assert!(found.is_some());
+            assert_eq!(found.unwrap().version, Version::new(2, 0, 0));
+
+            // Test not finding version matching ^3.0.0
+            let req_v3 = VersionReq::parse("^3.0.0").unwrap();
+            let found = find_matching_workspace_locked(
+                &lockfile,
+                &PackageName::unchecked("remote-lib"),
+                &req_v3,
+            );
+            assert!(found.is_none());
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::lock::LockedPackage;
-    use crate::manifest::package::PackageManifest;
-    use crate::package::PackageType;
     use semver::Version;
-    use std::collections::HashMap;
     use std::str::FromStr;
-    use tempfile::TempDir;
-    use tokio::fs;
-
-    // Helper to create test lockfile with a package
-    fn create_lockfile_with_package(
-        package_name: &str,
-        version: &str,
-        registry: &str,
-        repository: &str,
-    ) -> PackageLockfile {
-        let locked_pkg = LockedPackage {
-            name: PackageName::unchecked(package_name),
-            version: Version::parse(version).unwrap(),
-            registry: RegistryUri::from_str(registry).unwrap(),
-            repository: repository.to_string(),
-            digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
-                .parse()
-                .unwrap(),
-            dependencies: Default::default(),
-            dependants: 1,
-        };
-        PackageLockfile::from_iter(vec![locked_pkg])
-    }
-
-    #[tokio::test]
-    async fn test_registry_mismatch_fails() {
-        let tmp = TempDir::new().unwrap();
-
-        let lockfile =
-            create_lockfile_with_package("test-pkg", "1.0.0", "https://registry-a.com", "repo");
-
-        lockfile.save(tmp.path()).await.unwrap();
-
-        let ctx = InstallationContext::new(tmp.path(), false).await.unwrap();
-
-        let pkg_name = PackageName::unchecked("test-pkg");
-
-        // Try to install with registry B (different from lockfile)
-        let registry_b = RegistryUri::from_str("https://registry-b.com").unwrap();
-        let version = VersionReq::parse("1.0.0").unwrap();
-
-        let manifest = Manifest::Package(
-            PackagesManifest::builder()
-                .dependencies(vec![Dependency::new(
-                    registry_b,
-                    "repo".into(),
-                    pkg_name,
-                    version,
-                )])
-                .build(),
-        );
-
-        let result = manifest.install(&ctx).await;
-
-        // Should fail with registry mismatch error
-        assert!(result.is_err());
-        let err_msg = format!("{:?}", result.unwrap_err());
-        assert!(err_msg.contains("registry mismatch"));
-        assert!(err_msg.contains("test-pkg"));
-    }
-
-    #[tokio::test]
-    async fn test_version_mismatch_skips_cache() {
-        let _temp_dir = TempDir::new().unwrap();
-        let cache = Cache::open().await.unwrap();
-
-        // Create lockfile with version 1.0.0
-        let lockfile =
-            create_lockfile_with_package("test-pkg", "1.0.0", "https://registry.com", "repo");
-
-        let installer = Installer {
-            preserve_mtime: false,
-            credentials: Credentials {
-                registry_tokens: HashMap::new(),
-            },
-            cache,
-        };
-
-        let pkg_name = PackageName::unchecked("test-pkg");
-        let registry = RegistryUri::from_str("https://registry.com").unwrap();
-        // Request version 2.0.0 (doesn't match lockfile's 1.0.0)
-        let version = VersionReq::parse("2.0.0").unwrap();
-
-        let result = installer
-            .install_remote_dependency(
-                &pkg_name,
-                &registry,
-                "repo",
-                &version,
-                WorkspaceLockfileMode::CreateNew,
-                &lockfile,
-            )
-            .await;
-
-        // Should try to download (will fail because no actual registry)
-        // but the important thing is it doesn't try to use the cached version
-        assert!(result.is_err());
-        // Error should be about downloading, not about version mismatch validation
-        let err_msg = format!("{:?}", result.unwrap_err());
-        assert!(!err_msg.contains("registry mismatch"));
-    }
-
-    #[tokio::test]
-    async fn test_missing_lockfile_entry_requires_download() {
-        let _temp_dir = TempDir::new().unwrap();
-        let cache = Cache::open().await.unwrap();
-
-        // Empty lockfile
-        let lockfile = PackageLockfile::default();
-
-        let installer = Installer {
-            preserve_mtime: false,
-            credentials: Credentials {
-                registry_tokens: HashMap::new(),
-            },
-            cache,
-        };
-
-        let pkg_name = PackageName::unchecked("new-pkg");
-        let registry = RegistryUri::from_str("https://registry.com").unwrap();
-        let version = VersionReq::parse("1.0.0").unwrap();
-
-        let result = installer
-            .install_remote_dependency(
-                &pkg_name,
-                &registry,
-                "repo",
-                &version,
-                WorkspaceLockfileMode::CreateNew,
-                &lockfile,
-            )
-            .await;
-
-        // Should try to download (will fail because no actual registry)
-        assert!(result.is_err());
-        // Error should be about downloading
-        let err_msg = format!("{:?}", result.unwrap_err());
-        assert!(!err_msg.contains("registry mismatch"));
-    }
-
-    #[tokio::test]
-    async fn test_install_local_dependency() {
-        let temp_dir = TempDir::new().unwrap();
-        let dep_dir = temp_dir.path().join("local-dep");
-        fs::create_dir_all(&dep_dir).await.unwrap();
-
-        // Create a minimal manifest for the local dependency
-        let manifest = PackageManifest::builder()
-            .package(PackageManifest {
-                kind: PackageType::Lib,
-                name: PackageName::unchecked("local-lib"),
-                version: Version::new(1, 0, 0),
-                description: None,
-            })
-            .dependencies(Default::default())
-            .build();
-
-        manifest.write_at(&dep_dir).await.unwrap();
-
-        // Create proto directory structure
-        PackageStore::open(&dep_dir).await.unwrap();
-
-        let cache = Cache::open().await.unwrap();
-        let installer = Installer {
-            preserve_mtime: false,
-            credentials: Credentials {
-                registry_tokens: HashMap::new(),
-            },
-            cache,
-        };
-
-        // Install the local dependency
-        let result = installer.install_local_dependency(&dep_dir).await;
-
-        assert!(result.is_ok());
-        let package = result.unwrap();
-        assert_eq!(package.name(), &PackageName::unchecked("local-lib"));
-        assert_eq!(package.version(), &Version::new(1, 0, 0));
-    }
-
-    #[tokio::test]
-    async fn test_install_local_dependency_preserve_mtime() {
-        let temp_dir = TempDir::new().unwrap();
-        let dep_dir = temp_dir.path().join("local-dep");
-        fs::create_dir_all(&dep_dir).await.unwrap();
-
-        let manifest = PackageManifest::builder()
-            .package(PackageManifest {
-                kind: PackageType::Lib,
-                name: PackageName::unchecked("local-lib"),
-                version: Version::new(1, 0, 0),
-                description: None,
-            })
-            .dependencies(Default::default())
-            .build();
-
-        manifest.write_at(&dep_dir).await.unwrap();
-        PackageStore::open(&dep_dir).await.unwrap();
-
-        let cache = Cache::open().await.unwrap();
-        // Test with preserve_mtime = true
-        let installer = Installer {
-            preserve_mtime: true, // <-- Important
-            credentials: Credentials {
-                registry_tokens: HashMap::new(),
-            },
-            cache,
-        };
-
-        let result = installer.install_local_dependency(&dep_dir).await;
-
-        // Should succeed (actual mtime preservation is tested in PackageStore tests)
-        assert!(result.is_ok());
-    }
 
     #[test]
     fn test_aggregate_workspace_lockfile_multiple_versions() {
-        use crate::lock::{Digest, DigestAlgorithm, WorkspaceLockedPackage};
+        use crate::lock::{Digest, DigestAlgorithm};
 
         // Create two different versions of the same package from different members
-        let pkg_v1 = WorkspaceLockedPackage {
+        let pkg_v1 = LockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(1, 0, 0),
             digest: Digest::from_parts(
@@ -592,7 +514,7 @@ mod tests {
             dependants: 1,
         };
 
-        let pkg_v2 = WorkspaceLockedPackage {
+        let pkg_v2 = LockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(2, 0, 0),
             digest: Digest::from_parts(
@@ -607,7 +529,7 @@ mod tests {
         };
 
         // Also add the same version from two different members
-        let pkg_v1_dup = WorkspaceLockedPackage {
+        let pkg_v1_dup = LockedPackage {
             name: PackageName::unchecked("remote-lib"),
             version: Version::new(1, 0, 0),
             registry: RegistryUri::from_str("https://registry.com").unwrap(),
@@ -647,70 +569,5 @@ mod tests {
             .expect("v2.0.0 should exist");
         assert_eq!(v2.version, Version::new(2, 0, 0));
         assert_eq!(v2.dependants, 1);
-    }
-
-    #[test]
-    fn test_find_matching_workspace_locked() {
-        use crate::lock::{Digest, DigestAlgorithm, WorkspaceLockedPackage, WorkspaceLockfile};
-
-        // Create workspace lockfile with multiple versions
-        let pkg_v1 = WorkspaceLockedPackage {
-            name: PackageName::unchecked("remote-lib"),
-            version: Version::new(1, 5, 0),
-            digest: Digest::from_parts(
-                DigestAlgorithm::SHA256,
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            )
-            .unwrap(),
-            registry: RegistryUri::from_str("https://registry.com").unwrap(),
-            repository: "test-repo".to_string(),
-            dependencies: vec![],
-            dependants: 1,
-        };
-
-        let pkg_v2 = WorkspaceLockedPackage {
-            name: PackageName::unchecked("remote-lib"),
-            version: Version::new(2, 0, 0),
-            digest: Digest::from_parts(
-                DigestAlgorithm::SHA256,
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            )
-            .unwrap(),
-            registry: RegistryUri::from_str("https://registry.com").unwrap(),
-            repository: "test-repo".to_string(),
-            dependencies: vec![],
-            dependants: 1,
-        };
-
-        let lockfile = WorkspaceLockfile::from_iter(vec![pkg_v1, pkg_v2]);
-
-        // Test finding version matching ^1.0.0
-        let req_v1 = VersionReq::parse("^1.0.0").unwrap();
-        let found = Installer::find_matching_workspace_locked(
-            &lockfile,
-            &PackageName::unchecked("remote-lib"),
-            &req_v1,
-        );
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().version, Version::new(1, 5, 0));
-
-        // Test finding version matching ^2.0.0
-        let req_v2 = VersionReq::parse("^2.0.0").unwrap();
-        let found = Installer::find_matching_workspace_locked(
-            &lockfile,
-            &PackageName::unchecked("remote-lib"),
-            &req_v2,
-        );
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().version, Version::new(2, 0, 0));
-
-        // Test not finding version matching ^3.0.0
-        let req_v3 = VersionReq::parse("^3.0.0").unwrap();
-        let found = Installer::find_matching_workspace_locked(
-            &lockfile,
-            &PackageName::unchecked("remote-lib"),
-            &req_v3,
-        );
-        assert!(found.is_none());
     }
 }

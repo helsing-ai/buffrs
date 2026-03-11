@@ -13,8 +13,8 @@ use semver::{Version, VersionReq};
 use crate::{
     credentials::Credentials,
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
-        PackageManifest, RemoteDependencyManifest, WorkspaceManifest,
+        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
+        PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
     package::PackageStore,
     registry::{Artifactory, RegistryUri},
@@ -130,7 +130,7 @@ impl Publisher {
     /// Dispatches to either package or workspace publishing based on manifest type
     pub async fn publish(
         &mut self,
-        manifest: &BuffrsManifest,
+        manifest: &Manifest,
         package_path: &Path,
         version: Option<Version>,
         dry_run: bool,
@@ -148,7 +148,7 @@ impl Publisher {
         }
 
         match manifest {
-            BuffrsManifest::Package(packages_manifest) => {
+            Manifest::Package(packages_manifest) => {
                 tracing::debug!("manifest type: Package");
                 if let Some(ref pkg) = packages_manifest.package {
                     tracing::debug!("  package name: {}", pkg.name);
@@ -157,7 +157,7 @@ impl Publisher {
                 self.publish_package_from_manifest(packages_manifest, package_path, version)
                     .await
             }
-            BuffrsManifest::Workspace(workspace_manifest) => {
+            Manifest::Workspace(workspace_manifest) => {
                 tracing::debug!("manifest type: Workspace");
                 self.publish_workspace_from_manifest(workspace_manifest, version)
                     .await
@@ -168,7 +168,7 @@ impl Publisher {
     /// Publishes a single package from its manifest
     async fn publish_package_from_manifest(
         &mut self,
-        manifest: &PackageManifest,
+        manifest: &PackagesManifest,
         package_path: &Path,
         version: Option<Version>,
     ) -> miette::Result<()> {
@@ -321,7 +321,7 @@ impl Publisher {
 
             tracing::debug!("IO: reading manifest from {}", manifest_file.display());
 
-            let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file)
+            let member_manifest = Manifest::require_package_manifest(&manifest_file)
                 .await?
                 .with_version(version.clone());
 
@@ -390,7 +390,7 @@ impl Publisher {
 
                     // Apply version override to local dependencies (workspace siblings)
                     let manifest_override = if version.is_some() {
-                        let dep_manifest = BuffrsManifest::require_package_manifest(
+                        let dep_manifest = Manifest::require_package_manifest(
                             &absolute_path.join(MANIFEST_FILE),
                         )
                         .await?
@@ -452,7 +452,7 @@ impl Publisher {
     async fn publish_package_at_path(
         &mut self,
         package_path: &Path,
-        manifest_override: Option<&PackageManifest>,
+        manifest_override: Option<&PackagesManifest>,
     ) -> miette::Result<()> {
         tracing::debug!("publish_package_at_path() called");
         tracing::debug!("  package_path: {}", package_path.display());
@@ -488,7 +488,7 @@ impl Publisher {
             manifest_override.clone()
         } else {
             tracing::debug!("IO: reading manifest from {}", manifest_path.display());
-            BuffrsManifest::require_package_manifest(&manifest_path)
+            Manifest::require_package_manifest(&manifest_path)
                 .await
                 .wrap_err_with(|| {
                     format!("failed to read manifest file at {}", package_path.display())
@@ -610,7 +610,7 @@ impl Publisher {
     /// Replaces local dependencies in a manifest with their published remote versions
     fn replace_local_with_remote_dependencies(
         &self,
-        manifest: &PackageManifest,
+        manifest: &PackagesManifest,
         base_path: &Path,
     ) -> miette::Result<Vec<Dependency>> {
         tracing::debug!("replace_local_with_remote_dependencies() called");
@@ -755,7 +755,7 @@ mod tests {
             .insert(local_manifest.clone(), remote_manifest.clone());
 
         // Create a manifest with a local dependency
-        let manifest = PackageManifest::builder()
+        let manifest = PackagesManifest::builder()
             .dependencies(vec![Dependency {
                 package: PackageName::unchecked("local-lib"),
                 manifest: DependencyManifest::Local(LocalDependencyManifest {
@@ -809,7 +809,7 @@ mod tests {
         publisher.manifest_mappings.insert(local2, remote2);
 
         // Create manifest with two local dependencies
-        let manifest = PackageManifest::builder()
+        let manifest = PackagesManifest::builder()
             .dependencies(vec![
                 Dependency {
                     package: PackageName::unchecked("lib1"),
@@ -843,7 +843,7 @@ mod tests {
         let base_path = PathBuf::from("/project");
 
         // Create manifest with local dependency but NO mapping
-        let manifest = PackageManifest::builder()
+        let manifest = PackagesManifest::builder()
             .dependencies(vec![Dependency {
                 package: PackageName::unchecked("missing-lib"),
                 manifest: DependencyManifest::Local(LocalDependencyManifest {
@@ -896,7 +896,7 @@ mod tests {
             }),
         };
 
-        let manifest = PackageManifest::builder()
+        let manifest = PackagesManifest::builder()
             .dependencies(vec![existing_remote.clone(), local_dep])
             .build();
 
@@ -927,7 +927,7 @@ mod tests {
         let publisher = create_test_publisher();
         let base_path = PathBuf::from("/project");
 
-        let manifest = PackageManifest::builder()
+        let manifest = PackagesManifest::builder()
             .dependencies(Default::default())
             .build();
 

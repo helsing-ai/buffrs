@@ -19,7 +19,7 @@ use semver::Version;
 use buffrs::{
     command,
     logs::BuffrsEventFormatter,
-    manifest::{BuffrsManifest, MANIFEST_FILE},
+    manifest::{Manifest, MANIFEST_FILE},
     package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
@@ -197,7 +197,7 @@ async fn main() -> miette::Result<()> {
         .try_init()
         .unwrap();
 
-    let package = BuffrsManifest::current_dir_display_name()
+    let package = Manifest::name()
         .await
         .unwrap_or("unknown package".into());
 
