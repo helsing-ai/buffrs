@@ -14,9 +14,10 @@
 
 use std::{collections::BTreeMap, path::Path};
 
-use miette::{Context, IntoDiagnostic};
+use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tokio::fs;
 use url::Url;
 
@@ -166,6 +167,48 @@ impl LockedPackage {
             dependants,
         }
     }
+
+    /// Validates if another LockedPackage matches this one
+    pub fn validate(&self, package: &Package) -> miette::Result<()> {
+        let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
+
+        #[derive(Error, Debug)]
+        #[error("{property} mismatch - expected {expected}, actual {actual}")]
+        struct ValidationError {
+            property: &'static str,
+            expected: String,
+            actual: String,
+        }
+
+        ensure!(
+            &self.name == package.name(),
+            ValidationError {
+                property: "name",
+                expected: self.name.to_string(),
+                actual: package.name().to_string(),
+            }
+        );
+
+        ensure!(
+            &self.version == package.version(),
+            ValidationError {
+                property: "version",
+                expected: self.version.to_string(),
+                actual: package.version().to_string(),
+            }
+        );
+
+        ensure!(
+            self.digest == digest,
+            ValidationError {
+                property: "digest",
+                expected: self.digest.to_string(),
+                actual: digest.to_string(),
+            }
+        );
+
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -275,9 +318,7 @@ impl TryFrom<Vec<LockedPackage>> for PackageLockfile {
     type Error = miette::Error;
 
     fn try_from(locked: Vec<LockedPackage>) -> Result<Self, Self::Error> {
-        let package_locked: Vec<LockedPackage> = locked.iter().map(LockedPackage::from).collect();
-
-        Ok(PackageLockfile::from_iter(package_locked))
+        Ok(PackageLockfile::from_iter(locked))
     }
 }
 
@@ -442,10 +483,12 @@ impl Lockfile {
 
     /// Returns all packages in the lockfile
     pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
-        match self {
-            Self::Package(pkg) => pkg.packages(),
-            Self::Workspace(wrk) => wrk.packages(),
-        }
+        let pkgs: Vec<&LockedPackage> = match self {
+            Self::Package(pkg) => pkg.packages().collect(),
+            Self::Workspace(wrk) => wrk.packages().collect(),
+        };
+
+        pkgs.into_iter()
     }
 
     pub async fn load_from_or_infer(path: impl AsRef<Path>) -> miette::Result<Self> {
@@ -459,12 +502,10 @@ impl Lockfile {
             "Current working directory does not have a basename"
         ))?;
 
-        let manifest = Manifest::try_read_from(cwd)
-            .await
-            .wrap_err(miette::miette!(
-                "Failed to infer lockfile format, no manifest found in cwd {}",
-                cwd.display()
-            ))?;
+        let manifest = Manifest::load_from(cwd).await.wrap_err(miette::miette!(
+            "Failed to infer lockfile format, no manifest found in cwd {}",
+            cwd.display()
+        ))?;
 
         let lock = if manifest.to_package_manifest().is_ok() {
             Lockfile::Package(PackageLockfile::default())
