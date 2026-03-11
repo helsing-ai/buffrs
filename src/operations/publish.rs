@@ -390,11 +390,10 @@ impl Publisher {
 
                     // Apply version override to local dependencies (workspace siblings)
                     let manifest_override = if version.is_some() {
-                        let dep_manifest = Manifest::require_package_manifest(
-                            &absolute_path.join(MANIFEST_FILE),
-                        )
-                        .await?
-                        .with_version(version.clone());
+                        let dep_manifest =
+                            Manifest::require_package_manifest(&absolute_path.join(MANIFEST_FILE))
+                                .await?
+                                .with_version(version.clone());
 
                         Some(dep_manifest)
                     } else {

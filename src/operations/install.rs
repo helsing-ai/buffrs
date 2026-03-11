@@ -386,12 +386,8 @@ mod utils {
         async fn test_registry_mismatch_fails() {
             let tmp = TempDir::new().unwrap();
 
-            let lockfile = create_lockfile_with_package(
-                "test-pkg",
-                "1.0.0",
-                "https://registry-a.com",
-                "repo",
-            );
+            let lockfile =
+                create_lockfile_with_package("test-pkg", "1.0.0", "https://registry-a.com", "repo");
 
             // Construct InstallationContext directly to test utils::install independently
             // of DependencyGraph::build (which eagerly downloads packages)
@@ -453,8 +449,7 @@ mod utils {
                 dependants: 1,
             };
 
-            let lockfile =
-                Lockfile::Workspace(WorkspaceLockfile::from_iter(vec![pkg_v1, pkg_v2]));
+            let lockfile = Lockfile::Workspace(WorkspaceLockfile::from_iter(vec![pkg_v1, pkg_v2]));
 
             // Test finding version matching ^1.0.0
             let req_v1 = VersionReq::parse("^1.0.0").unwrap();

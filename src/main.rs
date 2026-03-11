@@ -19,7 +19,7 @@ use semver::Version;
 use buffrs::{
     command,
     logs::BuffrsEventFormatter,
-    manifest::{Manifest, MANIFEST_FILE},
+    manifest::{MANIFEST_FILE, Manifest},
     package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
@@ -197,9 +197,7 @@ async fn main() -> miette::Result<()> {
         .try_init()
         .unwrap();
 
-    let package = Manifest::name()
-        .await
-        .unwrap_or("unknown package".into());
+    let package = Manifest::name().await.unwrap_or("unknown package".into());
 
     match cli.command {
         Command::Init { lib, api, package } => {
