@@ -1,6 +1,6 @@
 // (c) Copyright 2025 Helsing GmbH. All rights reserved.
 
-//! Trait systems to deal with complicated operations
+//! Algorithms to deal with complicated operations
 
 /// Installation system
 pub mod install;
