@@ -13,7 +13,7 @@ use semver::{Version, VersionReq};
 use crate::{
     credentials::Credentials,
     manifest::{
-        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
+        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
         PackageManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
     package::PackageStore,
@@ -288,7 +288,7 @@ impl Publisher {
             .wrap_err("current dir could not be retrieved")?;
         tracing::debug!("  workspace root path: {}", root_path.display());
 
-        let packages = manifest.workspace.resolve_members(root_path)?;
+        let packages = manifest.workspace.members(root_path)?;
         tracing::debug!("  resolved {} workspace members", packages.len());
 
         tracing::info!(

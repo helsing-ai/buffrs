@@ -12,13 +12,11 @@ use crate::lock::{DigestAlgorithm, LockedDependency};
 use crate::{
     cache::{Cache, Entry as CacheEntry},
     credentials::Credentials,
-    lock::{
-        LOCKFILE, LockedPackage, Lockfile, PackageLockfile, WorkspaceLockedPackage,
-        WorkspaceLockfile,
-    },
+    lock::{LOCKFILE, LockedPackage, Lockfile, PackageLockfile, WorkspaceLockfile},
     manifest::{
-        Dependency, DependencyManifest, MANIFEST_FILE, Manifest, PackagesManifest,
-        RemoteDependencyManifest, WorkspaceManifest,
+        Manifest,
+        package::{Dependency, DependencyManifest, PackagesManifest, RemoteDependencyManifest},
+        workspace::WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
@@ -34,7 +32,7 @@ struct ResolvedRemotePackage {
 }
 
 #[derive(Debug, Clone)]
-struct InstallationContext {
+pub struct InstallationContext {
     cwd: PathBuf,
     credentials: Credentials,
     cache: Cache,
@@ -63,6 +61,12 @@ impl InstallationContext {
             lock,
             preserve_mtime,
         })
+    }
+
+    pub async fn cwd(preserve_mtime: bool) -> miette::Result<Self> {
+        let cwd = std::env::current_dir().into_diagnostic()?;
+
+        Self::new(cwd, preserve_mtime).await
     }
 }
 
@@ -171,7 +175,7 @@ impl Install for PackagesManifest {
                 .collect();
 
             // 5.2 Create WorkspaceLockedPackage with dependencies
-            locked.push(WorkspaceLockedPackage {
+            locked.push(LockedPackage {
                 name: resolved.package.name().clone(),
                 version: resolved.package.version().clone(),
                 digest: DigestAlgorithm::SHA256.digest(&resolved.package.tgz),
@@ -199,7 +203,7 @@ impl Install for PackagesManifest {
 #[async_trait]
 impl Install for WorkspaceManifest {
     async fn install(&self, ctx: &InstallationContext) -> miette::Result<Vec<LockedPackage>> {
-        let packages = self.workspace.resolve_members(&ctx.cwd)?;
+        let packages = self.workspace.members(&ctx.cwd)?;
 
         tracing::info!(
             "workspace found. running install for {} packages in workspace",
@@ -349,8 +353,7 @@ mod utils {
 mod tests {
     use super::*;
     use crate::lock::LockedPackage;
-    use crate::manifest::GenericManifest;
-    use crate::manifest::PackageManifest;
+    use crate::manifest::package::PackageManifest;
     use crate::package::PackageType;
     use semver::Version;
     use std::collections::HashMap;
@@ -381,36 +384,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_mismatch_fails() {
-        let _temp_dir = TempDir::new().unwrap();
-        let cache = Cache::open().await.unwrap();
+        let tmp = TempDir::new().unwrap();
 
-        // Create lockfile with registry A
         let lockfile =
             create_lockfile_with_package("test-pkg", "1.0.0", "https://registry-a.com", "repo");
 
-        let installer = Installer {
-            preserve_mtime: false,
-            credentials: Credentials {
-                registry_tokens: HashMap::new(),
-            },
-            cache,
-        };
+        lockfile.save(tmp.path()).await.unwrap();
+
+        let ctx = InstallationContext::new(tmp.path(), false).await.unwrap();
 
         let pkg_name = PackageName::unchecked("test-pkg");
+
         // Try to install with registry B (different from lockfile)
         let registry_b = RegistryUri::from_str("https://registry-b.com").unwrap();
         let version = VersionReq::parse("1.0.0").unwrap();
 
-        let result = installer
-            .install_remote_dependency(
-                &pkg_name,
-                &registry_b,
-                "repo",
-                &version,
-                WorkspaceLockfileMode::CreateNew,
-                &lockfile,
-            )
-            .await;
+        let manifest = Manifest::Package(
+            PackagesManifest::builder()
+                .dependencies(vec![Dependency::new(
+                    registry_b,
+                    "repo".into(),
+                    pkg_name,
+                    version,
+                )])
+                .build(),
+        );
+
+        let result = manifest.install(&ctx).await;
 
         // Should fail with registry mismatch error
         assert!(result.is_err());
@@ -505,7 +505,7 @@ mod tests {
         fs::create_dir_all(&dep_dir).await.unwrap();
 
         // Create a minimal manifest for the local dependency
-        let manifest = PackagesManifest::builder()
+        let manifest = PackageManifest::builder()
             .package(PackageManifest {
                 kind: PackageType::Lib,
                 name: PackageName::unchecked("local-lib"),
@@ -544,7 +544,7 @@ mod tests {
         let dep_dir = temp_dir.path().join("local-dep");
         fs::create_dir_all(&dep_dir).await.unwrap();
 
-        let manifest = PackagesManifest::builder()
+        let manifest = PackageManifest::builder()
             .package(PackageManifest {
                 kind: PackageType::Lib,
                 name: PackageName::unchecked("local-lib"),
