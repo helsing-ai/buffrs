@@ -8,20 +8,9 @@ use std::{
 
 use glob::Pattern;
 use miette::{IntoDiagnostic, Result, WrapErr, miette};
-use serde::{Deserialize, Serialize};
 
 use crate::manifest::MANIFEST_FILE;
-
-/// Workspace implementation that follows Cargo conventions
-///
-/// https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Workspace {
-    /// Packages to include in the workspace.
-    pub members: Vec<String>,
-    /// Packages to exclude from the workspace.
-    pub exclude: Option<Vec<String>>,
-}
+use crate::manifest::workspace::Workspace;
 
 impl Workspace {
     /// Resolves workspace members
@@ -38,7 +27,7 @@ impl Workspace {
     /// members = ["packages/*", "special"]
     /// exclude = ["packages/internal*"]
     /// ```
-    pub fn resolve_members(&self, workspace_root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
+    pub fn members(&self, root: impl AsRef<Path>) -> Result<Vec<PathBuf>> {
         // Default to ["*"] if members is not specified
 
         let member_patterns = &self.members;
@@ -55,7 +44,7 @@ impl Workspace {
                     .wrap_err_with(|| miette!("invalid glob pattern: {}", pattern))?;
 
                 // Read all entries in workspace root
-                let entries = fs::read_dir(workspace_root.as_ref())
+                let entries = fs::read_dir(root.as_ref())
                     .into_diagnostic()
                     .wrap_err_with(|| miette!("failed to read workspace directory"))?;
 
@@ -75,7 +64,7 @@ impl Workspace {
                 }
             } else {
                 // Literal path - check if it exists and has Proto.toml
-                let member_path = workspace_root.as_ref().join(pattern);
+                let member_path = root.as_ref().join(pattern);
                 if member_path.is_dir() && member_path.join(MANIFEST_FILE).exists() {
                     resolved_members.insert(PathBuf::from(pattern));
                 } else {
@@ -125,7 +114,7 @@ mod tests {
         use std::path::PathBuf;
 
         #[test]
-        fn test_resolve_members_with_explicit_members() {
+        fn test_members_with_explicit_members() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -144,14 +133,14 @@ mod tests {
                 exclude: None,
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 2);
             assert!(members.contains(&PathBuf::from("package1")));
             assert!(members.contains(&PathBuf::from("package2")));
         }
 
         #[test]
-        fn test_resolve_members_with_glob_pattern() {
+        fn test_members_with_glob_pattern() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -173,7 +162,7 @@ mod tests {
                 exclude: None,
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 2);
             assert!(members.contains(&PathBuf::from("pkg1")));
             assert!(members.contains(&PathBuf::from("pkg2")));
@@ -181,7 +170,7 @@ mod tests {
         }
 
         #[test]
-        fn test_resolve_members_with_exclude() {
+        fn test_members_with_exclude() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -205,7 +194,7 @@ mod tests {
                 exclude: Some(vec!["internal".to_string()]),
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 2);
             assert!(members.contains(&PathBuf::from("pkg1")));
             assert!(members.contains(&PathBuf::from("pkg2")));
@@ -213,7 +202,7 @@ mod tests {
         }
 
         #[test]
-        fn test_resolve_members_with_exclude_glob() {
+        fn test_members_with_exclude_glob() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -240,7 +229,7 @@ mod tests {
                 exclude: Some(vec!["internal*".to_string()]),
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 2);
             assert!(members.contains(&PathBuf::from("pkg1")));
             assert!(members.contains(&PathBuf::from("pkg2")));
@@ -249,7 +238,7 @@ mod tests {
         }
 
         #[test]
-        fn test_resolve_members_ignores_dirs_without_manifest() {
+        fn test_members_ignores_dirs_without_manifest() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -269,14 +258,14 @@ mod tests {
                 exclude: None,
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 1);
             assert!(members.contains(&PathBuf::from("pkg1")));
             assert!(!members.contains(&PathBuf::from("not-a-package")));
         }
 
         #[test]
-        fn test_resolve_members_mixed_patterns() {
+        fn test_members_mixed_patterns() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -299,7 +288,7 @@ mod tests {
                 exclude: None,
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
             assert_eq!(members.len(), 3);
             assert!(members.contains(&PathBuf::from("pkg1")));
             assert!(members.contains(&PathBuf::from("pkg2")));
@@ -307,7 +296,7 @@ mod tests {
         }
 
         #[test]
-        fn test_resolve_members_deterministic_ordering() {
+        fn test_members_deterministic_ordering() {
             use std::fs;
 
             let temp_dir = tempfile::tempdir().unwrap();
@@ -325,7 +314,7 @@ mod tests {
                 exclude: None,
             };
 
-            let members = workspace.resolve_members(workspace_root).unwrap();
+            let members = workspace.members(workspace_root).unwrap();
 
             // Should be sorted alphabetically
             assert_eq!(members.len(), 3);
