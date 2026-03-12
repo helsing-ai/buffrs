@@ -131,14 +131,14 @@ impl<'de> Deserialize<'de> for LockedDependency {
 pub struct LockedPackage {
     /// The name of the package
     pub name: PackageName,
+    /// The exact version of the package
+    pub version: Version,
     /// The cryptographic digest of the package contents
     pub digest: Digest,
     /// The URI of the registry that contains the package
     pub registry: RegistryUri,
     /// The identifier of the repository where the package was published
     pub repository: String,
-    /// The exact version of the package
-    pub version: Version,
     /// Names of dependency packages
     pub dependencies: Vec<LockedDependency>,
     /// Count of dependant packages in the current graph
@@ -495,13 +495,13 @@ impl Lockfile {
         pkgs.into_iter()
     }
 
-    /// Loads an existing lockfile or infers the format from the manifest
+    /// Loads an existing lockfile or creates a default one, using the manifest to determine
+    /// whether this is a package or workspace lockfile.
+    ///
+    /// The manifest is always consulted because the package and workspace lockfile formats
+    /// are structurally identical in TOML and cannot be distinguished by content alone.
     pub async fn load_from_or_infer(path: impl AsRef<Path>) -> miette::Result<Self> {
         let path = path.as_ref();
-
-        if let Ok(lock) = Self::load_from(path).await {
-            return Ok(lock);
-        }
 
         let cwd = if path.is_dir() {
             path
@@ -517,9 +517,9 @@ impl Lockfile {
         ))?;
 
         let lock = if manifest.to_package_manifest().is_ok() {
-            Lockfile::Package(PackageLockfile::default())
+            PackageLockfile::load_from_or_default(path).await.map(Self::Package)?
         } else {
-            Lockfile::Workspace(WorkspaceLockfile::default())
+            WorkspaceLockfile::load_from_or_default(path).await.map(Self::Workspace)?
         };
 
         lock.save(path).await?;
@@ -538,8 +538,8 @@ impl Lockfile {
     /// Returns true if this is a workspace lockfile
     pub fn is_workspace_lockfile(&self) -> bool {
         match self {
-            Self::Package(_) => true,
-            Self::Workspace(_) => false,
+            Self::Package(_) => false,
+            Self::Workspace(_) => true,
         }
     }
 

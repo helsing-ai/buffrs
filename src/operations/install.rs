@@ -65,12 +65,15 @@ impl InstallationContext {
         })
     }
 
-    /// Returns a new context with a different working directory, keeping all other state
-    fn with_cwd(&self, cwd: PathBuf) -> Self {
-        Self {
+    /// Returns a new child context for a workspace member, opening its own package store
+    async fn child(&self, cwd: PathBuf) -> miette::Result<Self> {
+        let store = PackageStore::open(&cwd).await?;
+
+        Ok(Self {
             cwd,
+            store,
             ..self.clone()
-        }
+        })
     }
 
     /// Creates a new installation context rooted at the current working directory
@@ -238,7 +241,7 @@ impl Install for WorkspaceManifest {
 
             tracing::info!("running install for package: {}", package.display());
 
-            let member_ctx = ctx.with_cwd(ctx.cwd.join(&package));
+            let member_ctx = ctx.child(ctx.cwd.join(&package)).await?;
             let new = manifest.install(&member_ctx).await?;
 
             locked.extend_from_slice(&new);
