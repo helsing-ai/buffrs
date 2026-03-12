@@ -1,0 +1,9 @@
+edition = "0.12"
+
+[package]
+type = "api"
+name = "legacy-api"
+version = "0.12.1"
+
+[dependencies]
+legacy-lib = { registry = "$REGISTRY", repository = "legacy", version = "=0.12.1" }
