@@ -4,9 +4,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use miette::{Context as _, Diagnostic, IntoDiagnostic, bail, ensure};
+use miette::{Context as _, IntoDiagnostic, bail, ensure};
 use semver::VersionReq;
-use thiserror::Error;
 
 use crate::io::File;
 use crate::lock::{DigestAlgorithm, LockedDependency};
@@ -21,20 +20,8 @@ use crate::{
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
-    resolver::{DependencyGraph, DependencySource},
+    resolver::{DependencyError, DependencyGraph, DependencySource},
 };
-
-/// A network request was needed but `--offline` mode is active
-#[derive(Error, Diagnostic, Debug)]
-#[error("cannot download {name}@{version} in offline mode")]
-#[diagnostic(help(
-    "run `buffrs install` without --offline first to populate the cache,\n\
-     or set BUFFRS_CACHE to a pre-populated cache directory"
-))]
-struct OfflineError {
-    name: PackageName,
-    version: VersionReq,
-}
 
 /// A resolved remote package with its registry metadata
 #[derive(Debug, Clone)]
@@ -332,7 +319,7 @@ mod utils {
         ctx: &InstallationContext,
     ) -> miette::Result<Package> {
         if ctx.offline {
-            bail!(OfflineError {
+            bail!(DependencyError::Offline {
                 name: package_name.clone(),
                 version: version.clone(),
             });
