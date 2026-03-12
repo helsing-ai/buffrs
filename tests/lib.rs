@@ -10,10 +10,12 @@ use fs_extra::dir::{CopyOptions, get_dir_content};
 use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
+mod compat;
 mod nix;
-mod test_registry;
+mod registry;
+mod resolver;
 
-pub use test_registry::with_test_registry;
+pub use registry::with_test_registry;
 
 /// Create a command which runs the cli
 #[macro_export]
