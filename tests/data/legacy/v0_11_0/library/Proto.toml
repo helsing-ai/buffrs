@@ -1,8 +1,0 @@
-edition = "0.11"
-
-[package]
-type = "lib"
-name = "library"
-version = "0.1.0"
-
-[dependencies]
