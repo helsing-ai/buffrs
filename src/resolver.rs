@@ -561,7 +561,7 @@ pub enum DependencyError {
     /// A network request was needed but --offline mode is active
     #[error("cannot fetch {name}@{version} in offline mode")]
     #[diagnostic(help(
-        "run `buffrs install` without --offline first to populate the cache,\n\
+        "run `buffrs install` without --offline to cache {name}@{version},\n
          or set BUFFRS_CACHE to a pre-populated cache directory"
     ))]
     Offline {
@@ -571,5 +571,3 @@ pub enum DependencyError {
         version: VersionReq,
     },
 }
-
-// tests moves to ./tests/resolver_v2_tests.rs
