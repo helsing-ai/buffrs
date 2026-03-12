@@ -24,7 +24,10 @@ struct RegistryState {
 }
 
 /// Run a minimal registry for local testing
-async fn test_registry(listener: TcpListener, required_token: Option<String>) -> miette::Result<()> {
+async fn test_registry(
+    listener: TcpListener,
+    required_token: Option<String>,
+) -> miette::Result<()> {
     let state = RegistryState {
         packages: Arc::new(RwLock::new(HashMap::<String, Bytes>::new())),
         required_token,
