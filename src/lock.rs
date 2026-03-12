@@ -503,9 +503,13 @@ impl Lockfile {
             return Ok(lock);
         }
 
-        let cwd = path.parent().ok_or(miette::miette!(
-            "Current working directory does not have a basename"
-        ))?;
+        let cwd = if path.is_dir() {
+            path
+        } else {
+            path.parent().ok_or(miette::miette!(
+                "Current working directory does not have a basename"
+            ))?
+        };
 
         let manifest = Manifest::load_from(cwd).await.wrap_err(miette::miette!(
             "Failed to infer lockfile format, no manifest found in cwd {}",

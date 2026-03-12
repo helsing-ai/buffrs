@@ -65,6 +65,14 @@ impl InstallationContext {
         })
     }
 
+    /// Returns a new context with a different working directory, keeping all other state
+    fn with_cwd(&self, cwd: PathBuf) -> Self {
+        Self {
+            cwd,
+            ..self.clone()
+        }
+    }
+
     /// Creates a new installation context rooted at the current working directory
     pub async fn cwd(preserve_mtime: bool) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
@@ -230,7 +238,8 @@ impl Install for WorkspaceManifest {
 
             tracing::info!("running install for package: {}", package.display());
 
-            let new = manifest.install(ctx).await?;
+            let member_ctx = ctx.with_cwd(ctx.cwd.join(&package));
+            let new = manifest.install(&member_ctx).await?;
 
             locked.extend_from_slice(&new);
         }
