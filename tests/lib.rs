@@ -10,6 +10,7 @@ use fs_extra::dir::{CopyOptions, get_dir_content};
 use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
+mod nix;
 mod test_registry;
 
 pub use test_registry::with_test_registry;
