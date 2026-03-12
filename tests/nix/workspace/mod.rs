@@ -3,11 +3,11 @@ use crate::{VirtualFileSystem, with_test_registry};
 const INSTALL_SCRIPT: &str = r#"
 set -euo pipefail
 
-# --- verify BUFFRS_CACHE contains both remote packages ---
+# --- verify BUFFRS_CACHE contains all remote packages ---
 echo "BUFFRS_CACHE contents:"
 ls -la "$BUFFRS_CACHE"
 
-for pkg in remote-lib-a remote-lib-b; do
+for pkg in remote-lib-a remote-lib-b pkg-c; do
   found=false
   for f in "$BUFFRS_CACHE"/*.tgz; do
     basename=$(basename "$f")
@@ -47,15 +47,18 @@ test -f pkg-a/proto/vendor/pkg-b/b.proto
 grep -q "package remote.a" pkg-a/proto/vendor/remote-lib-a/a.proto
 grep -q "package remote.b" pkg-a/proto/vendor/remote-lib-b/b.proto
 
-# --- verify pkg-b has no remote vendors (only local deps) ---
+# --- verify pkg-b has pkg-c (remote) but not remote-lib-a/b ---
+test -f pkg-b/proto/vendor/pkg-c/c.proto
+grep -q "package pkg.c" pkg-b/proto/vendor/pkg-c/c.proto
+
 if [ -d pkg-b/proto/vendor/remote-lib-a ] || [ -d pkg-b/proto/vendor/remote-lib-b ]; then
-  echo "pkg-b should not have remote vendors" >&2
+  echo "pkg-b should not have remote-lib-a or remote-lib-b" >&2
   exit 1
 fi
 
 mkdir -p $out
 cp -r pkg-a/proto/vendor $out/pkg-a-vendor
-cp -r pkg-b/proto $out/pkg-b-proto
+cp -r pkg-b/proto/vendor $out/pkg-b-vendor
 "#;
 
 // NOTE: Requires nix and git
@@ -67,8 +70,18 @@ fn fixture() {
         let buffrs_home = vfs.root().join("$HOME");
         let cwd = vfs.root();
 
-        // 1. Publish remote-lib-b (leaf dependency)
-        super::publish_lib(
+        // 1. Publish pkg-c (standalone remote lib, dependency of pkg-b)
+        super::publish::lib(
+            &cwd,
+            &buffrs_home,
+            url,
+            "pkg-c",
+            "c.proto",
+            "syntax = \"proto3\";\n\npackage pkg.c;\n\nmessage MessageC {\n  string value = 1;\n}\n",
+        );
+
+        // 2. Publish remote-lib-b (leaf dependency of remote-lib-a)
+        super::publish::lib(
             &cwd,
             &buffrs_home,
             url,
@@ -77,7 +90,7 @@ fn fixture() {
             "syntax = \"proto3\";\n\npackage remote.b;\n\nmessage RemoteB {\n  string value = 1;\n}\n",
         );
 
-        // 2. Publish remote-lib-a (depends on remote-lib-b)
+        // 3. Publish remote-lib-a (depends on remote-lib-b)
         {
             std::fs::create_dir(cwd.join("remote-lib-a")).unwrap();
             let lib_dir = cwd.join("remote-lib-a");
@@ -110,7 +123,7 @@ fn fixture() {
                 .success();
         }
 
-        // 3. Add remote-lib-a as a dependency of pkg-a
+        // 4. Add remote-lib-a as a dependency of pkg-a
         crate::cli!()
             .args(["add", "--registry", url, "test-repo/remote-lib-a@=0.1.0"])
             .env("BUFFRS_HOME", &buffrs_home)
@@ -118,7 +131,15 @@ fn fixture() {
             .assert()
             .success();
 
-        // 4. Run workspace install to generate Proto.lock
+        // 5. Add pkg-c as a dependency of pkg-b
+        crate::cli!()
+            .args(["add", "--registry", url, "test-repo/pkg-c@=0.1.0"])
+            .env("BUFFRS_HOME", &buffrs_home)
+            .current_dir(cwd.join("pkg-b"))
+            .assert()
+            .success();
+
+        // 6. Run workspace install to generate Proto.lock
         crate::cli!()
             .arg("install")
             .env("BUFFRS_HOME", &buffrs_home)
@@ -126,7 +147,7 @@ fn fixture() {
             .assert()
             .success();
 
-        // 5. Set up a nix flake directory
+        // 7. Set up a nix flake directory
         let nix_dir = tempfile::TempDir::new().unwrap();
         let nix_path = nix_dir.path();
 
@@ -157,7 +178,7 @@ fn fixture() {
             .unwrap();
         }
 
-        // 6. Build + check via nix
+        // 8. Build + check via nix
         let mut flake = super::Flake::builder()
             .repo(env!("CARGO_MANIFEST_DIR"))
             .name("buffrs-nix-workspace-install")
@@ -179,6 +200,10 @@ fn fixture() {
         assert!(
             result.join("pkg-a-vendor/pkg-b/b.proto").exists(),
             "derivation output missing pkg-a-vendor/pkg-b/b.proto (local dep)"
+        );
+        assert!(
+            result.join("pkg-b-vendor/pkg-c/c.proto").exists(),
+            "derivation output missing pkg-b-vendor/pkg-c/c.proto (remote dep of pkg-b)"
         );
 
         flake.check();

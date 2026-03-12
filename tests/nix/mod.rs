@@ -172,35 +172,39 @@ impl FlakeBuilder<String, String, String> {
     }
 }
 
-/// Helper to create, init, and publish a library package to the test registry.
-fn publish_lib(
-    cwd: &Path,
-    buffrs_home: &Path,
-    url: &str,
-    name: &str,
-    proto_filename: &str,
-    proto_content: &str,
-) {
-    std::fs::create_dir(cwd.join(name)).unwrap();
-    let lib_dir = cwd.join(name);
+mod publish {
+    use super::*;
 
-    crate::cli!()
-        .args(["init", "--lib", name])
-        .env("BUFFRS_HOME", buffrs_home)
-        .current_dir(&lib_dir)
-        .assert()
-        .success();
+    /// Helper to create, init, and publish a library package to the test registry.
+    pub fn lib(
+        cwd: &Path,
+        buffrs_home: &Path,
+        url: &str,
+        name: &str,
+        proto_filename: &str,
+        proto_content: &str,
+    ) {
+        std::fs::create_dir(cwd.join(name)).unwrap();
+        let lib_dir = cwd.join(name);
 
-    std::fs::write(
-        lib_dir.join(format!("proto/{proto_filename}")),
-        proto_content,
-    )
-    .unwrap();
+        crate::cli!()
+            .args(["init", "--lib", name])
+            .env("BUFFRS_HOME", buffrs_home)
+            .current_dir(&lib_dir)
+            .assert()
+            .success();
 
-    crate::cli!()
-        .args(["publish", "--registry", url, "--repository", "test-repo"])
-        .env("BUFFRS_HOME", buffrs_home)
-        .current_dir(&lib_dir)
-        .assert()
-        .success();
+        std::fs::write(
+            lib_dir.join(format!("proto/{proto_filename}")),
+            proto_content,
+        )
+        .unwrap();
+
+        crate::cli!()
+            .args(["publish", "--registry", url, "--repository", "test-repo"])
+            .env("BUFFRS_HOME", buffrs_home)
+            .current_dir(&lib_dir)
+            .assert()
+            .success();
+    }
 }

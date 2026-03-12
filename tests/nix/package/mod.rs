@@ -64,7 +64,7 @@ fn fixture() {
         let cwd = vfs.root();
 
         // 1. Create and publish remote-lib to the test registry
-        super::publish_lib(
+        super::publish::lib(
             &cwd,
             &buffrs_home,
             url,
