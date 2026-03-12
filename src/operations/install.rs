@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use miette::{Context as _, IntoDiagnostic, ensure};
+use miette::{Context as _, Diagnostic, IntoDiagnostic, bail, ensure};
 use semver::VersionReq;
+use thiserror::Error;
 
 use crate::io::File;
 use crate::lock::{DigestAlgorithm, LockedDependency};
@@ -22,6 +23,18 @@ use crate::{
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
+
+/// A network request was needed but `--offline` mode is active
+#[derive(Error, Diagnostic, Debug)]
+#[error("cannot download {name}@{version} in offline mode")]
+#[diagnostic(help(
+    "run `buffrs install` without --offline first to populate the cache,\n\
+     or set BUFFRS_CACHE to a pre-populated cache directory"
+))]
+struct OfflineError {
+    name: PackageName,
+    version: VersionReq,
+}
 
 /// A resolved remote package with its registry metadata
 #[derive(Debug, Clone)]
@@ -40,11 +53,17 @@ pub struct InstallationContext {
     store: PackageStore,
     lock: Lockfile,
     preserve_mtime: bool,
+    /// If true, no network requests are made; all packages must be in the local cache.
+    offline: bool,
 }
 
 impl InstallationContext {
     /// Creates a new installation context rooted at the given directory
-    pub async fn new(cwd: impl AsRef<Path>, preserve_mtime: bool) -> miette::Result<Self> {
+    pub async fn new(
+        cwd: impl AsRef<Path>,
+        preserve_mtime: bool,
+        offline: bool,
+    ) -> miette::Result<Self> {
         let cwd = cwd.as_ref().to_path_buf();
 
         let credentials = Credentials::load().await?;
@@ -62,6 +81,7 @@ impl InstallationContext {
             store,
             lock,
             preserve_mtime,
+            offline,
         })
     }
 
@@ -77,10 +97,10 @@ impl InstallationContext {
     }
 
     /// Creates a new installation context rooted at the current working directory
-    pub async fn cwd(preserve_mtime: bool) -> miette::Result<Self> {
+    pub async fn cwd(preserve_mtime: bool, offline: bool) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
 
-        Self::new(cwd, preserve_mtime).await
+        Self::new(cwd, preserve_mtime, offline).await
     }
 }
 
@@ -115,9 +135,14 @@ impl Install for PackagesManifest {
         }
 
         // 3. Build the dependency graph
-        let graph =
-            DependencyGraph::build(&self, &ctx.cwd, &ctx.credentials, Some(ctx.lock.clone()))
-                .await?;
+        let graph = DependencyGraph::build(
+            &self,
+            &ctx.cwd,
+            &ctx.credentials,
+            Some(ctx.lock.clone()),
+            ctx.offline,
+        )
+        .await?;
 
         let dependencies = graph.ordered_dependencies()?;
 
@@ -296,7 +321,9 @@ mod utils {
         download(package_name, registry, repository, &version_req, ctx).await
     }
 
-    /// Downloads a package from the registry and caches it
+    /// Downloads a package from the registry and caches it.
+    ///
+    /// Returns an error if `ctx.offline` is true.
     pub async fn download(
         package_name: &PackageName,
         registry: &RegistryUri,
@@ -304,6 +331,13 @@ mod utils {
         version: &VersionReq,
         ctx: &InstallationContext,
     ) -> miette::Result<Package> {
+        if ctx.offline {
+            bail!(OfflineError {
+                name: package_name.clone(),
+                version: version.clone(),
+            });
+        }
+
         // 1. Download the package from artifactory
         let artifactory = Artifactory::new(registry.clone(), &ctx.credentials)
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
@@ -412,6 +446,7 @@ mod utils {
                 store: PackageStore::open(tmp.path()).await.unwrap(),
                 lock: Lockfile::Package(lockfile),
                 preserve_mtime: false,
+                offline: false,
             };
 
             let pkg_name = PackageName::unchecked("test-pkg");

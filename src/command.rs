@@ -313,10 +313,11 @@ pub async fn publish(
 /// # Arguments
 ///
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
-pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
+/// * `offline` - If true, no network requests are made; all packages must be in the local cache
+pub async fn install(preserve_mtime: bool, offline: bool) -> miette::Result<()> {
     let manifest = Manifest::load().await?;
 
-    let ctx = InstallationContext::cwd(preserve_mtime).await?;
+    let ctx = InstallationContext::cwd(preserve_mtime, offline).await?;
 
     manifest.install(&ctx).await?;
 
