@@ -27,12 +27,13 @@ use tokio::{
 
 use crate::{
     credentials::Credentials,
+    io::File,
     manifest::{
-        BuffrsManifest, Dependency, GenericManifest, MANIFEST_FILE, PackageManifest,
-        PackagesManifest,
+        MANIFEST_FILE, Manifest,
+        package::{Dependency, PackageManifest, PackagesManifest},
     },
-    operations::installer::Installer,
-    operations::publisher::Publisher,
+    operations::install::{Install, InstallationContext},
+    operations::publish::Publisher,
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -73,12 +74,14 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
         .transpose()?;
 
     let mut builder = PackagesManifest::builder();
+
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
+
     let manifest = builder.dependencies(Default::default()).build();
 
-    manifest.write().await?;
+    manifest.save(Path::new(".")).await?;
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .await
@@ -111,8 +114,10 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
     if let Some(pkg) = package {
         builder = builder.package(pkg);
     }
+
     let manifest = builder.dependencies(Default::default()).build();
-    manifest.write_at(package_dir.as_path()).await?;
+
+    manifest.save(package_dir.as_path()).await?;
 
     PackageStore::open(&package_dir)
         .await
@@ -182,7 +187,7 @@ impl FromStr for DependencyLocator {
 /// Adds a dependency to this project
 pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let mut manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+    let mut manifest = Manifest::require_package_manifest(&manifest_path).await?;
 
     let DependencyLocator {
         repository,
@@ -211,7 +216,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
-        .write()
+        .save(Path::new("."))
         .await
         .wrap_err_with(|| format!("failed to write `{MANIFEST_FILE}`"))?;
 
@@ -221,7 +226,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
 /// Removes a dependency from this project
 pub async fn remove(package: PackageName) -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let mut manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+    let mut manifest = Manifest::require_package_manifest(&manifest_path).await?;
     let store = PackageStore::current().await?;
 
     let dependency = manifest
@@ -238,7 +243,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     store.uninstall(&dependency.package).await.ok();
 
-    manifest.write().await
+    manifest.save(Path::new(".")).await
 }
 
 /// Packages the api and writes it to the filesystem
@@ -249,7 +254,7 @@ pub async fn package(
     preserve_mtime: bool,
 ) -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+    let manifest = Manifest::require_package_manifest(&manifest_path)
         .await?
         .with_version(version);
     let store = PackageStore::current().await?;
@@ -288,7 +293,7 @@ pub async fn publish(
     #[cfg(feature = "git")]
     Publisher::check_git_status(allow_dirty).await?;
 
-    let manifest = BuffrsManifest::try_read().await?;
+    let manifest = Manifest::load().await?;
     let current_path = env::current_dir()
         .into_diagnostic()
         .wrap_err("current dir could not be retrieved")?;
@@ -308,10 +313,15 @@ pub async fn publish(
 /// # Arguments
 ///
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
-pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
-    let manifest = BuffrsManifest::try_read().await?;
-    let installer = Installer::new(preserve_mtime).await?;
-    installer.install(&manifest).await
+/// * `offline` - If true, no network requests are made; all packages must be in the local cache
+pub async fn install(preserve_mtime: bool, offline: bool) -> miette::Result<()> {
+    let manifest = Manifest::load().await?;
+
+    let ctx = InstallationContext::cwd(preserve_mtime, offline).await?;
+
+    manifest.install(&ctx).await?;
+
+    Ok(())
 }
 
 /// Uninstalls dependencies
@@ -320,15 +330,16 @@ pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
 /// - **Package**: Clears the package's vendor directory
 /// - **Workspace**: Clears vendor directories for all workspace members
 pub async fn uninstall() -> miette::Result<()> {
-    let manifest = BuffrsManifest::try_read().await?;
+    let manifest = Manifest::load().await?;
 
     match manifest {
-        BuffrsManifest::Package(_) => PackageStore::current().await?.clear().await,
-        BuffrsManifest::Workspace(workspace_manifest) => {
+        Manifest::Package(_) => PackageStore::current().await?.clear().await,
+        Manifest::Workspace(workspace_manifest) => {
             let root_path = env::current_dir()
                 .into_diagnostic()
                 .wrap_err("current dir could not be retrieved")?;
-            let packages = workspace_manifest.workspace.resolve_members(root_path)?;
+
+            let packages = workspace_manifest.workspace.members(root_path)?;
 
             tracing::info!(
                 "workspace found. uninstalling dependencies for {} packages in workspace",
@@ -353,7 +364,7 @@ pub async fn uninstall() -> miette::Result<()> {
 /// Lists all protobuf files managed by Buffrs to stdout
 pub async fn list() -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+    let manifest = Manifest::require_package_manifest(&manifest_path).await?;
     let store = PackageStore::current().await?;
 
     if let Some(ref pkg) = manifest.package {
@@ -389,7 +400,7 @@ pub async fn list() -> miette::Result<()> {
 #[cfg(feature = "validation")]
 pub async fn lint() -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
-    let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+    let manifest = Manifest::require_package_manifest(&manifest_path).await?;
     let store = PackageStore::current().await?;
 
     let pkg = manifest.package.ok_or(miette!(

@@ -33,6 +33,7 @@ const CACHE_ENV_VAR: &str = "BUFFRS_CACHE";
 const CACHE_DIRECTORY: &str = "cache";
 
 /// A instance of a cache
+#[derive(Debug, Clone)]
 pub struct Cache(PathBuf);
 
 impl Cache {

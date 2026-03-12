@@ -15,7 +15,7 @@ use crate::{
     credentials::Credentials,
     lock::Lockfile,
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest,
     },
     package::{PackageName, PackageType},
@@ -76,14 +76,18 @@ pub struct DependencyGraph {
 impl DependencyGraph {
     /// Build a dependency graph from a manifest
     ///
-    /// Downloads remote packages to discover their transitive dependencies
+    /// Downloads remote packages to discover their transitive dependencies.
+    /// If `offline` is true, only cached packages are used and a
+    /// [`DependencyError::Offline`] is returned when a download would be needed.
     pub async fn build(
         manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
         lockfile: Option<Lockfile>,
+        offline: bool,
     ) -> miette::Result<Self> {
-        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile);
+        let mut builder =
+            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, offline);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -214,10 +218,16 @@ struct GraphBuilder<'a> {
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
+    offline: bool,
 }
 
 impl<'a> GraphBuilder<'a> {
-    fn new(base_path: PathBuf, credentials: &'a Credentials, lockfile: Option<Lockfile>) -> Self {
+    fn new(
+        base_path: PathBuf,
+        credentials: &'a Credentials,
+        lockfile: Option<Lockfile>,
+        offline: bool,
+    ) -> Self {
         Self {
             nodes: HashMap::new(),
             base_path,
@@ -225,6 +235,7 @@ impl<'a> GraphBuilder<'a> {
             credentials,
             lockfile,
             registry_clients: HashMap::new(),
+            offline,
         }
     }
 
@@ -280,7 +291,7 @@ impl<'a> GraphBuilder<'a> {
         let resolved_path = self.base_path.join(&local_manifest.path);
         let manifest_path = resolved_path.join(MANIFEST_FILE);
 
-        let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+        let manifest = Manifest::require_package_manifest(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
@@ -379,6 +390,12 @@ impl<'a> GraphBuilder<'a> {
 
             match cached_package {
                 Some(pkg) => pkg,
+                None if self.offline => {
+                    bail!(DependencyError::Offline {
+                        name: package_name.clone(),
+                        version: remote_manifest.version.clone(),
+                    });
+                }
                 None => {
                     tracing::debug!("downloading {}@{} from registry", package_name, version);
 
@@ -540,6 +557,17 @@ pub enum DependencyError {
         /// Version requirement
         version: VersionReq,
     },
-}
 
-// tests moves to ./tests/resolver_v2_tests.rs
+    /// A network request was needed but --offline mode is active
+    #[error("cannot fetch {name}@{version} in offline mode")]
+    #[diagnostic(help(
+        "run `buffrs install` without --offline to cache {name}@{version},\n
+         or set BUFFRS_CACHE to a pre-populated cache directory"
+    ))]
+    Offline {
+        /// Package name
+        name: PackageName,
+        /// Version requirement
+        version: VersionReq,
+    },
+}

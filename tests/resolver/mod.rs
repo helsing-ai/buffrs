@@ -5,9 +5,8 @@ use std::path::PathBuf;
 
 use buffrs::{
     credentials::Credentials,
-    manifest::{
-        Dependency, GenericManifest, LocalDependencyManifest, PackageManifest, PackagesManifest,
-    },
+    io::File,
+    manifest::{Dependency, LocalDependencyManifest, PackageManifest, PackagesManifest},
     package::{PackageName, PackageType},
     resolver::{DependencyGraph, DependencyNode, DependencySource},
 };
@@ -47,7 +46,7 @@ async fn test_empty_graph() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let credentials = Credentials::default();
 
-    let graph = DependencyGraph::build(&manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 
@@ -65,7 +64,7 @@ async fn test_single_local_dependency() {
     // Create a lib package with no dependencies
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
     lib_manifest
-        .write_at(&lib_dir)
+        .save(&lib_dir)
         .await
         .expect("write lib manifest");
 
@@ -86,7 +85,7 @@ async fn test_single_local_dependency() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 
@@ -110,7 +109,7 @@ async fn test_transitive_dependencies() {
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
     let lib2_manifest = create_test_manifest("lib2", PackageType::Lib, vec![]);
     lib2_manifest
-        .write_at(&lib2_dir)
+        .save(&lib2_dir)
         .await
         .expect("write lib2 manifest");
 
@@ -134,7 +133,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
     lib1_manifest
-        .write_at(&lib1_dir)
+        .save(&lib1_dir)
         .await
         .expect("write lib1 manifest");
 
@@ -155,7 +154,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 
@@ -190,10 +189,7 @@ async fn test_lib_cannot_depend_on_api() {
 
     // Create an API package
     let api_manifest = create_test_manifest("api-package", PackageType::Api, vec![]);
-    api_manifest
-        .write_at(&api_dir)
-        .await
-        .expect("write manifest");
+    api_manifest.save(&api_dir).await.expect("write manifest");
 
     // Create a lib package that tries to depend on the API
     let lib_manifest = PackagesManifest::builder()
@@ -212,7 +208,8 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None).await;
+    let result =
+        DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None, false).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -233,10 +230,7 @@ async fn test_api_can_depend_on_lib() {
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
-    lib_manifest
-        .write_at(&lib_dir)
-        .await
-        .expect("write manifest");
+    lib_manifest.save(&lib_dir).await.expect("write manifest");
 
     let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -254,7 +248,8 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None).await;
+    let result =
+        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
@@ -289,10 +284,7 @@ async fn test_circular_dependency_direct() {
             .into(),
         }])
         .build();
-    pkg2_manifest
-        .write_at(&pkg2_dir)
-        .await
-        .expect("write manifest");
+    pkg2_manifest.save(&pkg2_dir).await.expect("write manifest");
 
     // Create pkg1 manifest (depends on pkg2 - circular!)
     let pkg1_manifest = PackagesManifest::builder()
@@ -310,13 +302,10 @@ async fn test_circular_dependency_direct() {
             .into(),
         }])
         .build();
-    pkg1_manifest
-        .write_at(&pkg1_dir)
-        .await
-        .expect("write manifest");
+    pkg1_manifest.save(&pkg1_dir).await.expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None, false).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -364,10 +353,7 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg3_manifest
-        .write_at(&pkg3_dir)
-        .await
-        .expect("write manifest");
+    pkg3_manifest.save(&pkg3_dir).await.expect("write manifest");
 
     let pkg2_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -384,10 +370,7 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg2_manifest
-        .write_at(&pkg2_dir)
-        .await
-        .expect("write manifest");
+    pkg2_manifest.save(&pkg2_dir).await.expect("write manifest");
 
     let pkg1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -404,13 +387,10 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg1_manifest
-        .write_at(&pkg1_dir)
-        .await
-        .expect("write manifest");
+    pkg1_manifest.save(&pkg1_dir).await.expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
+    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None, false).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -433,7 +413,7 @@ async fn test_diamond_dependency() {
     std::fs::create_dir_all(common_dir.join("proto")).expect("create proto dir");
     let common_manifest = create_test_manifest("common", PackageType::Lib, vec![]);
     common_manifest
-        .write_at(&common_dir)
+        .save(&common_dir)
         .await
         .expect("write manifest");
 
@@ -456,10 +436,7 @@ async fn test_diamond_dependency() {
             .into(),
         }])
         .build();
-    lib1_manifest
-        .write_at(&lib1_dir)
-        .await
-        .expect("write manifest");
+    lib1_manifest.save(&lib1_dir).await.expect("write manifest");
 
     // Create lib2 (depends on common)
     let lib2_dir = temp_dir.path().join("lib2");
@@ -480,10 +457,7 @@ async fn test_diamond_dependency() {
             .into(),
         }])
         .build();
-    lib2_manifest
-        .write_at(&lib2_dir)
-        .await
-        .expect("write manifest");
+    lib2_manifest.save(&lib2_dir).await.expect("write manifest");
 
     // Create api (depends on both lib1 and lib2, creating diamond)
     let api_manifest = PackagesManifest::builder()
@@ -511,7 +485,7 @@ async fn test_diamond_dependency() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 
@@ -544,30 +518,21 @@ async fn test_multiple_dependencies_from_single_package() {
     std::fs::create_dir(&lib1_dir).expect("create dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
-    lib1_manifest
-        .write_at(&lib1_dir)
-        .await
-        .expect("write manifest");
+    lib1_manifest.save(&lib1_dir).await.expect("write manifest");
 
     // Create lib2
     let lib2_dir = temp_dir.path().join("lib2");
     std::fs::create_dir(&lib2_dir).expect("create dir");
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
     let lib2_manifest = create_test_manifest("lib2", PackageType::Lib, vec![]);
-    lib2_manifest
-        .write_at(&lib2_dir)
-        .await
-        .expect("write manifest");
+    lib2_manifest.save(&lib2_dir).await.expect("write manifest");
 
     // Create lib3
     let lib3_dir = temp_dir.path().join("lib3");
     std::fs::create_dir(&lib3_dir).expect("create dir");
     std::fs::create_dir_all(lib3_dir.join("proto")).expect("create proto dir");
     let lib3_manifest = create_test_manifest("lib3", PackageType::Lib, vec![]);
-    lib3_manifest
-        .write_at(&lib3_dir)
-        .await
-        .expect("write manifest");
+    lib3_manifest.save(&lib3_dir).await.expect("write manifest");
 
     // Create api that depends on all three
     let api_manifest = PackagesManifest::builder()
@@ -602,7 +567,7 @@ async fn test_multiple_dependencies_from_single_package() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 
@@ -633,10 +598,7 @@ async fn test_local_remote_conflict() {
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
-    lib_manifest
-        .write_at(&lib_dir)
-        .await
-        .expect("write manifest");
+    lib_manifest.save(&lib_dir).await.expect("write manifest");
 
     // Create a manifest with both local and remote dependency on same package
     // This is a bit contrived but tests the validation logic
@@ -666,7 +628,8 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None).await;
+    let result =
+        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());
@@ -692,10 +655,7 @@ async fn test_relative_path_resolution() {
     std::fs::create_dir(&lib1_dir).expect("create dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
-    lib1_manifest
-        .write_at(&lib1_dir)
-        .await
-        .expect("write manifest");
+    lib1_manifest.save(&lib1_dir).await.expect("write manifest");
 
     // Create api at temp_dir/api that uses relative path to lib1
     let api_dir = temp_dir.path().join("api");
@@ -718,7 +678,7 @@ async fn test_relative_path_resolution() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None)
+    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false)
         .await
         .expect("build graph");
 

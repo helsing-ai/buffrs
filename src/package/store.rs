@@ -24,7 +24,7 @@ use tokio::fs;
 use walkdir::WalkDir;
 
 use crate::{
-    manifest::{BuffrsManifest, MANIFEST_FILE, PackageManifest, PackagesManifest},
+    manifest::{MANIFEST_FILE, Manifest, PackageManifest, PackagesManifest},
     package::{Package, PackageName},
 };
 
@@ -184,7 +184,7 @@ impl PackageStore {
     pub async fn resolve(&self, package: &PackageName) -> miette::Result<PackagesManifest> {
         let manifest_path = self.locate(package).join(MANIFEST_FILE);
 
-        let manifest = BuffrsManifest::require_package_manifest(&manifest_path)
+        let manifest = Manifest::require_package_manifest(&manifest_path)
             .await
             .wrap_err({
                 miette!(
