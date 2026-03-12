@@ -197,8 +197,7 @@ impl Publisher {
         tracing::debug!("credentials loaded for dependency graph building");
 
         let graph =
-            DependencyGraph::build(&root_manifest, package_path, &credentials, None, false)
-                .await?;
+            DependencyGraph::build(&root_manifest, package_path, &credentials, None, false).await?;
         tracing::debug!("dependency graph built successfully");
 
         let ordered_dependencies = graph.ordered_dependencies()?;

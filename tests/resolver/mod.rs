@@ -208,7 +208,8 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None, false).await;
+    let result =
+        DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None, false).await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -247,7 +248,8 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
+    let result =
+        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
@@ -626,7 +628,8 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
+    let result =
+        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, false).await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());

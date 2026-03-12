@@ -86,7 +86,8 @@ impl DependencyGraph {
         lockfile: Option<Lockfile>,
         offline: bool,
     ) -> miette::Result<Self> {
-        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, offline);
+        let mut builder =
+            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, offline);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
