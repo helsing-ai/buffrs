@@ -517,9 +517,13 @@ impl Lockfile {
         ))?;
 
         let lock = if manifest.to_package_manifest().is_ok() {
-            PackageLockfile::load_from_or_default(path).await.map(Self::Package)?
+            PackageLockfile::load_from_or_default(path)
+                .await
+                .map(Self::Package)?
         } else {
-            WorkspaceLockfile::load_from_or_default(path).await.map(Self::Workspace)?
+            WorkspaceLockfile::load_from_or_default(path)
+                .await
+                .map(Self::Workspace)?
         };
 
         lock.save(path).await?;
