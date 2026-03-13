@@ -1,6 +1,6 @@
 use crate::{VirtualFileSystem, with_test_registry};
 
-const INSTALL_SCRIPT: &str = r#"
+const INSTALL_SCRIPT: super::NixScript = r#"
 set -euo pipefail
 
 # --- verify BUFFRS_CACHE was populated ---
@@ -70,7 +70,16 @@ fn fixture() {
             url,
             "remote-lib",
             "remote.proto",
-            "syntax = \"proto3\";\n\npackage remote;\n\nmessage Data {\n  string value = 1;\n}\n",
+            r#"
+              syntax = "proto3";
+
+              package remote;
+
+              message Data {
+                string value = 1;
+              }
+            "#
+            .trim(),
         );
 
         // 2. Add remote-lib as a dependency

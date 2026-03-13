@@ -1,6 +1,6 @@
 use crate::{VirtualFileSystem, with_test_registry};
 
-const INSTALL_SCRIPT: &str = r#"
+const INSTALL_SCRIPT: super::NixScript = r#"
 set -euo pipefail
 
 # --- verify BUFFRS_CACHE contains all remote packages ---
@@ -77,7 +77,16 @@ fn fixture() {
             url,
             "pkg-c",
             "c.proto",
-            "syntax = \"proto3\";\n\npackage pkg.c;\n\nmessage MessageC {\n  string value = 1;\n}\n",
+            r#"
+              syntax = "proto3";
+
+              package pkg.c;
+
+              message MessageC {
+                string value = 1;
+              }
+            "#
+            .trim(),
         );
 
         // 2. Publish remote-lib-b (leaf dependency of remote-lib-a)
@@ -87,7 +96,16 @@ fn fixture() {
             url,
             "remote-lib-b",
             "b.proto",
-            "syntax = \"proto3\";\n\npackage remote.b;\n\nmessage RemoteB {\n  string value = 1;\n}\n",
+            r#"
+              syntax = "proto3";
+
+              package remote.b;
+
+              message RemoteB {
+                string value = 1;
+              }
+            "#
+            .trim(),
         );
 
         // 3. Publish remote-lib-a (depends on remote-lib-b)

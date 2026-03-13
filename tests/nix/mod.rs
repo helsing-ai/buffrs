@@ -4,6 +4,8 @@ mod workspace;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+type NixScript = &'static str;
+
 /// A generated nix flake that uses the buffrs `vendorDependencies` mechanism
 /// to download and cache protobuf dependencies, then runs a user-provided
 /// install script inside a sandboxed derivation (no network access).
