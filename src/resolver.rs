@@ -15,7 +15,7 @@ use crate::{
     credentials::Credentials,
     lock::Lockfile,
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest,
     },
     package::{PackageName, PackageType},
@@ -280,7 +280,7 @@ impl<'a> GraphBuilder<'a> {
         let resolved_path = self.base_path.join(&local_manifest.path);
         let manifest_path = resolved_path.join(MANIFEST_FILE);
 
-        let manifest = BuffrsManifest::require_package_manifest(&manifest_path).await?;
+        let manifest = Manifest::require_package_manifest(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
         Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
