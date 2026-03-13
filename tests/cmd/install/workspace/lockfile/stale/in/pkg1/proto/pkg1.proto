@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package pkg1;
-
-message Payload {
-  string data = 1;
-}
