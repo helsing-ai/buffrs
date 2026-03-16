@@ -1,0 +1,9 @@
+edition = "0.12"
+
+[package]
+type = "lib"
+name = "pkg-a"
+version = "1.0.0"
+
+[dependencies]
+"pkg-b" = { path = "../pkg-b" }
