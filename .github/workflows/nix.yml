@@ -21,4 +21,5 @@ jobs:
       - name: Run `nix flake check`
         run: nix flake check
       - name: Run nix integration tests
-        run: nix develop --command cargo test --test e2e nix:: -- --ignored
+        run: |
+          nix develop --command cargo test --test e2e nix:: -- --ignored
