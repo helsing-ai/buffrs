@@ -194,7 +194,6 @@ impl TryInto<String> for Manifest {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

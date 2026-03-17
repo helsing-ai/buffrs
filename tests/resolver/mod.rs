@@ -189,7 +189,10 @@ async fn test_lib_cannot_depend_on_api() {
 
     // Create an API package
     let api_manifest = create_test_manifest("api-package", PackageType::Api, vec![]);
-    api_manifest.save_to(&api_dir).await.expect("write manifest");
+    api_manifest
+        .save_to(&api_dir)
+        .await
+        .expect("write manifest");
 
     // Create a lib package that tries to depend on the API
     let lib_manifest = PackagesManifest::builder()
@@ -229,7 +232,10 @@ async fn test_api_can_depend_on_lib() {
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
-    lib_manifest.save_to(&lib_dir).await.expect("write manifest");
+    lib_manifest
+        .save_to(&lib_dir)
+        .await
+        .expect("write manifest");
 
     let api_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -282,7 +288,10 @@ async fn test_circular_dependency_direct() {
             .into(),
         }])
         .build();
-    pkg2_manifest.save_to(&pkg2_dir).await.expect("write manifest");
+    pkg2_manifest
+        .save_to(&pkg2_dir)
+        .await
+        .expect("write manifest");
 
     // Create pkg1 manifest (depends on pkg2 - circular!)
     let pkg1_manifest = PackagesManifest::builder()
@@ -300,7 +309,10 @@ async fn test_circular_dependency_direct() {
             .into(),
         }])
         .build();
-    pkg1_manifest.save_to(&pkg1_dir).await.expect("write manifest");
+    pkg1_manifest
+        .save_to(&pkg1_dir)
+        .await
+        .expect("write manifest");
 
     // Start building from pkg1's directory
     let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
@@ -351,7 +363,10 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg3_manifest.save_to(&pkg3_dir).await.expect("write manifest");
+    pkg3_manifest
+        .save_to(&pkg3_dir)
+        .await
+        .expect("write manifest");
 
     let pkg2_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -368,7 +383,10 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg2_manifest.save_to(&pkg2_dir).await.expect("write manifest");
+    pkg2_manifest
+        .save_to(&pkg2_dir)
+        .await
+        .expect("write manifest");
 
     let pkg1_manifest = PackagesManifest::builder()
         .package(PackageManifest {
@@ -385,7 +403,10 @@ async fn test_circular_dependency_indirect() {
             .into(),
         }])
         .build();
-    pkg1_manifest.save_to(&pkg1_dir).await.expect("write manifest");
+    pkg1_manifest
+        .save_to(&pkg1_dir)
+        .await
+        .expect("write manifest");
 
     // Start building from pkg1's directory
     let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None).await;
@@ -434,7 +455,10 @@ async fn test_diamond_dependency() {
             .into(),
         }])
         .build();
-    lib1_manifest.save_to(&lib1_dir).await.expect("write manifest");
+    lib1_manifest
+        .save_to(&lib1_dir)
+        .await
+        .expect("write manifest");
 
     // Create lib2 (depends on common)
     let lib2_dir = temp_dir.path().join("lib2");
@@ -455,7 +479,10 @@ async fn test_diamond_dependency() {
             .into(),
         }])
         .build();
-    lib2_manifest.save_to(&lib2_dir).await.expect("write manifest");
+    lib2_manifest
+        .save_to(&lib2_dir)
+        .await
+        .expect("write manifest");
 
     // Create api (depends on both lib1 and lib2, creating diamond)
     let api_manifest = PackagesManifest::builder()
@@ -516,21 +543,30 @@ async fn test_multiple_dependencies_from_single_package() {
     std::fs::create_dir(&lib1_dir).expect("create dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
-    lib1_manifest.save_to(&lib1_dir).await.expect("write manifest");
+    lib1_manifest
+        .save_to(&lib1_dir)
+        .await
+        .expect("write manifest");
 
     // Create lib2
     let lib2_dir = temp_dir.path().join("lib2");
     std::fs::create_dir(&lib2_dir).expect("create dir");
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
     let lib2_manifest = create_test_manifest("lib2", PackageType::Lib, vec![]);
-    lib2_manifest.save_to(&lib2_dir).await.expect("write manifest");
+    lib2_manifest
+        .save_to(&lib2_dir)
+        .await
+        .expect("write manifest");
 
     // Create lib3
     let lib3_dir = temp_dir.path().join("lib3");
     std::fs::create_dir(&lib3_dir).expect("create dir");
     std::fs::create_dir_all(lib3_dir.join("proto")).expect("create proto dir");
     let lib3_manifest = create_test_manifest("lib3", PackageType::Lib, vec![]);
-    lib3_manifest.save_to(&lib3_dir).await.expect("write manifest");
+    lib3_manifest
+        .save_to(&lib3_dir)
+        .await
+        .expect("write manifest");
 
     // Create api that depends on all three
     let api_manifest = PackagesManifest::builder()
@@ -596,7 +632,10 @@ async fn test_local_remote_conflict() {
     std::fs::create_dir_all(lib_dir.join("proto")).expect("create proto dir");
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
-    lib_manifest.save_to(&lib_dir).await.expect("write manifest");
+    lib_manifest
+        .save_to(&lib_dir)
+        .await
+        .expect("write manifest");
 
     // Create a manifest with both local and remote dependency on same package
     // This is a bit contrived but tests the validation logic
@@ -652,7 +691,10 @@ async fn test_relative_path_resolution() {
     std::fs::create_dir(&lib1_dir).expect("create dir");
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
-    lib1_manifest.save_to(&lib1_dir).await.expect("write manifest");
+    lib1_manifest
+        .save_to(&lib1_dir)
+        .await
+        .expect("write manifest");
 
     // Create api at temp_dir/api that uses relative path to lib1
     let api_dir = temp_dir.path().join("api");
