@@ -74,11 +74,11 @@ impl File for WorkspaceManifest {
         RawManifest::load_from(path).await?.try_into()
     }
 
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
-        RawManifest::from(self.clone()).save(path).await
+        RawManifest::from(self.clone()).save_to(path).await
     }
 }
 

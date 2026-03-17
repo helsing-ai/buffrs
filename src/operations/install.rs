@@ -23,6 +23,13 @@ use crate::{
     resolver::{DependencyGraph, DependencySource},
 };
 
+/// Trait for types that can install their dependencies
+#[async_trait]
+pub trait Install {
+    /// Installs dependencies and returns the resulting locked packages
+    async fn install(&self, ctx: &InstallationContext) -> miette::Result<Vec<LockedPackage>>;
+}
+
 /// A resolved remote package with its registry metadata
 #[derive(Debug, Clone)]
 struct ResolvedRemotePackage {
@@ -82,13 +89,6 @@ impl InstallationContext {
 
         Self::new(cwd, preserve_mtime).await
     }
-}
-
-/// Trait for types that can install their dependencies
-#[async_trait]
-pub trait Install {
-    /// Installs dependencies and returns the resulting locked packages
-    async fn install(&self, ctx: &InstallationContext) -> miette::Result<Vec<LockedPackage>>;
 }
 
 #[async_trait]
@@ -209,7 +209,7 @@ impl Install for PackagesManifest {
         // 6. Write lockfile if context is a package lockfile
         if ctx.lock.is_package_lockfile() {
             let lock: PackageLockfile = locked.clone().try_into()?;
-            lock.save(&ctx.cwd).await?;
+            lock.save_to(&ctx.cwd).await?;
         }
 
         Ok(locked)
@@ -253,7 +253,7 @@ impl Install for WorkspaceManifest {
         if ctx.lock.is_workspace_lockfile() {
             let lock: WorkspaceLockfile = locked.clone().try_into()?;
 
-            lock.save(&ctx.cwd).await?;
+            lock.save_to(&ctx.cwd).await?;
 
             tracing::info!(
                 "wrote workspace lockfile at {}",

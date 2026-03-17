@@ -28,7 +28,7 @@ use super::package::{
     Dependency, DependencyManifest, DependencyMap, PackageManifest, PackagesManifest,
 };
 use super::workspace::{Workspace, WorkspaceManifest};
-use super::{CANARY_EDITION, Edition, MANIFEST_FILE, Manifest, ManifestType};
+use super::{CANARY_EDITION, Edition, MANIFEST_FILE, Manifest};
 use crate::{
     ManagedFile,
     errors::{DeserializationError, InvalidManifestError, SerializationError, WriteError},
@@ -257,7 +257,7 @@ impl File for RawManifest {
         Ok(raw)
     }
 
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -347,41 +347,25 @@ impl TryFrom<RawManifest> for Manifest {
         let dependencies = raw.dependencies_as_vec();
         let workspace = raw.workspace().cloned();
         let package = raw.package().cloned();
-        let manifest_type = try_manifest_type(&dependencies, &workspace, &package)?;
 
-        let manifest = match manifest_type {
-            ManifestType::Package => Manifest::Package(raw.try_into()?),
-            ManifestType::Workspace => Manifest::Workspace(raw.try_into()?),
-        };
-
-        Ok(manifest)
-    }
-}
-
-/// Determine the ManifestType based on dependencies, workspace, and package
-fn try_manifest_type(
-    dependencies: &Option<Vec<Dependency>>,
-    workspace: &Option<Workspace>,
-    package: &Option<PackageManifest>,
-) -> miette::Result<ManifestType> {
-    match (&dependencies, &workspace) {
-        (&Some(_), &Some(_)) => Err(miette!(
-            "manifest cannot have both dependencies and workspace sections"
-        ))
-        .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
-        (None, None) => {
-            // Allow package with no dependencies only if package section exists
-            if package.is_some() {
-                Ok(ManifestType::Package)
-            } else {
-                Err(miette!(
-                    "manifest should have either a package or a workspace section"
-                ))
-                .wrap_err(InvalidManifestError(ManagedFile::Manifest))
+        match (&dependencies, &workspace) {
+            (&Some(_), &Some(_)) => Err(miette!(
+                "manifest cannot have both dependencies and workspace sections"
+            ))
+            .wrap_err(InvalidManifestError(ManagedFile::Manifest)),
+            (None, None) => {
+                if package.is_some() {
+                    Ok(Manifest::Package(raw.try_into()?))
+                } else {
+                    Err(miette!(
+                        "manifest should have either a package or a workspace section"
+                    ))
+                    .wrap_err(InvalidManifestError(ManagedFile::Manifest))
+                }
             }
+            (&Some(_), None) => Ok(Manifest::Package(raw.try_into()?)),
+            (None, &Some(_)) => Ok(Manifest::Workspace(raw.try_into()?)),
         }
-        (&Some(_), None) => Ok(ManifestType::Package),
-        (None, &Some(_)) => Ok(ManifestType::Workspace),
     }
 }
 
@@ -518,36 +502,42 @@ mod tests {
 
         #[test]
         fn manifest_type_package() {
-            let deps = Some(vec![]);
-            let workspace = None;
-            let package = None;
-            let result = try_manifest_type(&deps, &workspace, &package);
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: Some(HashMap::new()),
+                workspace: None,
+            };
+            let result = Manifest::try_from(raw);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), ManifestType::Package);
+            assert!(matches!(result.unwrap(), Manifest::Package(_)));
         }
 
         #[test]
         fn manifest_type_workspace() {
-            let deps = None;
-            let workspace = Some(Workspace {
-                members: vec!["pkg1".to_string()],
-                exclude: None,
-            });
-            let package = None;
-            let result = try_manifest_type(&deps, &workspace, &package);
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: None,
+                workspace: Some(Workspace {
+                    members: vec!["pkg1".to_string()],
+                    exclude: None,
+                }),
+            };
+            let result = Manifest::try_from(raw);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), ManifestType::Workspace);
+            assert!(matches!(result.unwrap(), Manifest::Workspace(_)));
         }
 
         #[test]
         fn manifest_type_both_dependencies_and_workspace_errors() {
-            let deps = Some(vec![]);
-            let workspace = Some(Workspace {
-                members: vec!["pkg1".to_string()],
-                exclude: None,
-            });
-            let package = None;
-            let result = try_manifest_type(&deps, &workspace, &package);
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: Some(vec![].into_iter().collect()),
+                workspace: Some(Workspace {
+                    members: vec!["pkg1".to_string()],
+                    exclude: None,
+                }),
+            };
+            let result = Manifest::try_from(raw);
             assert!(result.is_err());
             let err_msg = result.unwrap_err().to_string();
             assert!(err_msg.contains("manifest") && err_msg.contains("invalid"));
@@ -555,25 +545,29 @@ mod tests {
 
         #[test]
         fn manifest_type_package_with_no_dependencies() {
-            let deps = None;
-            let workspace = None;
-            let package = Some(PackageManifest {
-                kind: PackageType::Lib,
-                name: PackageName::new("test").unwrap(),
-                version: Version::new(1, 0, 0),
-                description: None,
-            });
-            let result = try_manifest_type(&deps, &workspace, &package);
+            let raw = RawManifest::Canary {
+                package: Some(PackageManifest {
+                    kind: PackageType::Lib,
+                    name: PackageName::new("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                }),
+                dependencies: None,
+                workspace: None,
+            };
+            let result = Manifest::try_from(raw);
             assert!(result.is_ok());
-            assert_eq!(result.unwrap(), ManifestType::Package);
+            assert!(matches!(result.unwrap(), Manifest::Package(_)));
         }
 
         #[test]
         fn manifest_type_neither_dependencies_nor_workspace_nor_package_errors() {
-            let deps = None;
-            let workspace = None;
-            let package = None;
-            let result = try_manifest_type(&deps, &workspace, &package);
+            let raw = RawManifest::Canary {
+                package: None,
+                dependencies: None,
+                workspace: None,
+            };
+            let result = Manifest::try_from(raw);
             assert!(result.is_err());
         }
     }

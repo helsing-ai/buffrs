@@ -90,7 +90,7 @@ pub trait File: Sized + Send + Sync + 'static {
     }
 
     /// Persists a file to the filesystem.
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync;
 }
