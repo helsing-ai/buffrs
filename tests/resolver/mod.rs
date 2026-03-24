@@ -47,9 +47,15 @@ async fn test_empty_graph() {
     let temp_dir = TempDir::new().expect("create temp dir");
     let credentials = Credentials::default();
 
-    let graph = DependencyGraph::build(&manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     assert_eq!(graph.nodes.len(), 0);
 }
@@ -86,9 +92,15 @@ async fn test_single_local_dependency() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     assert_eq!(graph.nodes.len(), 1);
     let lib_node = graph
@@ -155,9 +167,15 @@ async fn test_transitive_dependencies() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     // Should have both lib1 and lib2 in the graph
     assert_eq!(graph.nodes.len(), 2);
@@ -212,8 +230,14 @@ async fn test_lib_cannot_depend_on_api() {
         }])
         .build();
 
-    let result =
-        DependencyGraph::build(&lib_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online).await;
+    let result = DependencyGraph::build(
+        &lib_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -255,8 +279,14 @@ async fn test_api_can_depend_on_lib() {
         }])
         .build();
 
-    let result =
-        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online).await;
+    let result = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await;
     assert!(result.is_ok(), "API should be able to depend on lib");
 }
 
@@ -318,7 +348,14 @@ async fn test_circular_dependency_direct() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None, NetworkMode::Online).await;
+    let result = DependencyGraph::build(
+        &pkg1_manifest,
+        &pkg1_dir,
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -412,7 +449,14 @@ async fn test_circular_dependency_indirect() {
         .expect("write manifest");
 
     // Start building from pkg1's directory
-    let result = DependencyGraph::build(&pkg1_manifest, &pkg1_dir, &credentials, None, NetworkMode::Online).await;
+    let result = DependencyGraph::build(
+        &pkg1_manifest,
+        &pkg1_dir,
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -513,9 +557,15 @@ async fn test_diamond_dependency() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     // Should have 3 packages (common should appear only once despite being depended on twice)
     assert_eq!(graph.nodes.len(), 3);
@@ -604,9 +654,15 @@ async fn test_multiple_dependencies_from_single_package() {
         ])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     assert_eq!(graph.nodes.len(), 3);
     assert!(
@@ -668,8 +724,14 @@ async fn test_local_remote_conflict() {
         ])
         .build();
 
-    let result =
-        DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online).await;
+    let result = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await;
 
     // Should detect local/remote conflict
     assert!(result.is_err());
@@ -721,9 +783,15 @@ async fn test_relative_path_resolution() {
         }])
         .build();
 
-    let graph = DependencyGraph::build(&api_manifest, temp_dir.path(), &credentials, None, NetworkMode::Online)
-        .await
-        .expect("build graph");
+    let graph = DependencyGraph::build(
+        &api_manifest,
+        temp_dir.path(),
+        &credentials,
+        None,
+        NetworkMode::Online,
+    )
+    .await
+    .expect("build graph");
 
     assert_eq!(graph.nodes.len(), 1);
     let lib1_node = graph
