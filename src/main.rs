@@ -20,6 +20,7 @@ use buffrs::{
     command,
     logs::BuffrsEventFormatter,
     manifest::{MANIFEST_FILE, Manifest},
+    operations::install::NetworkMode,
     package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
@@ -135,9 +136,16 @@ enum Command {
     /// Installs dependencies
     Install {
         /// Indicate whether access time information is preserved when installing a local.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_local_mtime: Option<bool>,
+        #[arg(default_value_t = true)]
+        preserve_local_mtime: bool,
+        /// Do not make any network requests.
+        ///
+        /// All packages must be available in the local cache (or via BUFFRS_CACHE).
+        /// Fails with a human-readable error if a package would need to be downloaded.
+        #[clap(long)]
+        #[arg(default_value_t = false)]
+        offline: bool,
     },
     /// Uninstalls dependencies
     Uninstall,
@@ -270,9 +278,17 @@ async fn main() -> miette::Result<()> {
         )),
         Command::Install {
             preserve_local_mtime,
-        } => command::install(preserve_local_mtime.unwrap_or(true))
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+            offline,
+        } => {
+            let network = if offline {
+                NetworkMode::Offline
+            } else {
+                NetworkMode::Online
+            };
+            command::install(preserve_local_mtime, network)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+        }
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),

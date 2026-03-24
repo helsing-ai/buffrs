@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use miette::{Context as _, IntoDiagnostic, ensure};
+use miette::{Context as _, IntoDiagnostic, bail, ensure};
 use semver::VersionReq;
 
 use crate::io::File;
@@ -20,7 +20,7 @@ use crate::{
     },
     package::{Package, PackageName, PackageStore},
     registry::{Artifactory, RegistryUri},
-    resolver::{DependencyGraph, DependencySource},
+    resolver::{DependencyError, DependencyGraph, DependencySource},
 };
 
 /// Trait for types that can install their dependencies
@@ -38,6 +38,15 @@ struct ResolvedRemotePackage {
     repository: String,
 }
 
+/// Controls whether network requests are allowed during installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkMode {
+    /// Allow network requests (default behavior).
+    Online,
+    /// Do not make any network requests; all packages must be in the local cache.
+    Offline,
+}
+
 /// Context carrying shared state for package installation
 #[derive(Debug, Clone)]
 pub struct InstallationContext {
@@ -47,11 +56,16 @@ pub struct InstallationContext {
     store: PackageStore,
     lock: Lockfile,
     preserve_mtime: bool,
+    network: NetworkMode,
 }
 
 impl InstallationContext {
     /// Creates a new installation context rooted at the given directory
-    pub async fn new(cwd: impl AsRef<Path>, preserve_mtime: bool) -> miette::Result<Self> {
+    pub async fn new(
+        cwd: impl AsRef<Path>,
+        preserve_mtime: bool,
+        network: NetworkMode,
+    ) -> miette::Result<Self> {
         let cwd = cwd.as_ref().to_path_buf();
 
         let credentials = Credentials::load().await?;
@@ -69,6 +83,7 @@ impl InstallationContext {
             store,
             lock,
             preserve_mtime,
+            network,
         })
     }
 
@@ -84,10 +99,10 @@ impl InstallationContext {
     }
 
     /// Creates a new installation context rooted at the current working directory
-    pub async fn cwd(preserve_mtime: bool) -> miette::Result<Self> {
+    pub async fn cwd(preserve_mtime: bool, network: NetworkMode) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
 
-        Self::new(cwd, preserve_mtime).await
+        Self::new(cwd, preserve_mtime, network).await
     }
 }
 
@@ -115,9 +130,14 @@ impl Install for PackagesManifest {
         }
 
         // 3. Build the dependency graph
-        let graph =
-            DependencyGraph::build(&self, &ctx.cwd, &ctx.credentials, Some(ctx.lock.clone()))
-                .await?;
+        let graph = DependencyGraph::build(
+            &self,
+            &ctx.cwd,
+            &ctx.credentials,
+            Some(ctx.lock.clone()),
+            ctx.network,
+        )
+        .await?;
 
         let dependencies = graph.ordered_dependencies()?;
 
@@ -296,7 +316,9 @@ mod utils {
         download(package_name, registry, repository, &version_req, ctx).await
     }
 
-    /// Downloads a package from the registry and caches it
+    /// Downloads a package from the registry and caches it.
+    ///
+    /// Returns an error if `ctx.network` is [`NetworkMode::Offline`].
     pub async fn download(
         package_name: &PackageName,
         registry: &RegistryUri,
@@ -304,6 +326,13 @@ mod utils {
         version: &VersionReq,
         ctx: &InstallationContext,
     ) -> miette::Result<Package> {
+        if ctx.network == NetworkMode::Offline {
+            bail!(DependencyError::Offline {
+                name: package_name.clone(),
+                version: version.clone(),
+            });
+        }
+
         // 1. Download the package from artifactory
         let artifactory = Artifactory::new(registry.clone(), &ctx.credentials)
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
@@ -412,6 +441,7 @@ mod utils {
                 store: PackageStore::open(tmp.path()).await.unwrap(),
                 lock: Lockfile::Package(lockfile),
                 preserve_mtime: false,
+                network: NetworkMode::Online,
             };
 
             let pkg_name = PackageName::unchecked("test-pkg");
