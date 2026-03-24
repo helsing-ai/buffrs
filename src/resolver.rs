@@ -72,6 +72,8 @@ pub struct DependencyDetails {
 pub struct DependencyGraph {
     /// Map of package names to their metadata
     pub nodes: MetadataMap,
+    /// Whether network access was allowed when building this graph
+    pub network: NetworkMode,
 }
 
 impl DependencyGraph {
@@ -113,6 +115,7 @@ impl DependencyGraph {
 
         Ok(Self {
             nodes: builder.nodes,
+            network,
         })
     }
 
