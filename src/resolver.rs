@@ -377,7 +377,7 @@ impl<'a> GraphBuilder<'a> {
                     format!("expected only exact version requirements: {package_name}@{version}")
                 })?;
 
-            let mut cached_package = None;
+            let mut cached = None;
 
             // Try to resolve from lockfile + cache first
             if let Some(lockfile) = &self.lockfile
@@ -388,20 +388,14 @@ impl<'a> GraphBuilder<'a> {
                     let cache = Cache::open().await?;
                     if let Ok(Some(pkg)) = cache.get(file_req).await {
                         tracing::debug!("resolved {}@{} from local cache", package_name, version);
-                        cached_package = Some(pkg);
+                        cached = Some(pkg);
                     }
                 }
             }
 
-            match cached_package {
-                Some(pkg) => pkg,
-                None if self.network == NetworkMode::Offline => {
-                    bail!(DependencyError::Offline {
-                        name: package_name.clone(),
-                        version: remote_manifest.version.clone(),
-                    });
-                }
-                None => {
+            match (cached, self.network) {
+                (Some(pkg), _) => pkg,
+                (None, NetworkMode::Online) => {
                     tracing::debug!("downloading {}@{} from registry", package_name, version);
 
                     // Reuse or create artifactory client
@@ -418,6 +412,12 @@ impl<'a> GraphBuilder<'a> {
                     };
 
                     artifactory.download(dependency.clone()).await?
+                }
+                (None, NetworkMode::Offline) => {
+                    bail!(DependencyError::Offline {
+                        name: package_name.clone(),
+                        version: remote_manifest.version.clone(),
+                    });
                 }
             }
         };
