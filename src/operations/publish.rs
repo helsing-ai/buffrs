@@ -16,6 +16,7 @@ use crate::{
         Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
+    operations::install::NetworkMode,
     package::PackageStore,
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
@@ -197,7 +198,7 @@ impl Publisher {
         tracing::debug!("credentials loaded for dependency graph building");
 
         let graph =
-            DependencyGraph::build(&root_manifest, package_path, &credentials, None, false).await?;
+            DependencyGraph::build(&root_manifest, package_path, &credentials, None, NetworkMode::Online).await?;
         tracing::debug!("dependency graph built successfully");
 
         let ordered_dependencies = graph.ordered_dependencies()?;
@@ -339,7 +340,7 @@ impl Publisher {
                 member_path.display()
             );
             let graph =
-                DependencyGraph::build(&member_manifest, member_path, &credentials, None, false)
+                DependencyGraph::build(&member_manifest, member_path, &credentials, None, NetworkMode::Online)
                     .await?;
             tracing::debug!("dependency graph built successfully");
 

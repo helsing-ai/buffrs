@@ -38,6 +38,15 @@ struct ResolvedRemotePackage {
     repository: String,
 }
 
+/// Controls whether network requests are allowed during installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkMode {
+    /// Allow network requests (default behavior).
+    Online,
+    /// Do not make any network requests; all packages must be in the local cache.
+    Offline,
+}
+
 /// Context carrying shared state for package installation
 #[derive(Debug, Clone)]
 pub struct InstallationContext {
@@ -47,8 +56,7 @@ pub struct InstallationContext {
     store: PackageStore,
     lock: Lockfile,
     preserve_mtime: bool,
-    /// If true, no network requests are made; all packages must be in the local cache.
-    offline: bool,
+    network: NetworkMode,
 }
 
 impl InstallationContext {
@@ -56,7 +64,7 @@ impl InstallationContext {
     pub async fn new(
         cwd: impl AsRef<Path>,
         preserve_mtime: bool,
-        offline: bool,
+        network: NetworkMode,
     ) -> miette::Result<Self> {
         let cwd = cwd.as_ref().to_path_buf();
 
@@ -75,7 +83,7 @@ impl InstallationContext {
             store,
             lock,
             preserve_mtime,
-            offline,
+            network,
         })
     }
 
@@ -91,10 +99,10 @@ impl InstallationContext {
     }
 
     /// Creates a new installation context rooted at the current working directory
-    pub async fn cwd(preserve_mtime: bool, offline: bool) -> miette::Result<Self> {
+    pub async fn cwd(preserve_mtime: bool, network: NetworkMode) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
 
-        Self::new(cwd, preserve_mtime, offline).await
+        Self::new(cwd, preserve_mtime, network).await
     }
 }
 
@@ -127,7 +135,7 @@ impl Install for PackagesManifest {
             &ctx.cwd,
             &ctx.credentials,
             Some(ctx.lock.clone()),
-            ctx.offline,
+            ctx.network,
         )
         .await?;
 
@@ -310,7 +318,7 @@ mod utils {
 
     /// Downloads a package from the registry and caches it.
     ///
-    /// Returns an error if `ctx.offline` is true.
+    /// Returns an error if `ctx.network` is [`NetworkMode::Offline`].
     pub async fn download(
         package_name: &PackageName,
         registry: &RegistryUri,
@@ -318,7 +326,7 @@ mod utils {
         version: &VersionReq,
         ctx: &InstallationContext,
     ) -> miette::Result<Package> {
-        if ctx.offline {
+        if ctx.network == NetworkMode::Offline {
             bail!(DependencyError::Offline {
                 name: package_name.clone(),
                 version: version.clone(),
@@ -433,7 +441,7 @@ mod utils {
                 store: PackageStore::open(tmp.path()).await.unwrap(),
                 lock: Lockfile::Package(lockfile),
                 preserve_mtime: false,
-                offline: false,
+                network: NetworkMode::Online,
             };
 
             let pkg_name = PackageName::unchecked("test-pkg");

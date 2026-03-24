@@ -18,6 +18,7 @@ use crate::{
         Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest,
     },
+    operations::install::NetworkMode,
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -77,17 +78,18 @@ impl DependencyGraph {
     /// Build a dependency graph from a manifest
     ///
     /// Downloads remote packages to discover their transitive dependencies.
-    /// If `offline` is true, only cached packages are used and a
-    /// [`DependencyError::Offline`] is returned when a download would be needed.
+    /// If `network` is [`NetworkMode::Offline`], only cached packages are used
+    /// and a [`DependencyError::Offline`] is returned when a download would be
+    /// needed.
     pub async fn build(
         manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
         lockfile: Option<Lockfile>,
-        offline: bool,
+        network: NetworkMode,
     ) -> miette::Result<Self> {
         let mut builder =
-            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, offline);
+            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, network);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -218,7 +220,7 @@ struct GraphBuilder<'a> {
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
-    offline: bool,
+    network: NetworkMode,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -226,7 +228,7 @@ impl<'a> GraphBuilder<'a> {
         base_path: PathBuf,
         credentials: &'a Credentials,
         lockfile: Option<Lockfile>,
-        offline: bool,
+        network: NetworkMode,
     ) -> Self {
         Self {
             nodes: HashMap::new(),
@@ -235,7 +237,7 @@ impl<'a> GraphBuilder<'a> {
             credentials,
             lockfile,
             registry_clients: HashMap::new(),
-            offline,
+            network,
         }
     }
 
@@ -390,7 +392,7 @@ impl<'a> GraphBuilder<'a> {
 
             match cached_package {
                 Some(pkg) => pkg,
-                None if self.offline => {
+                None if self.network == NetworkMode::Offline => {
                     bail!(DependencyError::Offline {
                         name: package_name.clone(),
                         version: remote_manifest.version.clone(),

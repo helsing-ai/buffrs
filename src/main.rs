@@ -20,6 +20,7 @@ use buffrs::{
     command,
     logs::BuffrsEventFormatter,
     manifest::{MANIFEST_FILE, Manifest},
+    operations::install::NetworkMode,
     package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
@@ -278,9 +279,16 @@ async fn main() -> miette::Result<()> {
         Command::Install {
             preserve_local_mtime,
             offline,
-        } => command::install(preserve_local_mtime, offline)
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+        } => {
+            let network = if offline {
+                NetworkMode::Offline
+            } else {
+                NetworkMode::Online
+            };
+            command::install(preserve_local_mtime, network)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+        }
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),
