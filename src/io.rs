@@ -1,5 +1,6 @@
+use std::path::{Path, PathBuf};
+
 use miette::{Context, IntoDiagnostic};
-use std::path::Path;
 use tokio::fs;
 
 use crate::errors::FileExistsError;
@@ -9,6 +10,29 @@ use crate::errors::FileExistsError;
 pub trait File: Sized + Send + Sync + 'static {
     /// The default location of this file
     const DEFAULT_PATH: &str;
+
+    /// Resolves a path to the concrete file location
+    fn resolve<P>(path: P) -> miette::Result<PathBuf>
+    where
+        P: AsRef<Path> + Send + Sync,
+    {
+        let path = path.as_ref();
+
+        if path.is_file() {
+            return Ok(path.to_path_buf());
+        }
+
+        if path.is_dir() {
+            return Ok(path.join(Self::DEFAULT_PATH));
+        }
+
+        let parent = path.parent().ok_or(miette::miette!(
+            "Parent not resolvable for {}",
+            path.display()
+        ))?;
+
+        Ok(parent.join(Self::DEFAULT_PATH))
+    }
 
     /// Checks if the file currently exists in the filesystem at its default path
     async fn exists() -> miette::Result<bool> {
@@ -20,7 +44,9 @@ pub trait File: Sized + Send + Sync + 'static {
     where
         P: AsRef<Path> + Send + Sync,
     {
-        fs::try_exists(path)
+        let resolved = Self::resolve(path)?;
+
+        fs::try_exists(resolved)
             .await
             .into_diagnostic()
             .wrap_err(FileExistsError(Self::DEFAULT_PATH))
@@ -54,15 +80,17 @@ pub trait File: Sized + Send + Sync + 'static {
         Self: Default,
         P: AsRef<Path> + Send + Sync,
     {
-        if Self::exists_at(&path).await? {
-            Self::load_from(path).await
+        let resolved = Self::resolve(path)?;
+
+        if Self::exists_at(&resolved).await? {
+            Self::load_from(resolved).await
         } else {
             Ok(Self::default())
         }
     }
 
     /// Persists a file to the filesystem.
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync;
 }

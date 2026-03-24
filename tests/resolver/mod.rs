@@ -5,9 +5,8 @@ use std::path::PathBuf;
 
 use buffrs::{
     credentials::Credentials,
-    manifest::{
-        Dependency, GenericManifest, LocalDependencyManifest, PackageManifest, PackagesManifest,
-    },
+    io::File,
+    manifest::{Dependency, LocalDependencyManifest, PackageManifest, PackagesManifest},
     package::{PackageName, PackageType},
     resolver::{DependencyGraph, DependencyNode, DependencySource},
 };
@@ -65,7 +64,7 @@ async fn test_single_local_dependency() {
     // Create a lib package with no dependencies
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
     lib_manifest
-        .write_at(&lib_dir)
+        .save_to(&lib_dir)
         .await
         .expect("write lib manifest");
 
@@ -110,7 +109,7 @@ async fn test_transitive_dependencies() {
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
     let lib2_manifest = create_test_manifest("lib2", PackageType::Lib, vec![]);
     lib2_manifest
-        .write_at(&lib2_dir)
+        .save_to(&lib2_dir)
         .await
         .expect("write lib2 manifest");
 
@@ -134,7 +133,7 @@ async fn test_transitive_dependencies() {
         }])
         .build();
     lib1_manifest
-        .write_at(&lib1_dir)
+        .save_to(&lib1_dir)
         .await
         .expect("write lib1 manifest");
 
@@ -191,7 +190,7 @@ async fn test_lib_cannot_depend_on_api() {
     // Create an API package
     let api_manifest = create_test_manifest("api-package", PackageType::Api, vec![]);
     api_manifest
-        .write_at(&api_dir)
+        .save_to(&api_dir)
         .await
         .expect("write manifest");
 
@@ -234,7 +233,7 @@ async fn test_api_can_depend_on_lib() {
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
     lib_manifest
-        .write_at(&lib_dir)
+        .save_to(&lib_dir)
         .await
         .expect("write manifest");
 
@@ -290,7 +289,7 @@ async fn test_circular_dependency_direct() {
         }])
         .build();
     pkg2_manifest
-        .write_at(&pkg2_dir)
+        .save_to(&pkg2_dir)
         .await
         .expect("write manifest");
 
@@ -311,7 +310,7 @@ async fn test_circular_dependency_direct() {
         }])
         .build();
     pkg1_manifest
-        .write_at(&pkg1_dir)
+        .save_to(&pkg1_dir)
         .await
         .expect("write manifest");
 
@@ -365,7 +364,7 @@ async fn test_circular_dependency_indirect() {
         }])
         .build();
     pkg3_manifest
-        .write_at(&pkg3_dir)
+        .save_to(&pkg3_dir)
         .await
         .expect("write manifest");
 
@@ -385,7 +384,7 @@ async fn test_circular_dependency_indirect() {
         }])
         .build();
     pkg2_manifest
-        .write_at(&pkg2_dir)
+        .save_to(&pkg2_dir)
         .await
         .expect("write manifest");
 
@@ -405,7 +404,7 @@ async fn test_circular_dependency_indirect() {
         }])
         .build();
     pkg1_manifest
-        .write_at(&pkg1_dir)
+        .save_to(&pkg1_dir)
         .await
         .expect("write manifest");
 
@@ -433,7 +432,7 @@ async fn test_diamond_dependency() {
     std::fs::create_dir_all(common_dir.join("proto")).expect("create proto dir");
     let common_manifest = create_test_manifest("common", PackageType::Lib, vec![]);
     common_manifest
-        .write_at(&common_dir)
+        .save_to(&common_dir)
         .await
         .expect("write manifest");
 
@@ -457,7 +456,7 @@ async fn test_diamond_dependency() {
         }])
         .build();
     lib1_manifest
-        .write_at(&lib1_dir)
+        .save_to(&lib1_dir)
         .await
         .expect("write manifest");
 
@@ -481,7 +480,7 @@ async fn test_diamond_dependency() {
         }])
         .build();
     lib2_manifest
-        .write_at(&lib2_dir)
+        .save_to(&lib2_dir)
         .await
         .expect("write manifest");
 
@@ -545,7 +544,7 @@ async fn test_multiple_dependencies_from_single_package() {
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
     lib1_manifest
-        .write_at(&lib1_dir)
+        .save_to(&lib1_dir)
         .await
         .expect("write manifest");
 
@@ -555,7 +554,7 @@ async fn test_multiple_dependencies_from_single_package() {
     std::fs::create_dir_all(lib2_dir.join("proto")).expect("create proto dir");
     let lib2_manifest = create_test_manifest("lib2", PackageType::Lib, vec![]);
     lib2_manifest
-        .write_at(&lib2_dir)
+        .save_to(&lib2_dir)
         .await
         .expect("write manifest");
 
@@ -565,7 +564,7 @@ async fn test_multiple_dependencies_from_single_package() {
     std::fs::create_dir_all(lib3_dir.join("proto")).expect("create proto dir");
     let lib3_manifest = create_test_manifest("lib3", PackageType::Lib, vec![]);
     lib3_manifest
-        .write_at(&lib3_dir)
+        .save_to(&lib3_dir)
         .await
         .expect("write manifest");
 
@@ -634,7 +633,7 @@ async fn test_local_remote_conflict() {
 
     let lib_manifest = create_test_manifest("lib-package", PackageType::Lib, vec![]);
     lib_manifest
-        .write_at(&lib_dir)
+        .save_to(&lib_dir)
         .await
         .expect("write manifest");
 
@@ -693,7 +692,7 @@ async fn test_relative_path_resolution() {
     std::fs::create_dir_all(lib1_dir.join("proto")).expect("create proto dir");
     let lib1_manifest = create_test_manifest("lib1", PackageType::Lib, vec![]);
     lib1_manifest
-        .write_at(&lib1_dir)
+        .save_to(&lib1_dir)
         .await
         .expect("write manifest");
 

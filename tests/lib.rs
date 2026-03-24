@@ -15,7 +15,7 @@ mod nix;
 mod registry;
 mod resolver;
 
-pub use registry::with_test_registry;
+pub use registry::*;
 
 /// Create a command which runs the cli
 #[macro_export]
