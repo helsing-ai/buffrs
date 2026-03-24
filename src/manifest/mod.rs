@@ -118,7 +118,7 @@ impl Manifest {
     pub async fn name() -> Option<String> {
         let manifest = Manifest::load().await.ok()?;
 
-        let cwd = std::env::current_dir().unwrap();
+        let cwd = std::env::current_dir().ok()?;
 
         let name = cwd.file_name()?.to_str();
 
@@ -164,11 +164,11 @@ impl File for Manifest {
         RawManifest::load_from(path).await?.try_into()
     }
 
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
-        RawManifest::from(self.clone()).save(path).await
+        RawManifest::from(self.clone()).save_to(path).await
     }
 }
 
@@ -192,15 +192,6 @@ impl TryInto<String> for Manifest {
             Manifest::Workspace(w) => w.try_into(),
         }
     }
-}
-
-/// A manifest can define either a package or a workspace
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ManifestType {
-    /// The Manifest defines a package
-    Package,
-    /// The Manifest defines a workspace
-    Workspace,
 }
 
 #[cfg(test)]

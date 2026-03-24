@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package pkg2;
-
-message Response {
-  string value = 1;
-}

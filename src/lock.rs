@@ -272,7 +272,7 @@ impl File for PackageLockfile {
         }
     }
 
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -406,7 +406,7 @@ impl File for WorkspaceLockfile {
     }
 
     /// Persists the workspace lockfile to the filesystem
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
@@ -526,7 +526,7 @@ impl Lockfile {
                 .map(Self::Workspace)?
         };
 
-        lock.save(path).await?;
+        lock.save_to(path).await?;
 
         Ok(lock)
     }
@@ -594,13 +594,13 @@ impl File for Lockfile {
     }
 
     /// Persists a Lockfile to the filesystem
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
         match self {
-            Self::Package(plock) => plock.save(path).await,
-            Self::Workspace(wlock) => wlock.save(path).await,
+            Self::Package(plock) => plock.save_to(path).await,
+            Self::Workspace(wlock) => wlock.save_to(path).await,
         }
     }
 }
@@ -909,7 +909,7 @@ mod tests {
 
         // Create and write a lockfile (write expects directory path)
         let original_lockfile = simple_lockfile();
-        original_lockfile.save(temp_dir.path()).await.unwrap();
+        original_lockfile.save_to(temp_dir.path()).await.unwrap();
 
         // Read it back using read_from_or_default
         let loaded_lockfile = PackageLockfile::load_from_or_default(&lockfile_path)

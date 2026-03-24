@@ -59,9 +59,8 @@ impl PackagesManifest {
     /// Get package names of dependencies
     pub fn get_dependency_package_names(&self) -> Vec<PackageName> {
         self.dependencies
-            .clone()
-            .unwrap_or_default()
             .iter()
+            .flatten()
             .map(|d| d.package.clone())
             .collect()
     }
@@ -86,11 +85,11 @@ impl PackagesManifest {
 
     /// Gets a list of all dependencies
     fn get_dependencies_of_type(&self, predicate: fn(d: &Dependency) -> bool) -> Vec<Dependency> {
-        self.clone()
-            .dependencies
-            .unwrap_or_default()
-            .into_iter()
-            .filter(predicate)
+        self.dependencies
+            .iter()
+            .flatten()
+            .filter(|d| predicate(d))
+            .cloned()
             .collect()
     }
 
@@ -161,11 +160,11 @@ impl File for PackagesManifest {
         RawManifest::load_from(path).await?.try_into()
     }
 
-    async fn save<P>(&self, path: P) -> miette::Result<()>
+    async fn save_to<P>(&self, path: P) -> miette::Result<()>
     where
         P: AsRef<Path> + Send + Sync,
     {
-        RawManifest::from(self.clone()).save(path).await
+        RawManifest::from(self.clone()).save_to(path).await
     }
 }
 

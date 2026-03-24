@@ -81,7 +81,7 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
 
     let manifest = builder.dependencies(Default::default()).build();
 
-    manifest.save(Path::new(".")).await?;
+    manifest.save_to(Path::new(".")).await?;
 
     PackageStore::open(std::env::current_dir().unwrap_or_else(|_| ".".into()))
         .await
@@ -117,7 +117,7 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
 
     let manifest = builder.dependencies(Default::default()).build();
 
-    manifest.save(package_dir.as_path()).await?;
+    manifest.save_to(package_dir.as_path()).await?;
 
     PackageStore::open(&package_dir)
         .await
@@ -216,7 +216,7 @@ pub async fn add(registry: RegistryUri, dependency: &str) -> miette::Result<()> 
         .push(Dependency::new(registry, repository, package, version));
 
     manifest
-        .save(Path::new("."))
+        .save_to(Path::new("."))
         .await
         .wrap_err_with(|| format!("failed to write `{MANIFEST_FILE}`"))?;
 
@@ -243,7 +243,7 @@ pub async fn remove(package: PackageName) -> miette::Result<()> {
 
     store.uninstall(&dependency.package).await.ok();
 
-    manifest.save(Path::new(".")).await
+    manifest.save_to(Path::new(".")).await
 }
 
 /// Packages the api and writes it to the filesystem

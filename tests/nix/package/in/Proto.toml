@@ -2,7 +2,7 @@ edition = "0.12"
 
 [package]
 type = "lib"
-name = "workspace-pkg1"
+name = "nix-test-pkg"
 version = "1.0.0"
 
 [dependencies]

@@ -2,7 +2,8 @@ edition = "0.12"
 
 [package]
 type = "lib"
-name = "workspace-pkg2"
+name = "pkg-a"
 version = "1.0.0"
 
 [dependencies]
+"pkg-b" = { path = "../pkg-b" }

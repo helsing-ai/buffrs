@@ -11,6 +11,7 @@ use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
 mod compat;
+mod nix;
 mod registry;
 mod resolver;
 

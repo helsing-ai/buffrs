@@ -1,8 +1,8 @@
 edition = "0.12"
 
 [package]
-type = "api"
-name = "some-test-api"
+type = "lib"
+name = "pkg-b"
 version = "1.0.0"
 
 [dependencies]
