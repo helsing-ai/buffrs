@@ -73,14 +73,14 @@ pub struct DependencyGraph {
     /// Map of package names to their metadata
     pub nodes: MetadataMap,
     /// Whether network access was allowed when building this graph
-    pub network: NetworkMode,
+    pub network_mode: NetworkMode,
 }
 
 impl DependencyGraph {
     /// Build a dependency graph from a manifest
     ///
     /// Downloads remote packages to discover their transitive dependencies.
-    /// If `network` is [`NetworkMode::Offline`], only cached packages are used
+    /// If `network_mode` is [`NetworkMode::Offline`], only cached packages are used
     /// and a [`DependencyError::Offline`] is returned when a download would be
     /// needed.
     pub async fn build(
@@ -88,10 +88,10 @@ impl DependencyGraph {
         base_path: &Path,
         credentials: &Credentials,
         lockfile: Option<Lockfile>,
-        network: NetworkMode,
+        network_mode: NetworkMode,
     ) -> miette::Result<Self> {
         let mut builder =
-            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, network);
+            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, network_mode);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -115,7 +115,7 @@ impl DependencyGraph {
 
         Ok(Self {
             nodes: builder.nodes,
-            network,
+            network_mode,
         })
     }
 
@@ -223,7 +223,7 @@ struct GraphBuilder<'a> {
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
-    network: NetworkMode,
+    network_mode: NetworkMode,
 }
 
 impl<'a> GraphBuilder<'a> {
@@ -231,7 +231,7 @@ impl<'a> GraphBuilder<'a> {
         base_path: PathBuf,
         credentials: &'a Credentials,
         lockfile: Option<Lockfile>,
-        network: NetworkMode,
+        network_mode: NetworkMode,
     ) -> Self {
         Self {
             nodes: HashMap::new(),
@@ -240,7 +240,7 @@ impl<'a> GraphBuilder<'a> {
             credentials,
             lockfile,
             registry_clients: HashMap::new(),
-            network,
+            network_mode,
         }
     }
 
@@ -377,7 +377,7 @@ impl<'a> GraphBuilder<'a> {
                     format!("expected only exact version requirements: {package_name}@{version}")
                 })?;
 
-            let mut cached = None;
+            let mut cached_package = None;
 
             // Try to resolve from lockfile + cache first
             if let Some(lockfile) = &self.lockfile
@@ -388,12 +388,12 @@ impl<'a> GraphBuilder<'a> {
                     let cache = Cache::open().await?;
                     if let Ok(Some(pkg)) = cache.get(file_req).await {
                         tracing::debug!("resolved {}@{} from local cache", package_name, version);
-                        cached = Some(pkg);
+                        cached_package = Some(pkg);
                     }
                 }
             }
 
-            match (cached, self.network) {
+            match (cached_package, self.network_mode) {
                 (Some(pkg), _) => pkg,
                 (None, NetworkMode::Online) => {
                     tracing::debug!("downloading {}@{} from registry", package_name, version);

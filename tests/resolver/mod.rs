@@ -830,7 +830,7 @@ fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGr
 
     DependencyGraph {
         nodes: graph_nodes,
-        network: NetworkMode::Online,
+        network_mode: NetworkMode::Online,
     }
 }
 
@@ -1120,7 +1120,7 @@ fn test_topo_sort_detects_cycle() {
 
     let graph = DependencyGraph {
         nodes,
-        network: NetworkMode::Online,
+        network_mode: NetworkMode::Online,
     };
 
     let result = graph.topological_sort();
@@ -1140,7 +1140,7 @@ fn test_topo_sort_detects_cycle() {
 fn test_topo_sort_empty_graph() {
     let graph = DependencyGraph {
         nodes: HashMap::new(),
-        network: NetworkMode::Online,
+        network_mode: NetworkMode::Online,
     };
 
     let sorted = graph.topological_sort().expect("sort should succeed");

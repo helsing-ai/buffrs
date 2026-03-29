@@ -56,7 +56,7 @@ pub struct InstallationContext {
     store: PackageStore,
     lock: Lockfile,
     preserve_mtime: bool,
-    network: NetworkMode,
+    network_mode: NetworkMode,
 }
 
 impl InstallationContext {
@@ -64,7 +64,7 @@ impl InstallationContext {
     pub async fn new(
         cwd: impl AsRef<Path>,
         preserve_mtime: bool,
-        network: NetworkMode,
+        network_mode: NetworkMode,
     ) -> miette::Result<Self> {
         let cwd = cwd.as_ref().to_path_buf();
 
@@ -83,7 +83,7 @@ impl InstallationContext {
             store,
             lock,
             preserve_mtime,
-            network,
+            network_mode,
         })
     }
 
@@ -99,10 +99,10 @@ impl InstallationContext {
     }
 
     /// Creates a new installation context rooted at the current working directory
-    pub async fn cwd(preserve_mtime: bool, network: NetworkMode) -> miette::Result<Self> {
+    pub async fn cwd(preserve_mtime: bool, network_mode: NetworkMode) -> miette::Result<Self> {
         let cwd = std::env::current_dir().into_diagnostic()?;
 
-        Self::new(cwd, preserve_mtime, network).await
+        Self::new(cwd, preserve_mtime, network_mode).await
     }
 }
 
@@ -135,7 +135,7 @@ impl Install for PackagesManifest {
             &ctx.cwd,
             &ctx.credentials,
             Some(ctx.lock.clone()),
-            ctx.network,
+            ctx.network_mode,
         )
         .await?;
 
@@ -318,7 +318,7 @@ mod utils {
 
     /// Downloads a package from the registry and caches it.
     ///
-    /// Returns an error if `ctx.network` is [`NetworkMode::Offline`].
+    /// Returns an error if `ctx.network_mode` is [`NetworkMode::Offline`].
     pub async fn download(
         package_name: &PackageName,
         registry: &RegistryUri,
@@ -326,7 +326,7 @@ mod utils {
         version: &VersionReq,
         ctx: &InstallationContext,
     ) -> miette::Result<Package> {
-        if ctx.network == NetworkMode::Offline {
+        if ctx.network_mode == NetworkMode::Offline {
             bail!(DependencyError::Offline {
                 name: package_name.clone(),
                 version: version.clone(),
@@ -441,7 +441,7 @@ mod utils {
                 store: PackageStore::open(tmp.path()).await.unwrap(),
                 lock: Lockfile::Package(lockfile),
                 preserve_mtime: false,
-                network: NetworkMode::Online,
+                network_mode: NetworkMode::Online,
             };
 
             let pkg_name = PackageName::unchecked("test-pkg");
@@ -456,6 +456,74 @@ mod utils {
             assert!(
                 err_msg.contains("registry mismatch"),
                 "expected 'registry mismatch' in error, got: {}",
+                err_msg
+            );
+        }
+
+        #[tokio::test]
+        async fn test_online_mode_allows_download() {
+            let tmp = TempDir::new().unwrap();
+
+            // Create a context with Online mode and no lockfile
+            let ctx = InstallationContext {
+                cwd: tmp.path().to_path_buf(),
+                credentials: Credentials {
+                    registry_tokens: HashMap::new(),
+                },
+                cache: Cache::open().await.unwrap(),
+                store: PackageStore::open(tmp.path()).await.unwrap(),
+                lock: Lockfile::Package(PackageLockfile::default()),
+                preserve_mtime: false,
+                network_mode: NetworkMode::Online,
+            };
+
+            let pkg_name = PackageName::unchecked("test-pkg");
+            let registry = RegistryUri::from_str("https://registry.example.com").unwrap();
+            let version = VersionReq::parse("=1.0.0").unwrap();
+
+            // Attempt download in online mode (will fail due to no actual registry, but should not fail with offline error)
+            let result = download(&pkg_name, &registry, "repo", &version, &ctx).await;
+
+            // Should fail with connection/registry error, not offline error
+            assert!(result.is_err(), "expected error due to no actual registry");
+            let err_msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                !err_msg.contains("offline"),
+                "should not fail with offline error in online mode, got: {}",
+                err_msg
+            );
+        }
+
+        #[tokio::test]
+        async fn test_offline_mode_prevents_download() {
+            let tmp = TempDir::new().unwrap();
+
+            // Create a context with Offline mode
+            let ctx = InstallationContext {
+                cwd: tmp.path().to_path_buf(),
+                credentials: Credentials {
+                    registry_tokens: HashMap::new(),
+                },
+                cache: Cache::open().await.unwrap(),
+                store: PackageStore::open(tmp.path()).await.unwrap(),
+                lock: Lockfile::Package(PackageLockfile::default()),
+                preserve_mtime: false,
+                network_mode: NetworkMode::Offline,
+            };
+
+            let pkg_name = PackageName::unchecked("test-pkg");
+            let registry = RegistryUri::from_str("https://registry.example.com").unwrap();
+            let version = VersionReq::parse("=1.0.0").unwrap();
+
+            // Attempt download in offline mode
+            let result = download(&pkg_name, &registry, "repo", &version, &ctx).await;
+
+            // Should fail with offline error
+            assert!(result.is_err(), "expected error in offline mode");
+            let err_msg = format!("{:?}", result.unwrap_err());
+            assert!(
+                err_msg.contains("offline"),
+                "expected 'offline' in error message, got: {}",
                 err_msg
             );
         }

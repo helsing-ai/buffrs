@@ -280,12 +280,12 @@ async fn main() -> miette::Result<()> {
             preserve_local_mtime,
             offline,
         } => {
-            let network = if offline {
+            let network_mode = if offline {
                 NetworkMode::Offline
             } else {
                 NetworkMode::Online
             };
-            command::install(preserve_local_mtime, network)
+            command::install(preserve_local_mtime, network_mode)
                 .await
                 .wrap_err(miette!("failed to install dependencies for `{package}`"))
         }

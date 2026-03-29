@@ -313,11 +313,11 @@ pub async fn publish(
 /// # Arguments
 ///
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
-/// * `network` - Controls whether network requests are allowed
-pub async fn install(preserve_mtime: bool, network: NetworkMode) -> miette::Result<()> {
+/// * `network_mode` - Controls whether network requests are allowed
+pub async fn install(preserve_mtime: bool, network_mode: NetworkMode) -> miette::Result<()> {
     let manifest = Manifest::load().await?;
 
-    let ctx = InstallationContext::cwd(preserve_mtime, network).await?;
+    let ctx = InstallationContext::cwd(preserve_mtime, network_mode).await?;
 
     manifest.install(&ctx).await?;
 
