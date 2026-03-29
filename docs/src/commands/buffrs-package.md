@@ -11,6 +11,7 @@ Generates a release tarball for the package in the current directory.
 * `--dry-run`: prevents buffrs from actually writing the tarball to the filesystem
 * `--output-directory`: allows you to specify a directory to output the package
 * `--set-version`: allows you to override the version set in the manifest
+* `--preserve-mtime`: preserve access time information when creating a package (defaults to `false`)
 
 
 ### Description

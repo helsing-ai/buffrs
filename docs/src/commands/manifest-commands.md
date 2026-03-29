@@ -10,3 +10,5 @@ keeping the lockfile in sync.
 
 * [buffrs add](buffrs-add.md)
 * [buffrs remove](buffrs-remove.md)
+* [buffrs lock](buffrs-lock.md)
+    * [buffrs lock print-files](buffrs-lock-print-files.md)
