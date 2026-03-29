@@ -19,7 +19,8 @@ use semver::Version;
 use buffrs::{
     command,
     logs::BuffrsEventFormatter,
-    manifest::{BuffrsManifest, MANIFEST_FILE},
+    manifest::{MANIFEST_FILE, Manifest},
+    operations::install::NetworkMode,
     package::{PackageName, PackageStore, PackageType},
     registry::RegistryUri,
 };
@@ -135,9 +136,16 @@ enum Command {
     /// Installs dependencies
     Install {
         /// Indicate whether access time information is preserved when installing a local.
-        /// Default is 'true'
         #[clap(long)]
-        preserve_local_mtime: Option<bool>,
+        #[arg(default_value_t = true)]
+        preserve_local_mtime: bool,
+        /// Do not make any network requests.
+        ///
+        /// All packages must be available in the local cache (or via BUFFRS_CACHE).
+        /// Fails with a human-readable error if a package would need to be downloaded.
+        #[clap(long)]
+        #[arg(default_value_t = false)]
+        offline: bool,
     },
     /// Uninstalls dependencies
     Uninstall,
@@ -197,9 +205,7 @@ async fn main() -> miette::Result<()> {
         .try_init()
         .unwrap();
 
-    let package = BuffrsManifest::current_dir_display_name()
-        .await
-        .unwrap_or("unknown package".into());
+    let package = Manifest::name().await.unwrap_or("unknown package".into());
 
     match cli.command {
         Command::Init { lib, api, package } => {
@@ -272,9 +278,17 @@ async fn main() -> miette::Result<()> {
         )),
         Command::Install {
             preserve_local_mtime,
-        } => command::install(preserve_local_mtime.unwrap_or(true))
-            .await
-            .wrap_err(miette!("failed to install dependencies for `{package}`")),
+            offline,
+        } => {
+            let network_mode = if offline {
+                NetworkMode::Offline
+            } else {
+                NetworkMode::Online
+            };
+            command::install(preserve_local_mtime, network_mode)
+                .await
+                .wrap_err(miette!("failed to install dependencies for `{package}`"))
+        }
         Command::Uninstall => command::uninstall()
             .await
             .wrap_err(miette!("failed to uninstall dependencies for `{package}`")),

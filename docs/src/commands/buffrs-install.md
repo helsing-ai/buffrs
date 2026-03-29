@@ -4,7 +4,7 @@ Downloads and installs dependencies specified in the manifest.
 
 ### Synopsis
 
-`buffrs install`
+`buffrs install [--offline] [--preserve-local-mtime]`
 
 ### Description
 
@@ -54,3 +54,21 @@ automatically selected and locked.
 
 Transitive dependencies are also managed by the current project's lockfile. Even
 if dependencies provide their own lockfile, those won't be used.
+
+### Options
+
+#### `--offline`
+
+Do not make any network requests. All packages must already be available in the
+local cache. If a package would need to be downloaded, the command fails with a
+human-readable error suggesting how to populate the cache.
+
+This is useful for reproducible builds in sandboxed environments (e.g. Nix) where
+network access is not available. In such setups, the cache can be pre-populated
+using the `BUFFRS_CACHE` environment variable (see
+[Environment Variables](../reference/environment-variables.md)).
+
+#### `--preserve-local-mtime`
+
+Preserve access time information when installing a local dependency. Defaults to
+`true`.

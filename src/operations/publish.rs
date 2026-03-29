@@ -13,9 +13,10 @@ use semver::{Version, VersionReq};
 use crate::{
     credentials::Credentials,
     manifest::{
-        BuffrsManifest, Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE,
+        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
+    operations::install::NetworkMode,
     package::PackageStore,
     registry::{Artifactory, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
@@ -130,7 +131,7 @@ impl Publisher {
     /// Dispatches to either package or workspace publishing based on manifest type
     pub async fn publish(
         &mut self,
-        manifest: &BuffrsManifest,
+        manifest: &Manifest,
         package_path: &Path,
         version: Option<Version>,
         dry_run: bool,
@@ -148,7 +149,7 @@ impl Publisher {
         }
 
         match manifest {
-            BuffrsManifest::Package(packages_manifest) => {
+            Manifest::Package(packages_manifest) => {
                 tracing::debug!("manifest type: Package");
                 if let Some(ref pkg) = packages_manifest.package {
                     tracing::debug!("  package name: {}", pkg.name);
@@ -157,7 +158,7 @@ impl Publisher {
                 self.publish_package_from_manifest(packages_manifest, package_path, version)
                     .await
             }
-            BuffrsManifest::Workspace(workspace_manifest) => {
+            Manifest::Workspace(workspace_manifest) => {
                 tracing::debug!("manifest type: Workspace");
                 self.publish_workspace_from_manifest(workspace_manifest, version)
                     .await
@@ -196,8 +197,14 @@ impl Publisher {
         let credentials = Credentials::load().await?;
         tracing::debug!("credentials loaded for dependency graph building");
 
-        let graph =
-            DependencyGraph::build(&root_manifest, package_path, &credentials, None).await?;
+        let graph = DependencyGraph::build(
+            &root_manifest,
+            package_path,
+            &credentials,
+            None,
+            NetworkMode::Online,
+        )
+        .await?;
         tracing::debug!("dependency graph built successfully");
 
         let ordered_dependencies = graph.ordered_dependencies()?;
@@ -288,7 +295,7 @@ impl Publisher {
             .wrap_err("current dir could not be retrieved")?;
         tracing::debug!("  workspace root path: {}", root_path.display());
 
-        let packages = manifest.workspace.resolve_members(root_path)?;
+        let packages = manifest.workspace.members(root_path)?;
         tracing::debug!("  resolved {} workspace members", packages.len());
 
         tracing::info!(
@@ -321,7 +328,7 @@ impl Publisher {
 
             tracing::debug!("IO: reading manifest from {}", manifest_file.display());
 
-            let member_manifest = BuffrsManifest::require_package_manifest(&manifest_file)
+            let member_manifest = Manifest::require_package_manifest(&manifest_file)
                 .await?
                 .with_version(version.clone());
 
@@ -338,8 +345,14 @@ impl Publisher {
                 "building dependency graph for workspace member: {}",
                 member_path.display()
             );
-            let graph =
-                DependencyGraph::build(&member_manifest, member_path, &credentials, None).await?;
+            let graph = DependencyGraph::build(
+                &member_manifest,
+                member_path,
+                &credentials,
+                None,
+                NetworkMode::Online,
+            )
+            .await?;
             tracing::debug!("dependency graph built successfully");
 
             let dependencies = graph.ordered_dependencies()?;
@@ -390,11 +403,10 @@ impl Publisher {
 
                     // Apply version override to local dependencies (workspace siblings)
                     let manifest_override = if version.is_some() {
-                        let dep_manifest = BuffrsManifest::require_package_manifest(
-                            &absolute_path.join(MANIFEST_FILE),
-                        )
-                        .await?
-                        .with_version(version.clone());
+                        let dep_manifest =
+                            Manifest::require_package_manifest(&absolute_path.join(MANIFEST_FILE))
+                                .await?
+                                .with_version(version.clone());
 
                         Some(dep_manifest)
                     } else {
@@ -488,7 +500,7 @@ impl Publisher {
             manifest_override.clone()
         } else {
             tracing::debug!("IO: reading manifest from {}", manifest_path.display());
-            BuffrsManifest::require_package_manifest(&manifest_path)
+            Manifest::require_package_manifest(&manifest_path)
                 .await
                 .wrap_err_with(|| {
                     format!("failed to read manifest file at {}", package_path.display())
