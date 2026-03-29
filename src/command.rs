@@ -32,7 +32,7 @@ use crate::{
         MANIFEST_FILE, Manifest,
         package::{Dependency, PackageManifest, PackagesManifest},
     },
-    operations::install::{Install, InstallationContext},
+    operations::install::{Install, InstallationContext, NetworkMode},
     operations::publish::Publisher,
     package::{PackageName, PackageStore, PackageType},
     registry::{Artifactory, RegistryUri},
@@ -313,10 +313,11 @@ pub async fn publish(
 /// # Arguments
 ///
 /// * `preserve_mtime` - If true, local dependencies preserve their modification time
-pub async fn install(preserve_mtime: bool) -> miette::Result<()> {
+/// * `network_mode` - Controls whether network requests are allowed
+pub async fn install(preserve_mtime: bool, network_mode: NetworkMode) -> miette::Result<()> {
     let manifest = Manifest::load().await?;
 
-    let ctx = InstallationContext::cwd(preserve_mtime).await?;
+    let ctx = InstallationContext::cwd(preserve_mtime, network_mode).await?;
 
     manifest.install(&ctx).await?;
 

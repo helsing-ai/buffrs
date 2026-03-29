@@ -18,6 +18,7 @@ use crate::{
         Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
         PackagesManifest,
     },
+    operations::install::NetworkMode,
     package::{PackageName, PackageType},
     registry::{Artifactory, RegistryUri},
 };
@@ -71,19 +72,26 @@ pub struct DependencyDetails {
 pub struct DependencyGraph {
     /// Map of package names to their metadata
     pub nodes: MetadataMap,
+    /// Whether network access was allowed when building this graph
+    pub network_mode: NetworkMode,
 }
 
 impl DependencyGraph {
     /// Build a dependency graph from a manifest
     ///
-    /// Downloads remote packages to discover their transitive dependencies
+    /// Downloads remote packages to discover their transitive dependencies.
+    /// If `network_mode` is [`NetworkMode::Offline`], only cached packages are used
+    /// and a [`DependencyError::Offline`] is returned when a download would be
+    /// needed.
     pub async fn build(
         manifest: &PackagesManifest,
         base_path: &Path,
         credentials: &Credentials,
         lockfile: Option<Lockfile>,
+        network_mode: NetworkMode,
     ) -> miette::Result<Self> {
-        let mut builder = GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile);
+        let mut builder =
+            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, network_mode);
 
         // Get the parent package type from the manifest
         let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
@@ -107,6 +115,7 @@ impl DependencyGraph {
 
         Ok(Self {
             nodes: builder.nodes,
+            network_mode,
         })
     }
 
@@ -214,10 +223,16 @@ struct GraphBuilder<'a> {
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
+    network_mode: NetworkMode,
 }
 
 impl<'a> GraphBuilder<'a> {
-    fn new(base_path: PathBuf, credentials: &'a Credentials, lockfile: Option<Lockfile>) -> Self {
+    fn new(
+        base_path: PathBuf,
+        credentials: &'a Credentials,
+        lockfile: Option<Lockfile>,
+        network_mode: NetworkMode,
+    ) -> Self {
         Self {
             nodes: HashMap::new(),
             base_path,
@@ -225,6 +240,7 @@ impl<'a> GraphBuilder<'a> {
             credentials,
             lockfile,
             registry_clients: HashMap::new(),
+            network_mode,
         }
     }
 
@@ -377,9 +393,9 @@ impl<'a> GraphBuilder<'a> {
                 }
             }
 
-            match cached_package {
-                Some(pkg) => pkg,
-                None => {
+            match (cached_package, self.network_mode) {
+                (Some(pkg), _) => pkg,
+                (None, NetworkMode::Online) => {
                     tracing::debug!("downloading {}@{} from registry", package_name, version);
 
                     // Reuse or create artifactory client
@@ -396,6 +412,12 @@ impl<'a> GraphBuilder<'a> {
                     };
 
                     artifactory.download(dependency.clone()).await?
+                }
+                (None, NetworkMode::Offline) => {
+                    bail!(DependencyError::Offline {
+                        name: package_name.clone(),
+                        version: remote_manifest.version.clone(),
+                    });
                 }
             }
         };
@@ -540,6 +562,17 @@ pub enum DependencyError {
         /// Version requirement
         version: VersionReq,
     },
-}
 
-// tests moves to ./tests/resolver_v2_tests.rs
+    /// A network request was needed but --offline mode is active
+    #[error("cannot fetch {name}@{version} in offline mode")]
+    #[diagnostic(help(
+        "run `buffrs install` without --offline to cache {name}@{version},\n
+         or set BUFFRS_CACHE to a pre-populated cache directory"
+    ))]
+    Offline {
+        /// Package name
+        name: PackageName,
+        /// Version requirement
+        version: VersionReq,
+    },
+}
