@@ -213,10 +213,10 @@ pub mod utils {
             let rel = entry.path().strip_prefix(src).unwrap();
             let target = dst.join(rel);
             if entry.file_type().is_dir() {
-                fs::create_dir_all(&target).ok();
+                fs::create_dir_all(&target).unwrap();
             } else {
                 if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent).ok();
+                    fs::create_dir_all(parent).unwrap();
                 }
                 fs::copy(entry.path(), &target).unwrap();
             }
