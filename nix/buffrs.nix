@@ -29,9 +29,7 @@ in {
     buffrs = buffrs;
 
     # Audit dependencies
-    buffrs-audit = craneLib.cargoAudit {
-      inherit src advisory-db;
-    };
+    buffrs-audit = craneLib.cargoAudit { inherit src advisory-db; };
 
     # Audit licenses
     buffrs-deny = craneLib.cargoDeny { inherit src; };
