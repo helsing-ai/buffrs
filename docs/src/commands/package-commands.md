@@ -7,7 +7,9 @@ publishable artifact from the current package state.
 ## Index
 
 * [buffrs init](buffrs-init.md)
+* [buffrs new](buffrs-new.md)
 * [buffrs lint](buffrs-lint.md)
 * [buffrs package](buffrs-package.md)
 * [buffrs install](buffrs-install.md)
 * [buffrs uninstall](buffrs-uninstall.md)
+* [buffrs list](buffrs-list.md)

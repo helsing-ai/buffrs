@@ -13,6 +13,7 @@ uncommitted changes.
 * `--dry-run`: causes a release bundle to be generated but skips uploading to
   the registry.
 * `--set-version`: allows you to override the version set in the manifest
+* `--preserve-mtime`: preserve access time information when creating a package (defaults to `true`)
 
 ### Description
 
