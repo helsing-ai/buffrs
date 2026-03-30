@@ -14,8 +14,8 @@
 
 use std::{fmt, str::FromStr};
 
-use serde::{Deserialize, Serialize, de::Visitor};
 use ring::digest;
+use serde::{Deserialize, Serialize, de::Visitor};
 use strum::{Display, EnumString};
 use thiserror::Error;
 
