@@ -198,7 +198,7 @@ pub mod utils {
         WalkDir::new(path.as_ref())
             .follow_links(true)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .map(|e| e.expect("walkdir error in list_files"))
             .filter(|e| e.file_type().is_file())
             .map(|e| e.into_path())
             .collect()
