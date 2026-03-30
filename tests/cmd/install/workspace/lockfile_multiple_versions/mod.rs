@@ -123,19 +123,7 @@ fn fixture() {
         let temp_root = vfs_root.parent().unwrap();
         let temp_expected = temp_root.join("expected");
 
-        fs_extra::dir::copy(
-            &out_dir,
-            &temp_expected,
-            &fs_extra::dir::CopyOptions {
-                overwrite: true,
-                skip_exist: false,
-                buffer_size: 8192,
-                copy_inside: false,
-                content_only: true,
-                depth: 64,
-            },
-        )
-        .unwrap();
+        crate::utils::copy_dir_contents(&out_dir, &temp_expected);
 
         // Replace REGISTRY_URL in expected files
         for file in ["pkg1/Proto.toml", "pkg2/Proto.toml", "Proto.lock"] {
