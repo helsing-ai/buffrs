@@ -31,8 +31,6 @@ in {
     # Audit dependencies
     buffrs-audit = craneLib.cargoAudit {
       inherit src advisory-db;
-      # ignoring as no workaround is currently available
-      cargoAuditExtraArgs = "--ignore RUSTSEC-2023-0071";
     };
 
     # Audit licenses

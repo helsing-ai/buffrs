@@ -53,19 +53,7 @@ fn fixture() {
         std::fs::copy(cwd.join("Proto.toml"), nix_path.join("Proto.toml")).unwrap();
         std::fs::copy(cwd.join("Proto.lock"), nix_path.join("Proto.lock")).unwrap();
 
-        fs_extra::dir::copy(
-            crate::parent_directory!().join("in/proto"),
-            nix_path,
-            &fs_extra::dir::CopyOptions {
-                overwrite: true,
-                skip_exist: false,
-                buffer_size: 8192,
-                copy_inside: false,
-                content_only: false,
-                depth: 64,
-            },
-        )
-        .unwrap();
+        crate::utils::copy_dir(crate::parent_directory!().join("in/proto"), nix_path);
 
         // 5. Build + check via nix
         let mut flake = super::Flake::builder()

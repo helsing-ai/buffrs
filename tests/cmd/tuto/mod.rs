@@ -134,18 +134,18 @@ fn fixture() {
             )
             .unwrap();
 
-            let path = std::env::current_dir()
-                .unwrap()
-                .join(crate::parent_directory!());
-            let git_repo = gix::discover(path).expect("unable to find git root");
-            let git_root = git_repo
-                .path()
-                .parent()
-                .expect("failed to move from path to .git to its parent")
+            let git_root = {
+                let mut dir = std::env::current_dir()
+                    .unwrap()
+                    .join(crate::parent_directory!());
+                while !dir.join(".git").exists() {
+                    assert!(dir.pop(), "unable to find git root");
+                }
+                dir
+            };
+            let git_root = git_root
                 .to_str()
-                .expect("failed to convert path git root to string");
-
-            dbg!(git_root);
+                .expect("failed to convert git root to string");
 
             // cargo add buffrs --no-default-features
             assert!(

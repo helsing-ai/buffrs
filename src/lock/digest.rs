@@ -15,7 +15,7 @@
 use std::{fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize, de::Visitor};
-use sha2::Digest as _;
+use ring::digest;
 use strum::{Display, EnumString};
 use thiserror::Error;
 
@@ -35,7 +35,7 @@ impl DigestAlgorithm {
     /// Create a digest of some data using this algorithm.
     pub fn digest(&self, data: &[u8]) -> Digest {
         let digest = match self {
-            DigestAlgorithm::SHA256 => sha2::Sha256::new().chain_update(data).finalize().to_vec(),
+            DigestAlgorithm::SHA256 => digest::digest(&digest::SHA256, data).as_ref().to_vec(),
         };
 
         Digest {

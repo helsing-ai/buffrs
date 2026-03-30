@@ -115,19 +115,7 @@ fn fixture() {
 
         for member in ["pkg-a", "pkg-b"] {
             let fixture_member = crate::parent_directory!().join("in").join(member);
-            fs_extra::dir::copy(
-                &fixture_member,
-                nix_path,
-                &fs_extra::dir::CopyOptions {
-                    overwrite: true,
-                    skip_exist: false,
-                    buffer_size: 8192,
-                    copy_inside: false,
-                    content_only: false,
-                    depth: 64,
-                },
-            )
-            .unwrap();
+            crate::utils::copy_dir(&fixture_member, nix_path);
 
             // Overwrite Proto.toml with the version that has dependencies added
             std::fs::copy(

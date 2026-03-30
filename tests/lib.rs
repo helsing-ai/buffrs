@@ -1,12 +1,9 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use assert_fs::TempDir;
 use buffrs::package::Package;
 use bytes::Bytes;
-use fs_extra::dir::{CopyOptions, get_dir_content};
 use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
@@ -46,8 +43,8 @@ impl VirtualFileSystem {
         let tmp_dir = TempDir::new().unwrap();
         let root = tmp_dir.join(Self::ROOT_NAME);
 
-        fs_extra::dir::create(&root, false).ok();
-        fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
+        fs::create_dir(&root).ok();
+        fs::create_dir(root.join(Self::VIRTUAL_HOME)).ok();
 
         Self {
             tmp_dir,
@@ -60,23 +57,9 @@ impl VirtualFileSystem {
         let tmp_dir = TempDir::new().unwrap();
         let root = tmp_dir.join(Self::ROOT_NAME);
 
-        fs_extra::dir::create(&root, false).ok();
-
-        fs_extra::dir::copy(
-            template.as_ref(),
-            &root,
-            &CopyOptions {
-                overwrite: true,
-                skip_exist: false,
-                buffer_size: 8192,
-                copy_inside: true,
-                content_only: true,
-                depth: 64,
-            },
-        )
-        .unwrap();
-
-        fs_extra::dir::create(root.join(Self::VIRTUAL_HOME), false).ok();
+        fs::create_dir(&root).ok();
+        utils::copy_dir_contents(template.as_ref(), &root);
+        fs::create_dir(root.join(Self::VIRTUAL_HOME)).ok();
 
         Self {
             tmp_dir,
@@ -97,9 +80,6 @@ impl VirtualFileSystem {
 
     /// Verify the virtual file system to be equal to a local directory
     pub fn verify_against(&self, expected: impl AsRef<Path>) {
-        let vfs = get_dir_content(self.root()).unwrap();
-        let exp = get_dir_content(expected.as_ref()).unwrap();
-
         let files = {
             let filter_vhome = |f: &PathBuf| {
                 if self.virtual_home {
@@ -111,10 +91,8 @@ impl VirtualFileSystem {
 
             let filter_gitkeep = |f: &PathBuf| !f.ends_with(".gitkeep");
 
-            let mut actual_files: Vec<PathBuf> = vfs
-                .files
-                .iter()
-                .map(Path::new)
+            let mut actual_files: Vec<PathBuf> = utils::list_files(self.root())
+                .into_iter()
                 .map(|f| f.strip_prefix(self.root()).unwrap().to_path_buf())
                 .filter(filter_vhome)
                 .filter(filter_gitkeep)
@@ -122,10 +100,8 @@ impl VirtualFileSystem {
 
             actual_files.sort();
 
-            let mut expected_files: Vec<PathBuf> = exp
-                .files
-                .iter()
-                .map(Path::new)
+            let mut expected_files: Vec<PathBuf> = utils::list_files(expected.as_ref())
+                .into_iter()
                 .map(|f| f.strip_prefix(expected.as_ref()).unwrap().to_path_buf())
                 .filter(filter_vhome)
                 .filter(filter_gitkeep)
@@ -186,7 +162,7 @@ impl VirtualFileSystem {
 
 impl Drop for VirtualFileSystem {
     fn drop(&mut self) {
-        fs_extra::dir::remove(self.root()).expect("failed to cleanup vfs");
+        fs::remove_dir_all(self.root()).expect("failed to cleanup vfs");
     }
 }
 
@@ -207,5 +183,50 @@ impl FileType {
             "proto" | "toml" | "lock" => Self::Text,
             other => panic!("unrecognized extension type: {other}"),
         }
+    }
+}
+
+// File System Utilities
+pub mod utils {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use walkdir::WalkDir;
+
+    /// Recursively list all files under `path`, returning their full paths.
+    pub fn list_files(path: impl AsRef<Path>) -> Vec<PathBuf> {
+        WalkDir::new(path.as_ref())
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.into_path())
+            .collect()
+    }
+
+    /// Copy the contents of `src` into `dst` (without creating a `src`-named subdirectory).
+    pub fn copy_dir_contents(src: impl AsRef<Path>, dst: impl AsRef<Path>) {
+        let src = src.as_ref();
+        let dst = dst.as_ref();
+        for entry in WalkDir::new(src).follow_links(true) {
+            let entry = entry.unwrap();
+            let rel = entry.path().strip_prefix(src).unwrap();
+            let target = dst.join(rel);
+            if entry.file_type().is_dir() {
+                fs::create_dir_all(&target).ok();
+            } else {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent).ok();
+                }
+                fs::copy(entry.path(), &target).unwrap();
+            }
+        }
+    }
+
+    /// Copy `src` as a subdirectory of `dst` (i.e. creates `dst/<src_name>/...`).
+    pub fn copy_dir(src: impl AsRef<Path>, dst: impl AsRef<Path>) {
+        let src = src.as_ref();
+        let target = dst.as_ref().join(src.file_name().unwrap());
+        copy_dir_contents(src, &target);
     }
 }
