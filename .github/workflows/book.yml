@@ -30,7 +30,7 @@ jobs:
       - name: Setup mdbook
         uses: peaceiris/actions-mdbook@v2
         with:
-          mdbook-version: 'latest'
+          mdbook-version: '0.4.40'
       - run: cd docs && mdbook build
       - name: Upload artifacts
         uses: actions/upload-pages-artifact@v4
