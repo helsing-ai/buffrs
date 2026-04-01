@@ -194,6 +194,7 @@ mod deserializer {
 
                     match Edition::from(edition.as_str()) {
                         Edition::Canary
+                        | Edition::Canary12
                         | Edition::Canary11
                         | Edition::Canary10
                         | Edition::Canary09

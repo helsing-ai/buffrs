@@ -50,6 +50,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.12.x
+    Canary12,
     /// The canary edition used by buffrs 0.11.x
     Canary11,
     /// The canary edition used by buffrs 0.10.x
@@ -78,6 +80,7 @@ impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
             CANARY_EDITION => Self::Canary,
+            "0.12" => Self::Canary12,
             "0.11" => Self::Canary11,
             "0.10" => Self::Canary10,
             "0.9" => Self::Canary09,
@@ -92,6 +95,7 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
+            Edition::Canary12 => "0.12",
             Edition::Canary11 => "0.11",
             Edition::Canary10 => "0.10",
             Edition::Canary09 => "0.9",
@@ -363,6 +367,7 @@ mod tests {
 
         #[test]
         fn edition_from_str_legacy_versions() {
+            assert_eq!(Edition::from("0.12"), Edition::Canary12);
             assert_eq!(Edition::from("0.11"), Edition::Canary11);
             assert_eq!(Edition::from("0.10"), Edition::Canary10);
             assert_eq!(Edition::from("0.9"), Edition::Canary09);
@@ -380,6 +385,7 @@ mod tests {
         #[test]
         fn edition_to_str() {
             assert_eq!(<&str>::from(Edition::Canary), CANARY_EDITION);
+            assert_eq!(<&str>::from(Edition::Canary12), "0.12");
             assert_eq!(<&str>::from(Edition::Canary11), "0.11");
             assert_eq!(<&str>::from(Edition::Canary10), "0.10");
             assert_eq!(<&str>::from(Edition::Canary09), "0.9");
