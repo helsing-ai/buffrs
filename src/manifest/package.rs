@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn packages_manifest_from_str_valid() {
         let toml = r#"
-                edition = "0.12"
+                edition = "0.13"
 
                 [package]
                 type = "lib"

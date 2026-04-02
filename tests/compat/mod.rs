@@ -258,3 +258,8 @@ mod v0_12_2 {
     super::ensure::parse!(0, 12, 2);
     super::ensure::install!(0, 12, 2);
 }
+
+mod v0_13_0 {
+    super::ensure::parse!(0, 13, 0);
+    super::ensure::install!(0, 13, 0);
+}
