@@ -337,6 +337,16 @@ mod utils {
         let artifactory = Artifactory::new(registry.clone(), &ctx.credentials)
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
+        let resolved_version = artifactory
+            .resolve_version(repository.to_string(), package_name.clone(), version)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "could not resolve {}@{} from registry {}",
+                    package_name, version, registry
+                )
+            })?;
+
         let dependency = Dependency {
             package: package_name.clone(),
             manifest: DependencyManifest::Remote(RemoteDependencyManifest {
@@ -346,7 +356,7 @@ mod utils {
             }),
         };
 
-        let downloaded_package = artifactory.download(dependency).await?;
+        let downloaded_package = artifactory.download(dependency, &resolved_version).await?;
 
         // 2. Cache the downloaded package for future installs
         let cache_key = CacheEntry::from(&downloaded_package);

@@ -21,7 +21,7 @@ use crate::{
 };
 use miette::{Context, IntoDiagnostic, ensure, miette};
 use reqwest::{Body, Method, Response};
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::Deserialize;
 use url::Url;
 
@@ -82,18 +82,17 @@ impl Artifactory {
             .map(|_| ())
     }
 
-    /// Retrieves the latest version of a package by querying artifactory. Returns an error if no artifact could be found
-    pub async fn get_latest_version(
+    /// Lists all available versions of a package from artifactory, sorted descending
+    pub async fn list_versions(
         &self,
         repository: String,
         name: PackageName,
-    ) -> miette::Result<Version> {
-        tracing::debug!("Artifactory::get_latest_version() called");
+    ) -> miette::Result<Vec<Version>> {
+        tracing::debug!("Artifactory::list_versions() called");
         tracing::debug!("  package name: {}", name);
         tracing::debug!("  repository: {}", repository);
         tracing::debug!("  registry: {}", self.registry);
 
-        // First retrieve all packages matching the given name
         let search_query_url: Url = {
             let mut url = self.registry.clone();
             url.set_path("artifactory/api/search/artifact");
@@ -103,19 +102,16 @@ impl Artifactory {
 
         tracing::debug!("search query URL: {}", search_query_url);
 
-        tracing::debug!("sending artifact search request to artifactory");
         let response = self
             .new_request(Method::GET, search_query_url)
             .send()
             .await?;
         let response: reqwest::Response = response.0;
-        tracing::debug!("received response from artifactory");
 
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
             .ok_or_else(|| miette!("missing content-type header"))?;
-        tracing::debug!("response content-type: {:?}", content_type);
 
         ensure!(
             content_type
@@ -125,13 +121,10 @@ impl Artifactory {
             "server response has incorrect mime type: {content_type:?}"
         );
 
-        tracing::debug!("parsing response body as text");
         let response_str = response.text().await.into_diagnostic().wrap_err(miette!(
             "unexpected error: unable to retrieve response payload"
         ))?;
-        tracing::debug!("response body length: {} bytes", response_str.len());
 
-        tracing::debug!("deserializing response to ArtifactSearchResponse");
         let parsed_response = serde_json::from_str::<ArtifactSearchResponse>(&response_str)
             .into_diagnostic()
             .wrap_err(miette!(
@@ -139,14 +132,11 @@ impl Artifactory {
             ))?;
 
         tracing::debug!(
-            "found {} artifacts matching the name: {:?}",
-            parsed_response.results.len(),
-            parsed_response
+            "found {} artifacts matching the name",
+            parsed_response.results.len()
         );
 
-        // Then from all package names retrieved from artifactory, extract the highest version number
-        tracing::debug!("extracting version numbers from artifact URIs");
-        let highest_version = parsed_response
+        let mut versions: Vec<Version> = parsed_response
             .results
             .iter()
             .filter_map(|artifact_search_result| {
@@ -158,44 +148,76 @@ impl Artifactory {
                     .next_back()
                     .map(|name_tgz| name_tgz.trim_end_matches(".tgz"));
 
-                if let Some(artifact_name) = full_artifact_name {
-                    tracing::debug!("    artifact name: {}", artifact_name);
-                }
-
                 let artifact_version = full_artifact_name
                     .and_then(|name| name.split('-').next_back())
-                    .and_then(|version_str| {
-                        tracing::debug!("    parsing version string: {}", version_str);
-                        Version::parse(version_str).ok()
-                    });
+                    .and_then(|version_str| Version::parse(version_str).ok());
 
-                // we double check that the artifact name matches exactly
+                // Double-check that the artifact name matches exactly
                 let expected_artifact_name =
                     artifact_version.clone().map(|av| format!("{name}-{av}"));
                 if full_artifact_name.is_some_and(|actual| {
                     expected_artifact_name.is_some_and(|expected| expected == actual)
                 }) {
-                    if let Some(ref version) = artifact_version {
-                        tracing::debug!("    valid version found: {}", version);
-                    }
                     artifact_version
                 } else {
                     tracing::debug!("    artifact name doesn't match expected format, skipping");
                     None
                 }
             })
-            .max();
+            .collect();
 
-        tracing::debug!("highest version for artifact: {:?}", highest_version);
-
-        highest_version.ok_or_else(|| {
-            tracing::error!("no version could be found for package {} in repository {}", name, repository);
-            miette!("no version could be found on artifactory for this artifact name. Does it exist in this registry and repository?")
-        })
+        versions.sort_unstable_by(|a, b| b.cmp(a)); // descending
+        tracing::debug!("found {} valid versions", versions.len());
+        Ok(versions)
     }
 
-    /// Downloads a package from artifactory
-    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+    /// Resolves the highest available version of a package satisfying a requirement
+    pub async fn resolve_version(
+        &self,
+        repository: String,
+        name: PackageName,
+        req: &VersionReq,
+    ) -> miette::Result<Version> {
+        let versions = self.list_versions(repository, name.clone()).await?;
+        versions
+            .into_iter()
+            .find(|v| req.matches(v))
+            .ok_or_else(|| {
+                miette!(
+                    "no version of {} satisfies requirement {} in this registry",
+                    name,
+                    req
+                )
+            })
+    }
+
+    /// Retrieves the latest version of a package by querying artifactory
+    pub async fn get_latest_version(
+        &self,
+        repository: String,
+        name: PackageName,
+    ) -> miette::Result<Version> {
+        tracing::debug!("Artifactory::get_latest_version() called");
+        self.list_versions(repository.clone(), name.clone())
+            .await?
+            .into_iter()
+            .next() // list_versions is already sorted descending
+            .ok_or_else(|| {
+                tracing::error!(
+                    "no version could be found for package {} in repository {}",
+                    name,
+                    repository
+                );
+                miette!("no version could be found on artifactory for this artifact name. Does it exist in this registry and repository?")
+            })
+    }
+
+    /// Downloads a specific version of a package from artifactory
+    pub async fn download(
+        &self,
+        dependency: Dependency,
+        version: &Version,
+    ) -> miette::Result<Package> {
         tracing::debug!("Artifactory::download() called");
         tracing::debug!("  package name: {}", dependency.package);
 
@@ -212,12 +234,9 @@ impl Artifactory {
 
         tracing::debug!("  registry: {}", manifest.registry);
         tracing::debug!("  repository: {}", manifest.repository);
-        tracing::debug!("  version requirement: {}", manifest.version);
+        tracing::debug!("  resolved version: {}", version);
 
         let artifact_url = {
-            let version = super::dependency_version_string(&dependency)?;
-            tracing::debug!("  resolved version: {}", version);
-
             let path = manifest.registry.path().to_owned();
 
             let mut url = manifest.registry.clone();

@@ -15,7 +15,7 @@
 use std::{collections::BTreeMap, path::Path};
 
 use miette::{Context, IntoDiagnostic, ensure};
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
@@ -172,6 +172,11 @@ impl LockedPackage {
         }
     }
 
+    /// Returns true if the locked version satisfies the given requirement
+    pub fn satisfies_requirement(&self, req: &VersionReq) -> bool {
+        req.matches(&self.version)
+    }
+
     /// Validates if another LockedPackage matches this one
     pub fn validate(&self, package: &Package) -> miette::Result<()> {
         let digest: Digest = DigestAlgorithm::SHA256.digest(&package.tgz);
@@ -247,6 +252,11 @@ impl PackageLockfile {
     /// Returns all packages in the lockfile
     pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
         self.packages.values()
+    }
+
+    /// Finds the locked package for `name` if its version satisfies `req`
+    pub fn find_satisfying(&self, name: &PackageName, req: &VersionReq) -> Option<&LockedPackage> {
+        self.packages.get(name).filter(|p| req.matches(&p.version))
     }
 }
 
@@ -368,6 +378,18 @@ impl WorkspaceLockfile {
         self.packages.get(&(name.clone(), version.clone()))
     }
 
+    /// Finds the highest locked version of `name` that satisfies `req`
+    pub fn find_satisfying(
+        &self,
+        name: &PackageName,
+        req: &VersionReq,
+    ) -> Option<&LockedPackage> {
+        self.packages
+            .values()
+            .filter(|p| p.name == *name && req.matches(&p.version))
+            .max_by_key(|p| &p.version)
+    }
+
     /// Returns all packages in the lockfile
     pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
         self.packages.values()
@@ -474,7 +496,7 @@ pub enum Lockfile {
 }
 
 impl Lockfile {
-    /// Locates a package by name and version
+    /// Locates a package by name and exact version
     pub fn get(&self, name: &PackageName, version: &Version) -> Option<FileRequirement> {
         match self {
             Self::Package(lock) => lock
@@ -564,6 +586,23 @@ impl Lockfile {
             Self::Package(_) => Err(miette::miette!(
                 "A workspace lockfile was expected but a package lockfile was found"
             )),
+        }
+    }
+
+    /// Finds the highest locked version of `name` that satisfies `req`, returning its concrete
+    /// version and file requirement
+    pub fn find_satisfying(
+        &self,
+        name: &PackageName,
+        req: &VersionReq,
+    ) -> Option<(Version, FileRequirement)> {
+        match self {
+            Self::Package(lock) => lock
+                .find_satisfying(name, req)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
+            Self::Workspace(lock) => lock
+                .find_satisfying(name, req)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
         }
     }
 }
