@@ -26,13 +26,12 @@ it will default to the latest version of this artifact in the registry.
 
 The repository name should adhere to lower-kebab case (e.g. `my-buffrs-repo`).
 The package name has its own set of constraints as detailed in [Package Name
-Specification](../reference/pkgid-spec.md). When specified, the version must 
-adhere to the [Semantic Version convention](https://semver.org/) (e.g. `1.2.3`)
--- see [SemVer compatibility](../reference/semver.md) for more information.
-
-Currently there is no support for resolving version operators but the specific
-version has to be provided. This means `^1.0.0`, `<2.3.0`, `~2.0.0`, etc. can't
-be installed, but `=1.2.3` has to be provided.
+Specification](../reference/pkgid-spec.md). When specified, the version must be a valid
+[SemVer requirement](../reference/semver.md). Both exact pins (`=1.2.3`) and
+range operators (`^1.0.0`, `~2.1.0`, `>=1.5.0`, etc.) are supported. During
+`buffrs install`, the resolver queries the registry and selects the highest
+available version that satisfies the requirement, then records the concrete
+version in the lockfile for reproducibility.
 
 #### Lockfile interaction
 
