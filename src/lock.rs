@@ -107,11 +107,18 @@ impl<'de> Deserialize<'de> for LockedDependency {
         let s = String::deserialize(deserializer)?;
         let parts: Vec<&str> = s.split_whitespace().collect();
 
-        if parts.len() != 2 {
+        if parts.len() == 1 {
             let name = PackageName::new(parts[0])
                 .map_err(|e| serde::de::Error::custom(format!("invalid package name: {}", e)))?;
 
             return Ok(Self::Named { name });
+        }
+
+        if parts.len() != 2 {
+            return Err(serde::de::Error::custom(format!(
+                "invalid locked dependency format: expected 'name' or 'name version', got '{}'",
+                s
+            )));
         }
 
         let name = PackageName::new(parts[0])
