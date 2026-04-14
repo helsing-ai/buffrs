@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::env;
-use std::fs;
 use std::path::Path;
 #[cfg(feature = "git")]
 use std::process::Stdio;
@@ -552,8 +551,9 @@ impl Publisher {
             }
         }
 
-        let remote_dependencies =
-            self.replace_local_with_remote_dependencies(&manifest, package_path).await?;
+        let remote_dependencies = self
+            .replace_local_with_remote_dependencies(&manifest, package_path)
+            .await?;
         tracing::debug!(
             "local dependencies replaced successfully, now have {} total remote dependencies",
             remote_dependencies.len()
@@ -749,6 +749,7 @@ mod tests {
     use crate::package::PackageName;
     use semver::VersionReq;
     use std::collections::HashMap;
+    use std::fs;
     use std::path::PathBuf;
     use std::str::FromStr;
 
