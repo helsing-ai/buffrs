@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package workspace.shared;
+
+message SharedMessage {
+  string value = 1;
+}

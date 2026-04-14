@@ -9,5 +9,3 @@
 :: published my-repository/api-b@5.0.0
 :: processing workspace member 2/2: lib-a
 :: modified version in published manifest for lib-a from 0.1.0 to 5.0.0
-:: packaged lib-a@5.0.0
-:: my-repository/lib-a@5.0.0 is already published, skipping

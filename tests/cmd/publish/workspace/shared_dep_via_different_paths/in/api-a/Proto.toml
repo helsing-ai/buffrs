@@ -1,0 +1,9 @@
+edition = "0.13"
+
+[package]
+type = "api"
+name = "api-a"
+version = "0.1.0"
+
+[dependencies]
+"shared-lib" = { path = "../shared-lib" }
