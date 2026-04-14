@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::env;
+use std::fs;
 use std::path::Path;
 #[cfg(feature = "git")]
 use std::process::Stdio;
@@ -473,7 +474,14 @@ impl Publisher {
             manifest_override.is_some()
         );
 
-        let manifest_path = package_path.join(MANIFEST_FILE);
+        let manifest_path = fs::canonicalize(package_path.join(MANIFEST_FILE))
+            .into_diagnostic()
+            .wrap_err_with(|| {
+                format!(
+                    "failed to canonicalize manifest path: {}",
+                    package_path.join(MANIFEST_FILE).display()
+                )
+            })?;
         tracing::debug!("  manifest_path: {}", manifest_path.display());
 
         // Check if this package has already been published (idempotent)
@@ -656,9 +664,22 @@ impl Publisher {
                         local_manifest.path.display()
                     );
 
-                    // Paths in the manifest are relative and need to be converted to absolute paths to be used as unique keys
+                    // Paths in the manifest are relative and need to be canonicalized to be used as unique keys
+                    let canonical_path = fs::canonicalize(
+                        base_path.join(&local_manifest.path).join(MANIFEST_FILE),
+                    )
+                    .into_diagnostic()
+                    .wrap_err_with(|| {
+                        format!(
+                            "failed to canonicalize dependency path: {}",
+                            base_path
+                                .join(&local_manifest.path)
+                                .join(MANIFEST_FILE)
+                                .display()
+                        )
+                    })?;
                     let absolute_path_manifest = LocalDependencyManifest {
-                        path: base_path.join(&local_manifest.path).join(MANIFEST_FILE),
+                        path: canonical_path,
                     };
                     tracing::debug!("  absolute path: {}", absolute_path_manifest.path.display());
 
