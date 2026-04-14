@@ -769,14 +769,25 @@ mod tests {
         }
     }
 
+    /// Creates a temp workspace directory structure with Proto.toml files.
+    fn create_workspace_dirs(dirs: &[&str]) -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        for dir in dirs {
+            let pkg_dir = tmp.path().join(dir);
+            fs::create_dir_all(&pkg_dir).unwrap();
+            fs::write(pkg_dir.join(MANIFEST_FILE), "").unwrap();
+        }
+        tmp
+    }
+
     #[test]
     fn test_replace_local_with_remote_single_dependency() {
+        let tmp = create_workspace_dirs(&["project", "local-lib"]);
         let mut publisher = create_test_publisher();
-        let base_path = PathBuf::from("/project");
+        let base_path = tmp.path().join("project");
 
-        // Setup: Add a mapping for a local dependency
         let local_manifest = LocalDependencyManifest {
-            path: base_path.join("../local-lib").join(MANIFEST_FILE),
+            path: fs::canonicalize(base_path.join("../local-lib").join(MANIFEST_FILE)).unwrap(),
         };
         let remote_manifest = RemoteDependencyManifest {
             registry: RegistryUri::from_str("https://test.registry.com").unwrap(),
@@ -785,9 +796,8 @@ mod tests {
         };
         publisher
             .manifest_mappings
-            .insert(local_manifest.clone(), remote_manifest.clone());
+            .insert(local_manifest, remote_manifest);
 
-        // Create a manifest with a local dependency
         let manifest = PackagesManifest::builder()
             .dependencies(vec![Dependency {
                 package: PackageName::unchecked("local-lib"),
@@ -797,12 +807,10 @@ mod tests {
             }])
             .build();
 
-        // Test: Replace local with remote
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
             .unwrap();
 
-        // Verify: Should have one remote dependency
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].package, PackageName::unchecked("local-lib"));
         match &result[0].manifest {
@@ -816,12 +824,12 @@ mod tests {
 
     #[test]
     fn test_replace_local_with_remote_multiple_dependencies() {
+        let tmp = create_workspace_dirs(&["project", "lib1", "lib2"]);
         let mut publisher = create_test_publisher();
-        let base_path = PathBuf::from("/project");
+        let base_path = tmp.path().join("project");
 
-        // Setup: Add mappings for two local dependencies
         let local1 = LocalDependencyManifest {
-            path: base_path.join("../lib1").join(MANIFEST_FILE),
+            path: fs::canonicalize(base_path.join("../lib1").join(MANIFEST_FILE)).unwrap(),
         };
         let remote1 = RemoteDependencyManifest {
             registry: RegistryUri::from_str("https://test.registry.com").unwrap(),
@@ -830,7 +838,7 @@ mod tests {
         };
 
         let local2 = LocalDependencyManifest {
-            path: base_path.join("../lib2").join(MANIFEST_FILE),
+            path: fs::canonicalize(base_path.join("../lib2").join(MANIFEST_FILE)).unwrap(),
         };
         let remote2 = RemoteDependencyManifest {
             registry: RegistryUri::from_str("https://test.registry.com").unwrap(),
@@ -841,7 +849,6 @@ mod tests {
         publisher.manifest_mappings.insert(local1, remote1);
         publisher.manifest_mappings.insert(local2, remote2);
 
-        // Create manifest with two local dependencies
         let manifest = PackagesManifest::builder()
             .dependencies(vec![
                 Dependency {
@@ -859,12 +866,10 @@ mod tests {
             ])
             .build();
 
-        // Test
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
             .unwrap();
 
-        // Verify: Both dependencies replaced
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].package, PackageName::unchecked("lib1"));
         assert_eq!(result[1].package, PackageName::unchecked("lib2"));
@@ -872,10 +877,10 @@ mod tests {
 
     #[test]
     fn test_replace_local_with_remote_missing_mapping_fails() {
+        let tmp = create_workspace_dirs(&["project", "missing-lib"]);
         let publisher = create_test_publisher();
-        let base_path = PathBuf::from("/project");
+        let base_path = tmp.path().join("project");
 
-        // Create manifest with local dependency but NO mapping
         let manifest = PackagesManifest::builder()
             .dependencies(vec![Dependency {
                 package: PackageName::unchecked("missing-lib"),
@@ -885,7 +890,6 @@ mod tests {
             }])
             .build();
 
-        // Test: Should fail
         let result = publisher.replace_local_with_remote_dependencies(&manifest, &base_path);
 
         assert!(result.is_err());
@@ -896,12 +900,12 @@ mod tests {
 
     #[test]
     fn test_replace_preserves_remote_dependencies() {
+        let tmp = create_workspace_dirs(&["project", "local-lib"]);
         let mut publisher = create_test_publisher();
-        let base_path = PathBuf::from("/project");
+        let base_path = tmp.path().join("project");
 
-        // Setup: Add mapping for local dep
         let local_manifest = LocalDependencyManifest {
-            path: base_path.join("../local-lib").join(MANIFEST_FILE),
+            path: fs::canonicalize(base_path.join("../local-lib").join(MANIFEST_FILE)).unwrap(),
         };
         let remote_manifest = RemoteDependencyManifest {
             registry: RegistryUri::from_str("https://test.registry.com").unwrap(),
@@ -910,9 +914,8 @@ mod tests {
         };
         publisher
             .manifest_mappings
-            .insert(local_manifest, remote_manifest.clone());
+            .insert(local_manifest, remote_manifest);
 
-        // Create manifest with both local AND remote dependencies
         let existing_remote = Dependency {
             package: PackageName::unchecked("existing-remote"),
             manifest: DependencyManifest::Remote(RemoteDependencyManifest {
@@ -930,18 +933,14 @@ mod tests {
         };
 
         let manifest = PackagesManifest::builder()
-            .dependencies(vec![existing_remote.clone(), local_dep])
+            .dependencies(vec![existing_remote, local_dep])
             .build();
 
-        // Test
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
             .unwrap();
 
-        // Verify: Should have both remote deps (existing + converted)
         assert_eq!(result.len(), 2);
-
-        // First one should be the existing remote (unchanged)
         assert_eq!(result[0].package, PackageName::unchecked("existing-remote"));
         match &result[0].manifest {
             DependencyManifest::Remote(remote) => {
@@ -950,15 +949,14 @@ mod tests {
             }
             _ => panic!("Expected remote dependency"),
         }
-
-        // Second one should be the converted local
         assert_eq!(result[1].package, PackageName::unchecked("local-lib"));
     }
 
     #[test]
     fn test_empty_dependencies_returns_empty() {
+        let tmp = create_workspace_dirs(&["project"]);
         let publisher = create_test_publisher();
-        let base_path = PathBuf::from("/project");
+        let base_path = tmp.path().join("project");
 
         let manifest = PackagesManifest::builder()
             .dependencies(Default::default())
