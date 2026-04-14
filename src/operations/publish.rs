@@ -665,18 +665,17 @@ impl Publisher {
                     );
 
                     // Paths in the manifest are relative and need to be canonicalized to be used as unique keys
-                    let canonical_path =
-                        fs::canonicalize(base_path.join(&local_manifest.path).join(MANIFEST_FILE))
-                            .into_diagnostic()
-                            .wrap_err_with(|| {
-                                format!(
-                                    "failed to canonicalize dependency path: {}",
-                                    base_path
-                                        .join(&local_manifest.path)
-                                        .join(MANIFEST_FILE)
-                                        .display()
-                                )
-                            })?;
+                    let dependency_manifest_path =
+                        base_path.join(&local_manifest.path).join(MANIFEST_FILE);
+                    let canonical_path = tokio::fs::canonicalize(&dependency_manifest_path)
+                        .await
+                        .into_diagnostic()
+                        .wrap_err_with(|| {
+                            format!(
+                                "failed to canonicalize dependency path: {}",
+                                dependency_manifest_path.display()
+                            )
+                        })?;
                     let absolute_path_manifest = LocalDependencyManifest {
                         path: canonical_path,
                     };
