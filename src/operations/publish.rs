@@ -474,7 +474,8 @@ impl Publisher {
             manifest_override.is_some()
         );
 
-        let manifest_path = fs::canonicalize(package_path.join(MANIFEST_FILE))
+        let manifest_path = tokio::fs::canonicalize(package_path.join(MANIFEST_FILE))
+            .await
             .into_diagnostic()
             .wrap_err_with(|| {
                 format!(
@@ -552,7 +553,7 @@ impl Publisher {
         }
 
         let remote_dependencies =
-            self.replace_local_with_remote_dependencies(&manifest, package_path)?;
+            self.replace_local_with_remote_dependencies(&manifest, package_path).await?;
         tracing::debug!(
             "local dependencies replaced successfully, now have {} total remote dependencies",
             remote_dependencies.len()
@@ -628,7 +629,7 @@ impl Publisher {
     }
 
     /// Replaces local dependencies in a manifest with their published remote versions
-    fn replace_local_with_remote_dependencies(
+    async fn replace_local_with_remote_dependencies(
         &self,
         manifest: &PackagesManifest,
         base_path: &Path,
@@ -778,8 +779,8 @@ mod tests {
         tmp
     }
 
-    #[test]
-    fn test_replace_local_with_remote_single_dependency() {
+    #[tokio::test]
+    async fn test_replace_local_with_remote_single_dependency() {
         let tmp = create_workspace_dirs(&["project", "local-lib"]);
         let mut publisher = create_test_publisher();
         let base_path = tmp.path().join("project");
@@ -807,6 +808,7 @@ mod tests {
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
+            .await
             .unwrap();
 
         assert_eq!(result.len(), 1);
@@ -820,8 +822,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_replace_local_with_remote_multiple_dependencies() {
+    #[tokio::test]
+    async fn test_replace_local_with_remote_multiple_dependencies() {
         let tmp = create_workspace_dirs(&["project", "lib1", "lib2"]);
         let mut publisher = create_test_publisher();
         let base_path = tmp.path().join("project");
@@ -866,6 +868,7 @@ mod tests {
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
+            .await
             .unwrap();
 
         assert_eq!(result.len(), 2);
@@ -873,8 +876,8 @@ mod tests {
         assert_eq!(result[1].package, PackageName::unchecked("lib2"));
     }
 
-    #[test]
-    fn test_replace_local_with_remote_missing_mapping_fails() {
+    #[tokio::test]
+    async fn test_replace_local_with_remote_missing_mapping_fails() {
         let tmp = create_workspace_dirs(&["project", "missing-lib"]);
         let publisher = create_test_publisher();
         let base_path = tmp.path().join("project");
@@ -888,7 +891,9 @@ mod tests {
             }])
             .build();
 
-        let result = publisher.replace_local_with_remote_dependencies(&manifest, &base_path);
+        let result = publisher
+            .replace_local_with_remote_dependencies(&manifest, &base_path)
+            .await;
 
         assert!(result.is_err());
         let err_msg = format!("{:?}", result.unwrap_err());
@@ -896,8 +901,8 @@ mod tests {
         assert!(err_msg.contains("should have been made available"));
     }
 
-    #[test]
-    fn test_replace_preserves_remote_dependencies() {
+    #[tokio::test]
+    async fn test_replace_preserves_remote_dependencies() {
         let tmp = create_workspace_dirs(&["project", "local-lib"]);
         let mut publisher = create_test_publisher();
         let base_path = tmp.path().join("project");
@@ -936,6 +941,7 @@ mod tests {
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
+            .await
             .unwrap();
 
         assert_eq!(result.len(), 2);
@@ -950,8 +956,8 @@ mod tests {
         assert_eq!(result[1].package, PackageName::unchecked("local-lib"));
     }
 
-    #[test]
-    fn test_empty_dependencies_returns_empty() {
+    #[tokio::test]
+    async fn test_empty_dependencies_returns_empty() {
         let tmp = create_workspace_dirs(&["project"]);
         let publisher = create_test_publisher();
         let base_path = tmp.path().join("project");
@@ -962,6 +968,7 @@ mod tests {
 
         let result = publisher
             .replace_local_with_remote_dependencies(&manifest, &base_path)
+            .await
             .unwrap();
 
         assert_eq!(result.len(), 0);
