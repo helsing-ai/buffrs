@@ -113,6 +113,43 @@ impl PackagesManifest {
     }
 }
 
+/// A [`PackagesManifest`] guaranteed to contain a `[package]` declaration.
+///
+/// Created via [`PublishableManifest::try_new`], which returns `None` when
+/// the manifest has no package section (e.g. dependency-only workspace members).
+#[derive(Clone, Debug)]
+pub struct PublishableManifest(PackagesManifest);
+
+impl PublishableManifest {
+    /// Creates a new `PublishableManifest` if the manifest contains a package declaration.
+    ///
+    /// Returns `None` when `manifest.package` is `None`.
+    pub fn try_new(manifest: PackagesManifest) -> Option<Self> {
+        manifest.package.as_ref()?;
+        Some(Self(manifest))
+    }
+
+    /// Returns a reference to the package metadata.
+    ///
+    /// This never fails because `PublishableManifest` guarantees a package is present.
+    pub fn package(&self) -> &PackageManifest {
+        self.0
+            .package
+            .as_ref()
+            .expect("PublishableManifest guarantees package is Some")
+    }
+
+    /// Returns a reference to the inner `PackagesManifest`.
+    pub fn inner(&self) -> &PackagesManifest {
+        &self.0
+    }
+
+    /// Unwraps the inner `PackagesManifest`.
+    pub fn into_inner(self) -> PackagesManifest {
+        self.0
+    }
+}
+
 /// Builder for constructing a PackagesManifest
 pub struct PackagesManifestBuilder {
     edition: Edition,

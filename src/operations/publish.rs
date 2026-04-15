@@ -14,7 +14,7 @@ use crate::{
     credentials::Credentials,
     manifest::{
         Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-        PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
+        PackagesManifest, PublishableManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
     operations::install::NetworkMode,
     package::PackageStore,
@@ -274,7 +274,9 @@ impl Publisher {
             package_path.display()
         );
         tracing::debug!("passing modified root_manifest with potentially overridden version");
-        self.publish_package_at_path(package_path, Some(&root_manifest))
+        let root_publishable = PublishableManifest::try_new(root_manifest)
+            .ok_or_else(|| miette!("manifest has no package declaration"))?;
+        self.publish_package_at_path(package_path, Some(&root_publishable))
             .await?;
         tracing::debug!("root package published successfully");
 
@@ -408,7 +410,12 @@ impl Publisher {
                                 .await?
                                 .with_version(version.clone());
 
-                        Some(dep_manifest)
+                        Some(PublishableManifest::try_new(dep_manifest).ok_or_else(|| {
+                            miette!(
+                                "local dependency at {} has no package declaration",
+                                absolute_path.display()
+                            )
+                        })?)
                     } else {
                         None
                     };
@@ -439,13 +446,20 @@ impl Publisher {
                 );
             }
 
-            tracing::debug!(
-                "publishing workspace member at path: {}",
-                member_path.display()
-            );
-            self.publish_package_at_path(member_path, Some(&member_manifest))
-                .await?;
-            tracing::debug!("workspace member published successfully");
+            if let Some(publishable) = PublishableManifest::try_new(member_manifest) {
+                tracing::debug!(
+                    "publishing workspace member at path: {}",
+                    member_path.display()
+                );
+                self.publish_package_at_path(member_path, Some(&publishable))
+                    .await?;
+                tracing::debug!("workspace member published successfully");
+            } else {
+                tracing::debug!(
+                    "skipping workspace member at {}: no package declaration (dependency-only member)",
+                    member_path.display()
+                );
+            }
         }
 
         tracing::debug!("all workspace members published successfully");
@@ -464,7 +478,7 @@ impl Publisher {
     async fn publish_package_at_path(
         &mut self,
         package_path: &Path,
-        manifest_override: Option<&PackagesManifest>,
+        manifest_override: Option<&PublishableManifest>,
     ) -> miette::Result<()> {
         tracing::debug!("publish_package_at_path() called");
         tracing::debug!("  package_path: {}", package_path.display());
@@ -505,7 +519,7 @@ impl Publisher {
 
         let manifest = if let Some(manifest_override) = manifest_override {
             tracing::debug!("using provided manifest override instead of reading from disk");
-            manifest_override.clone()
+            manifest_override.inner().clone()
         } else {
             tracing::debug!("IO: reading manifest from {}", manifest_path.display());
             Manifest::require_package_manifest(&manifest_path)
@@ -955,6 +969,35 @@ mod tests {
             _ => panic!("Expected remote dependency"),
         }
         assert_eq!(result[1].package, PackageName::unchecked("local-lib"));
+    }
+
+    #[test]
+    fn test_publishable_manifest_try_new_returns_none_without_package() {
+        let manifest = PackagesManifest::builder()
+            .dependencies(Default::default())
+            .build();
+
+        assert!(PublishableManifest::try_new(manifest).is_none());
+    }
+
+    #[test]
+    fn test_publishable_manifest_try_new_returns_some_with_package() {
+        use crate::manifest::PackageManifest;
+        use crate::package::PackageType;
+        use semver::Version;
+
+        let manifest = PackagesManifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::unchecked("test-pkg"),
+                version: Version::new(1, 0, 0),
+                description: None,
+            })
+            .dependencies(Default::default())
+            .build();
+
+        let publishable = PublishableManifest::try_new(manifest).expect("should be Some");
+        assert_eq!(publishable.package().name, PackageName::unchecked("test-pkg"));
     }
 
     #[tokio::test]
