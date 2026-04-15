@@ -274,8 +274,12 @@ impl Publisher {
             package_path.display()
         );
         tracing::debug!("passing modified root_manifest with potentially overridden version");
-        let root_publishable = PublishableManifest::try_new(root_manifest)
-            .ok_or_else(|| miette!("manifest has no package declaration"))?;
+        let root_publishable = PublishableManifest::try_new(root_manifest).ok_or_else(|| {
+            miette!(
+                "manifest has no package declaration: {}",
+                package_path.display()
+            )
+        })?;
         self.publish_package_at_path(package_path, Some(&root_publishable))
             .await?;
         tracing::debug!("root package published successfully");
