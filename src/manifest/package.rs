@@ -573,6 +573,34 @@ mod tests {
     }
 
     #[test]
+    fn publishable_manifest_try_new_returns_none_without_package() {
+        let manifest = PackagesManifest::builder()
+            .dependencies(Default::default())
+            .build();
+
+        assert!(PublishableManifest::try_new(manifest).is_none());
+    }
+
+    #[test]
+    fn publishable_manifest_try_new_returns_some_with_package() {
+        let manifest = PackagesManifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::from_str("test-pkg").unwrap(),
+                version: Version::new(1, 0, 0),
+                description: None,
+            })
+            .dependencies(Default::default())
+            .build();
+
+        let publishable = PublishableManifest::try_new(manifest).expect("should be Some");
+        assert_eq!(
+            publishable.package().name,
+            PackageName::from_str("test-pkg").unwrap()
+        );
+    }
+
+    #[test]
     fn packages_manifest_roundtrip() {
         let toml = r#"
                 edition = "0.12"

@@ -189,6 +189,14 @@ impl Publisher {
 
         let root_manifest = manifest.clone().with_version(version);
 
+        // Validate package declaration early, before any side effects
+        let root_publishable = PublishableManifest::try_new(root_manifest).ok_or_else(|| {
+            miette!(
+                "manifest has no package declaration: {}",
+                package_path.display()
+            )
+        })?;
+
         // Build dependency graph
         tracing::debug!(
             "building dependency graph for package at {}",
@@ -198,7 +206,7 @@ impl Publisher {
         tracing::debug!("credentials loaded for dependency graph building");
 
         let graph = DependencyGraph::build(
-            &root_manifest,
+            root_publishable.inner(),
             package_path,
             &credentials,
             None,
@@ -261,21 +269,18 @@ impl Publisher {
         }
 
         // Populate and publish the root package
-        if let Some(ref pkg) = root_manifest.package {
-            tracing::debug!("populating package store for package: {}", pkg.name);
-            tracing::debug!("  package version: {}", pkg.version);
-            tracing::debug!("  package kind: {:?}", pkg.kind);
-            store.populate(pkg).await?;
-            tracing::debug!("package store populated successfully for {}", pkg.name);
-        }
+        let pkg = root_publishable.package();
+        tracing::debug!("populating package store for package: {}", pkg.name);
+        tracing::debug!("  package version: {}", pkg.version);
+        tracing::debug!("  package kind: {:?}", pkg.kind);
+        store.populate(pkg).await?;
+        tracing::debug!("package store populated successfully for {}", pkg.name);
 
         tracing::debug!(
             "publishing root package at path: {}",
             package_path.display()
         );
         tracing::debug!("passing modified root_manifest with potentially overridden version");
-        let root_publishable = PublishableManifest::try_new(root_manifest)
-            .ok_or_else(|| miette!("manifest has no package declaration"))?;
         self.publish_package_at_path(package_path, Some(&root_publishable))
             .await?;
         tracing::debug!("root package published successfully");
@@ -333,6 +338,15 @@ impl Publisher {
             let member_manifest = Manifest::require_package_manifest(&manifest_file)
                 .await?
                 .with_version(version.clone());
+
+            // Skip dependency-only members early
+            if member_manifest.package.is_none() {
+                tracing::debug!(
+                    "skipping workspace member at {}: no package declaration (dependency-only member)",
+                    member_path.display()
+                );
+                continue;
+            }
 
             tracing::debug!("manifest loaded successfully");
 
@@ -446,20 +460,15 @@ impl Publisher {
                 );
             }
 
-            if let Some(publishable) = PublishableManifest::try_new(member_manifest) {
-                tracing::debug!(
-                    "publishing workspace member at path: {}",
-                    member_path.display()
-                );
-                self.publish_package_at_path(member_path, Some(&publishable))
-                    .await?;
-                tracing::debug!("workspace member published successfully");
-            } else {
-                tracing::debug!(
-                    "skipping workspace member at {}: no package declaration (dependency-only member)",
-                    member_path.display()
-                );
-            }
+            let publishable = PublishableManifest::try_new(member_manifest)
+                .expect("package declaration was already validated above");
+            tracing::debug!(
+                "publishing workspace member at path: {}",
+                member_path.display()
+            );
+            self.publish_package_at_path(member_path, Some(&publishable))
+                .await?;
+            tracing::debug!("workspace member published successfully");
         }
 
         tracing::debug!("all workspace members published successfully");
@@ -969,38 +978,6 @@ mod tests {
             _ => panic!("Expected remote dependency"),
         }
         assert_eq!(result[1].package, PackageName::unchecked("local-lib"));
-    }
-
-    #[test]
-    fn test_publishable_manifest_try_new_returns_none_without_package() {
-        let manifest = PackagesManifest::builder()
-            .dependencies(Default::default())
-            .build();
-
-        assert!(PublishableManifest::try_new(manifest).is_none());
-    }
-
-    #[test]
-    fn test_publishable_manifest_try_new_returns_some_with_package() {
-        use crate::manifest::PackageManifest;
-        use crate::package::PackageType;
-        use semver::Version;
-
-        let manifest = PackagesManifest::builder()
-            .package(PackageManifest {
-                kind: PackageType::Lib,
-                name: PackageName::unchecked("test-pkg"),
-                version: Version::new(1, 0, 0),
-                description: None,
-            })
-            .dependencies(Default::default())
-            .build();
-
-        let publishable = PublishableManifest::try_new(manifest).expect("should be Some");
-        assert_eq!(
-            publishable.package().name,
-            PackageName::unchecked("test-pkg")
-        );
     }
 
     #[tokio::test]

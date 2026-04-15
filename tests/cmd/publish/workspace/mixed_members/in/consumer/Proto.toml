@@ -1,0 +1,4 @@
+edition = "0.13"
+
+[dependencies]
+"lib-a" = { path = "../lib-a" }

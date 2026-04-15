@@ -1,0 +1,6 @@
+:: workspace found. publishing 2 packages in workspace
+:: processing workspace member 1/2: consumer
+:: processing workspace member 2/2: lib-a
+:: modified version in published manifest for lib-a from 1.0.0 to 1.0.0
+:: packaged lib-a@1.0.0
+:: published my-repository/lib-a@1.0.0
