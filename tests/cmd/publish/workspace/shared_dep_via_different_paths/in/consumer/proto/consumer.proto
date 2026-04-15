@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package workspace.consumer;
+
+import "api_a.proto";
+import "api_b.proto";
+
+message ConsumerMessage {
+  workspace.api_a.ApiAMessage a = 1;
+  workspace.api_b.ApiBMessage b = 2;
+}

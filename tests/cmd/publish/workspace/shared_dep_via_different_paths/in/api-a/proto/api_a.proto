@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package workspace.api_a;
+
+import "shared.proto";
+
+message ApiAMessage {
+  workspace.shared.SharedMessage shared = 1;
+}

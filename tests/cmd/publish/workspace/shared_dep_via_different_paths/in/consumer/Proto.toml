@@ -1,0 +1,10 @@
+edition = "0.13"
+
+[package]
+type = "api"
+name = "consumer"
+version = "0.1.0"
+
+[dependencies]
+"api-a" = { path = "../api-a" }
+"api-b" = { path = "../api-b" }
