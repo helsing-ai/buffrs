@@ -281,6 +281,7 @@ impl Publisher {
             package_path.display()
         );
         tracing::debug!("passing modified root_manifest with potentially overridden version");
+
         self.publish_package_at_path(package_path, Some(&root_publishable))
             .await?;
         tracing::debug!("root package published successfully");
