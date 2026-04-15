@@ -997,7 +997,10 @@ mod tests {
             .build();
 
         let publishable = PublishableManifest::try_new(manifest).expect("should be Some");
-        assert_eq!(publishable.package().name, PackageName::unchecked("test-pkg"));
+        assert_eq!(
+            publishable.package().name,
+            PackageName::unchecked("test-pkg")
+        );
     }
 
     #[tokio::test]
