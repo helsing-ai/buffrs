@@ -553,32 +553,61 @@ mod tests {
         }
 
         #[test]
-        fn serialize_package_manifest_includes_and_excludes() {
-            let mut manifest = PackagesManifest::builder()
+        fn serialize_package_manifest_with_include() {
+            let manifest = PackagesManifest::builder()
                 .package(PackageManifest {
                     kind: PackageType::Api,
                     name: PackageName::from_str("test").unwrap(),
                     version: Version::new(1, 0, 0),
                     description: None,
                     include: Some(vec!["foo".to_string()]),
+                    exclude: Default::default(),
+                })
+                .build();
+
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(serialized.contains("include"));
+            assert!(!serialized.contains("exclude"));
+        }
+
+        #[test]
+        fn serialize_package_manifest_with_exclude() {
+            let manifest = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Api,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                    include: None,
                     exclude: vec!["bar".to_string()],
                 })
                 .build();
 
-            let serialized: String = manifest.clone().try_into().expect("should serialize");
-            assert!(serialized.contains("include"));
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(!serialized.contains("include"));
             assert!(serialized.contains("exclude"));
+        }
 
-            let pkg = manifest.package.as_mut().expect("set above");
-            pkg.include = None;
-            pkg.exclude = Vec::new();
+        #[test]
+        fn serialize_package_manifest_omits_empty_include_and_exclude() {
+            let manifest = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Api,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                    include: None,
+                    exclude: Default::default(),
+                })
+                .build();
+
             let serialized: String = manifest.try_into().expect("should serialize");
             assert!(!serialized.contains("include"));
             assert!(!serialized.contains("exclude"));
         }
 
         #[test]
-        fn deserialize_manifest_with_include_and_exclude() {
+        fn deserialize_manifest_with_include() {
             let toml = r#"
                 edition = "0.14"
 
@@ -587,7 +616,6 @@ mod tests {
                 name = "test"
                 version = "1.0.0"
                 include = ["src/**/*.proto", "api/*.proto"]
-                exclude = ["internal.proto"]
 
                 [dependencies]
             "#;
@@ -601,7 +629,49 @@ mod tests {
                     "api/*.proto".to_string()
                 ])
             );
+            assert!(pkg.exclude.is_empty());
+        }
+
+        #[test]
+        fn deserialize_manifest_with_exclude() {
+            let toml = r#"
+                edition = "0.14"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+                exclude = ["internal.proto"]
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let pkg = manifest.package.expect("package should be present");
+            assert!(pkg.include.is_none());
             assert_eq!(pkg.exclude, vec!["internal.proto".to_string()]);
+        }
+
+        #[test]
+        fn deserialize_manifest_with_both_include_and_exclude_fails() {
+            let toml = r#"
+                edition = "0.14"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+                include = ["src/**/*.proto"]
+                exclude = ["internal.proto"]
+
+                [dependencies]
+            "#;
+
+            let result = PackagesManifest::from_str(toml);
+            assert!(
+                result.is_err(),
+                "manifest with both include and exclude should fail"
+            );
         }
 
         #[test]
@@ -708,7 +778,7 @@ mod tests {
                 version: Version::new(2, 1, 0),
                 description: Some("A complex test package".to_string()),
                 include: Some(vec!["foo".to_string()]),
-                exclude: vec!["bar".to_string()],
+                exclude: Default::default(),
             };
 
             let deps = vec![

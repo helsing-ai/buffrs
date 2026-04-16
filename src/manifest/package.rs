@@ -237,21 +237,25 @@ pub struct PackageManifest {
     pub version: Version,
     /// Description of the api package
     pub description: Option<String>,
-    /// List of paths that should be **included** in the package
+    /// List of paths that should be **included** in the package.
     ///
-    /// Gitignore syntax is supported.
+    /// Gitignore syntax is supported. Starts from an empty set: only
+    /// files matching one of the globs are included (any file type,
+    /// not limited to `.proto`).
     ///
-    /// If not provided, we default to including all the .proto
-    /// files recursively, the manifest and lockfile.
+    /// If neither `include` nor `exclude` is set, the default is
+    /// every `.proto` file under the package root.
+    ///
+    /// Mutually exclusive with `exclude`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include: Option<Vec<String>>,
-    /// List of paths that should be **excluded** from the package
+    /// List of paths that should be **excluded** from the package.
     ///
-    /// Gitignore syntax is supported.
+    /// Gitignore syntax is supported. Starts from the set of all files
+    /// under the package root (any file type, not limited to `.proto`)
+    /// and removes files matching any of the globs.
     ///
-    /// Note that it is legal to provide both include and exclude simultaneously;
-    /// in that case we resolve the included files first and then filter it by
-    /// the excluded list.
+    /// Mutually exclusive with `include`.
     #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<String>,

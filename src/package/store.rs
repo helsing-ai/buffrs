@@ -314,11 +314,18 @@ impl PackageStore {
         include: Option<&[String]>,
         exclude: &[String],
     ) -> miette::Result<Vec<PathBuf>> {
+        debug_assert!(
+            include.is_none() || exclude.is_empty(),
+            "include and exclude are mutually exclusive"
+        );
+
         let mut builder = WalkBuilder::new(path);
         builder.standard_filters(false);
 
-        // If provided, we use the inclusions list as a starting point
+        let vendor_path = self.proto_vendor_path();
+
         if let Some(include) = include {
+            // Use the inclusions list to select files via overrides
             let mut overrides_builder = OverrideBuilder::new(path);
             for glob in include {
                 overrides_builder
@@ -332,49 +339,15 @@ impl PackageStore {
                     .into_diagnostic()
                     .wrap_err("failed to build include filter")?,
             );
-            // WalkBuilder only supports a single filter_entry callback — each
-            // call replaces the previous one. When exclude is also set, the
-            // exclude branch below installs its own filter_entry that already
-            // handles vendor-path exclusion, so we must skip setting one here
-            // to avoid overwriting the exclude filter (or vice versa).
-            if exclude.is_empty() {
-                let vendor_path = self.proto_vendor_path();
-                builder.filter_entry(move |e| {
-                    let path = e.path();
-                    // filtering this here and not after building prevents
-                    // descending into the vendor directory completely
-                    if vendored {
-                        true
-                    } else {
-                        !path.starts_with(&vendor_path)
-                    }
-                });
-            }
-        } else {
-            // Otherwise we use the default behaviour of including only .proto files
-            let proto_types = {
-                let mut types = TypesBuilder::new();
-                types.add("proto", "*.proto").expect("valid name");
-                types.select("proto");
-                types.build().expect("no conflicting definitions")
-            };
-            let vendor_path = self.proto_vendor_path();
-            builder.types(proto_types).filter_entry(move |e| {
-                let path = e.path();
-                // filtering this here and not after building prevents
-                // descending into the vendor directory completely
+            builder.filter_entry(move |e| {
                 if vendored {
                     true
                 } else {
-                    !path.starts_with(&vendor_path)
+                    !e.path().starts_with(&vendor_path)
                 }
             });
-        };
-
-        // process exclusion list
-        // NOTE: include and exclude can exist simultaneously, and their effects
-        // chain together (exclude operates on the output of include)
-        if !exclude.is_empty() {
+        } else if !exclude.is_empty() {
+            // Start from all files (no type filter) and exclude matches
             let mut overrides_builder = OverrideBuilder::new(path);
             for glob in exclude {
                 overrides_builder
@@ -386,8 +359,6 @@ impl PackageStore {
                 .build()
                 .into_diagnostic()
                 .wrap_err("failed to build exclude filter")?;
-            let vendor_path = self.proto_vendor_path();
-            // we apply the overrides manually with inverted semantics
             builder.filter_entry(move |e| {
                 let Some(ftype) = e.file_type() else {
                     // file_type() returns None for stdin or broken symlinks;
@@ -404,6 +375,21 @@ impl PackageStore {
                         }
                     }
                     Match::Whitelist(_) => false,
+                }
+            });
+        } else {
+            // Default: include only .proto files
+            let proto_types = {
+                let mut types = TypesBuilder::new();
+                types.add("proto", "*.proto").expect("valid name");
+                types.select("proto");
+                types.build().expect("no conflicting definitions")
+            };
+            builder.types(proto_types).filter_entry(move |e| {
+                if vendored {
+                    true
+                } else {
+                    !e.path().starts_with(&vendor_path)
                 }
             });
         }
@@ -626,19 +612,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn collect_with_include_and_exclude() {
+    async fn collect_with_exclude_starts_from_all_files() {
         let tmp = tempfile::tempdir().unwrap();
         let store = setup_test_dir(tmp.path());
 
-        let include = vec!["*.proto".to_string()];
+        // A non-.proto file should be picked up when exclude is set,
+        // since exclude starts from the set of all files.
+        std::fs::write(store.proto_path().join("readme.txt"), "hello").unwrap();
+
         let exclude = vec!["excluded.proto".to_string()];
         let paths = store
-            .collect(&store.proto_path(), false, Some(&include), &exclude)
+            .collect(&store.proto_path(), false, None, &exclude)
             .await
             .unwrap();
 
         let names = relative_paths(&paths, &store.proto_path());
-        assert_eq!(names, vec!["hello.proto", "subdir/nested.proto"]);
+        assert_eq!(
+            names,
+            vec!["hello.proto", "readme.txt", "subdir/nested.proto"]
+        );
     }
 
     #[tokio::test]

@@ -334,9 +334,18 @@ impl TryFrom<RawManifest> for PackagesManifest {
     type Error = miette::Report;
 
     fn try_from(raw: RawManifest) -> Result<Self, Self::Error> {
+        let package = raw.package().cloned();
+
+        if let Some(pkg) = &package
+            && pkg.include.is_some()
+            && !pkg.exclude.is_empty()
+        {
+            bail!("manifest cannot have both `include` and `exclude`; use one or the other");
+        }
+
         Ok(PackagesManifest {
             edition: raw.edition(),
-            package: raw.package().cloned(),
+            package,
             dependencies: raw.dependencies_as_vec(),
         })
     }
