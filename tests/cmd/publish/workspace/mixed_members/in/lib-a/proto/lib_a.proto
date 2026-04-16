@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package workspace.lib_a;
+
+message LibMessage {
+  string data = 1;
+}

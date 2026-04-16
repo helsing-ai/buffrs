@@ -113,6 +113,43 @@ impl PackagesManifest {
     }
 }
 
+/// A [`PackagesManifest`] guaranteed to contain a `[package]` declaration.
+///
+/// Created via [`PublishableManifest::try_new`], which returns `None` when
+/// the manifest has no package section (e.g. dependency-only workspace members).
+#[derive(Clone, Debug)]
+pub struct PublishableManifest(PackagesManifest);
+
+impl PublishableManifest {
+    /// Creates a new `PublishableManifest` if the manifest contains a package declaration.
+    ///
+    /// Returns `None` when `manifest.package` is `None`.
+    pub fn try_new(manifest: PackagesManifest) -> Option<Self> {
+        manifest.package.as_ref()?;
+        Some(Self(manifest))
+    }
+
+    /// Returns a reference to the package metadata.
+    ///
+    /// This never fails because `PublishableManifest` guarantees a package is present.
+    pub fn package(&self) -> &PackageManifest {
+        self.0
+            .package
+            .as_ref()
+            .expect("PublishableManifest guarantees package is Some")
+    }
+
+    /// Returns a reference to the inner `PackagesManifest`.
+    pub fn inner(&self) -> &PackagesManifest {
+        &self.0
+    }
+
+    /// Unwraps the inner `PackagesManifest`.
+    pub fn into_inner(self) -> PackagesManifest {
+        self.0
+    }
+}
+
 /// Builder for constructing a PackagesManifest
 pub struct PackagesManifestBuilder {
     edition: Edition,
@@ -533,6 +570,34 @@ mod tests {
         assert!(matches!(raw, RawManifest::Canary { .. }));
         assert!(raw.package().is_some());
         assert_eq!(raw.workspace(), None);
+    }
+
+    #[test]
+    fn publishable_manifest_try_new_returns_none_without_package() {
+        let manifest = PackagesManifest::builder()
+            .dependencies(Default::default())
+            .build();
+
+        assert!(PublishableManifest::try_new(manifest).is_none());
+    }
+
+    #[test]
+    fn publishable_manifest_try_new_returns_some_with_package() {
+        let manifest = PackagesManifest::builder()
+            .package(PackageManifest {
+                kind: PackageType::Lib,
+                name: PackageName::from_str("test-pkg").unwrap(),
+                version: Version::new(1, 0, 0),
+                description: None,
+            })
+            .dependencies(Default::default())
+            .build();
+
+        let publishable = PublishableManifest::try_new(manifest).expect("should be Some");
+        assert_eq!(
+            publishable.package().name,
+            PackageName::from_str("test-pkg").unwrap()
+        );
     }
 
     #[test]

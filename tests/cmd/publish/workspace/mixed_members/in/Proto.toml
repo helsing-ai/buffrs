@@ -1,0 +1,4 @@
+edition = "0.13"
+
+[workspace]
+members = ["lib-a", "consumer"]

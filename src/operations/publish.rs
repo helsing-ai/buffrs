@@ -14,7 +14,7 @@ use crate::{
     credentials::Credentials,
     manifest::{
         Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-        PackagesManifest, RemoteDependencyManifest, WorkspaceManifest,
+        PackagesManifest, PublishableManifest, RemoteDependencyManifest, WorkspaceManifest,
     },
     operations::install::NetworkMode,
     package::PackageStore,
@@ -189,6 +189,14 @@ impl Publisher {
 
         let root_manifest = manifest.clone().with_version(version);
 
+        // Validate package declaration early, before any side effects
+        let root_publishable = PublishableManifest::try_new(root_manifest).ok_or_else(|| {
+            miette!(
+                "manifest has no package declaration: {}",
+                package_path.display()
+            )
+        })?;
+
         // Build dependency graph
         tracing::debug!(
             "building dependency graph for package at {}",
@@ -198,7 +206,7 @@ impl Publisher {
         tracing::debug!("credentials loaded for dependency graph building");
 
         let graph = DependencyGraph::build(
-            &root_manifest,
+            root_publishable.inner(),
             package_path,
             &credentials,
             None,
@@ -261,20 +269,20 @@ impl Publisher {
         }
 
         // Populate and publish the root package
-        if let Some(ref pkg) = root_manifest.package {
-            tracing::debug!("populating package store for package: {}", pkg.name);
-            tracing::debug!("  package version: {}", pkg.version);
-            tracing::debug!("  package kind: {:?}", pkg.kind);
-            store.populate(pkg).await?;
-            tracing::debug!("package store populated successfully for {}", pkg.name);
-        }
+        let pkg = root_publishable.package();
+        tracing::debug!("populating package store for package: {}", pkg.name);
+        tracing::debug!("  package version: {}", pkg.version);
+        tracing::debug!("  package kind: {:?}", pkg.kind);
+        store.populate(pkg).await?;
+        tracing::debug!("package store populated successfully for {}", pkg.name);
 
         tracing::debug!(
             "publishing root package at path: {}",
             package_path.display()
         );
         tracing::debug!("passing modified root_manifest with potentially overridden version");
-        self.publish_package_at_path(package_path, Some(&root_manifest))
+
+        self.publish_package_at_path(package_path, Some(&root_publishable))
             .await?;
         tracing::debug!("root package published successfully");
 
@@ -331,6 +339,15 @@ impl Publisher {
             let member_manifest = Manifest::require_package_manifest(&manifest_file)
                 .await?
                 .with_version(version.clone());
+
+            // Skip dependency-only members early
+            if member_manifest.package.is_none() {
+                tracing::debug!(
+                    "skipping workspace member at {}: no package declaration (dependency-only member)",
+                    member_path.display()
+                );
+                continue;
+            }
 
             tracing::debug!("manifest loaded successfully");
 
@@ -408,7 +425,12 @@ impl Publisher {
                                 .await?
                                 .with_version(version.clone());
 
-                        Some(dep_manifest)
+                        Some(PublishableManifest::try_new(dep_manifest).ok_or_else(|| {
+                            miette!(
+                                "local dependency at {} has no package declaration",
+                                absolute_path.display()
+                            )
+                        })?)
                     } else {
                         None
                     };
@@ -439,11 +461,13 @@ impl Publisher {
                 );
             }
 
+            let publishable = PublishableManifest::try_new(member_manifest)
+                .expect("package declaration was already validated above");
             tracing::debug!(
                 "publishing workspace member at path: {}",
                 member_path.display()
             );
-            self.publish_package_at_path(member_path, Some(&member_manifest))
+            self.publish_package_at_path(member_path, Some(&publishable))
                 .await?;
             tracing::debug!("workspace member published successfully");
         }
@@ -464,7 +488,7 @@ impl Publisher {
     async fn publish_package_at_path(
         &mut self,
         package_path: &Path,
-        manifest_override: Option<&PackagesManifest>,
+        manifest_override: Option<&PublishableManifest>,
     ) -> miette::Result<()> {
         tracing::debug!("publish_package_at_path() called");
         tracing::debug!("  package_path: {}", package_path.display());
@@ -505,7 +529,7 @@ impl Publisher {
 
         let manifest = if let Some(manifest_override) = manifest_override {
             tracing::debug!("using provided manifest override instead of reading from disk");
-            manifest_override.clone()
+            manifest_override.inner().clone()
         } else {
             tracing::debug!("IO: reading manifest from {}", manifest_path.display());
             Manifest::require_package_manifest(&manifest_path)
