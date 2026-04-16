@@ -69,6 +69,8 @@ pub async fn init(kind: Option<PackageType>, name: Option<PackageName>) -> miett
                 name,
                 version: INITIAL_VERSION,
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
         })
         .transpose()?;
@@ -106,6 +108,8 @@ pub async fn new(kind: Option<PackageType>, name: PackageName) -> miette::Result
                 name,
                 version: INITIAL_VERSION,
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
         })
         .transpose()?;
@@ -371,7 +375,9 @@ pub async fn list() -> miette::Result<()> {
         store.populate(pkg).await?;
     }
 
-    let protos = store.collect(&store.proto_vendor_path(), true).await;
+    let protos = store
+        .collect(&store.proto_vendor_path(), true, None, &[])
+        .await?;
 
     let cwd = {
         let cwd = std::env::current_dir()

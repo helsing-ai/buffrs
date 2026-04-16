@@ -50,6 +50,8 @@ pub enum Edition {
     /// at any time. Users are responsible for consulting documentation and
     /// help channels if errors occur.
     Canary,
+    /// The canary edition used by buffrs 0.13.x
+    Canary13,
     /// The canary edition used by buffrs 0.12.x
     Canary12,
     /// The canary edition used by buffrs 0.11.x
@@ -80,6 +82,7 @@ impl From<&str> for Edition {
     fn from(value: &str) -> Self {
         match value {
             CANARY_EDITION => Self::Canary,
+            "0.13" => Self::Canary13,
             "0.12" => Self::Canary12,
             "0.11" => Self::Canary11,
             "0.10" => Self::Canary10,
@@ -95,6 +98,7 @@ impl From<Edition> for &'static str {
     fn from(value: Edition) -> Self {
         match value {
             Edition::Canary => CANARY_EDITION,
+            Edition::Canary13 => "0.13",
             Edition::Canary12 => "0.12",
             Edition::Canary11 => "0.11",
             Edition::Canary10 => "0.10",
@@ -367,6 +371,7 @@ mod tests {
 
         #[test]
         fn edition_from_str_legacy_versions() {
+            assert_eq!(Edition::from("0.13"), Edition::Canary13);
             assert_eq!(Edition::from("0.12"), Edition::Canary12);
             assert_eq!(Edition::from("0.11"), Edition::Canary11);
             assert_eq!(Edition::from("0.10"), Edition::Canary10);
@@ -385,6 +390,7 @@ mod tests {
         #[test]
         fn edition_to_str() {
             assert_eq!(<&str>::from(Edition::Canary), CANARY_EDITION);
+            assert_eq!(<&str>::from(Edition::Canary13), "0.13");
             assert_eq!(<&str>::from(Edition::Canary12), "0.12");
             assert_eq!(<&str>::from(Edition::Canary11), "0.11");
             assert_eq!(<&str>::from(Edition::Canary10), "0.10");
@@ -536,12 +542,66 @@ mod tests {
                     name: PackageName::from_str("test").unwrap(),
                     version: Version::new(1, 0, 0),
                     description: Some("Test description".to_string()),
+                    include: Default::default(),
+                    exclude: Default::default(),
                 })
                 .dependencies(vec![])
                 .build();
 
             let serialized: String = manifest.try_into().expect("should serialize");
             assert!(serialized.contains("Test description"));
+        }
+
+        #[test]
+        fn serialize_package_manifest_includes_and_excludes() {
+            let mut manifest = PackagesManifest::builder()
+                .package(PackageManifest {
+                    kind: PackageType::Api,
+                    name: PackageName::from_str("test").unwrap(),
+                    version: Version::new(1, 0, 0),
+                    description: None,
+                    include: Some(vec!["foo".to_string()]),
+                    exclude: vec!["bar".to_string()],
+                })
+                .build();
+
+            let serialized: String = manifest.clone().try_into().expect("should serialize");
+            assert!(serialized.contains("include"));
+            assert!(serialized.contains("exclude"));
+
+            let pkg = manifest.package.as_mut().expect("set above");
+            pkg.include = None;
+            pkg.exclude = Vec::new();
+            let serialized: String = manifest.try_into().expect("should serialize");
+            assert!(!serialized.contains("include"));
+            assert!(!serialized.contains("exclude"));
+        }
+
+        #[test]
+        fn deserialize_manifest_with_include_and_exclude() {
+            let toml = r#"
+                edition = "0.14"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+                include = ["src/**/*.proto", "api/*.proto"]
+                exclude = ["internal.proto"]
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let pkg = manifest.package.expect("package should be present");
+            assert_eq!(
+                pkg.include,
+                Some(vec![
+                    "src/**/*.proto".to_string(),
+                    "api/*.proto".to_string()
+                ])
+            );
+            assert_eq!(pkg.exclude, vec!["internal.proto".to_string()]);
         }
 
         #[test]
@@ -647,6 +707,8 @@ mod tests {
                 name: PackageName::from_str("complex-package").unwrap(),
                 version: Version::new(2, 1, 0),
                 description: Some("A complex test package".to_string()),
+                include: Some(vec!["foo".to_string()]),
+                exclude: vec!["bar".to_string()],
             };
 
             let deps = vec![

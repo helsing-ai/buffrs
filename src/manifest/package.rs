@@ -237,6 +237,24 @@ pub struct PackageManifest {
     pub version: Version,
     /// Description of the api package
     pub description: Option<String>,
+    /// List of paths that should be **included** in the package
+    ///
+    /// Gitignore syntax is supported.
+    ///
+    /// If not provided, we default to including all the .proto
+    /// files recursively, the manifest and lockfile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
+    /// List of paths that should be **excluded** from the package
+    ///
+    /// Gitignore syntax is supported.
+    ///
+    /// Note that it is legal to provide both include and exclude simultaneously;
+    /// in that case we resolve the included files first and then filter it by
+    /// the excluded list.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
 }
 
 /// Represents a single project dependency
@@ -371,6 +389,8 @@ mod tests {
             name: PackageName::from_str("test-pkg").unwrap(),
             version: Version::new(1, 2, 3),
             description: Some("A test package".to_string()),
+            include: Default::default(),
+            exclude: Default::default(),
         };
 
         let deps = vec![Dependency::new(
@@ -440,6 +460,8 @@ mod tests {
                 name: PackageName::from_str("test").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(vec![])
             .build();
@@ -562,6 +584,8 @@ mod tests {
                 name: PackageName::from_str("test").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(vec![])
             .build();
@@ -589,6 +613,8 @@ mod tests {
                 name: PackageName::from_str("test-pkg").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(Default::default())
             .build();

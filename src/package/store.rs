@@ -21,12 +21,12 @@ use std::{
 use bytes::Bytes;
 use miette::{Context, IntoDiagnostic, miette};
 use tokio::fs;
-use walkdir::WalkDir;
 
 use crate::{
     manifest::{MANIFEST_FILE, Manifest, PackageManifest, PackagesManifest},
     package::{Package, PackageName},
 };
+use ignore::{Match, WalkBuilder, overrides::OverrideBuilder, types::TypesBuilder};
 
 /// IO abstraction layer over local `buffrs` package store
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,7 +212,7 @@ impl PackageStore {
         manifest: &PackageManifest,
     ) -> miette::Result<crate::validation::Violations> {
         let root_path = self.proto_vendor_path();
-        let source_files = self.populated_files(manifest).await;
+        let source_files = self.populated_files(manifest).await?;
 
         let mut parser = crate::validation::Validator::new(&root_path, manifest);
 
@@ -257,9 +257,18 @@ impl PackageStore {
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
-        for entry in self.collect(&pkg_path, false).await {
+        let include = manifest.package.as_ref().and_then(|p| p.include.as_deref());
+        let exclude = manifest
+            .package
+            .as_ref()
+            .map(|p| p.exclude.as_slice())
+            .unwrap_or(&[]);
+        for entry in self.collect(&pkg_path, false, include, exclude).await? {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
-            let contents = tokio::fs::read(&entry).await.unwrap();
+            let contents = tokio::fs::read(&entry)
+                .await
+                .into_diagnostic()
+                .wrap_err_with(|| format!("failed to read {}", entry.display()))?;
 
             entries.insert(
                 path.into(),
@@ -298,29 +307,118 @@ impl PackageStore {
     ///
     /// * `path` - The root directory to search
     /// * `vendored` - If `false`, excludes files from `proto/vendor/` (for collecting source files only), if `true`, includes all `.proto` files regardless of location
-    pub async fn collect(&self, path: &Path, vendored: bool) -> Vec<PathBuf> {
-        let mut paths: Vec<_> = WalkDir::new(path)
-            .into_iter()
-            .filter_map(Result::ok)
-            .map(|entry| entry.into_path())
-            .filter(|path| {
+    pub async fn collect(
+        &self,
+        path: &Path,
+        vendored: bool,
+        include: Option<&[String]>,
+        exclude: &[String],
+    ) -> miette::Result<Vec<PathBuf>> {
+        let mut builder = WalkBuilder::new(path);
+        builder.standard_filters(false);
+
+        // If provided, we use the inclusions list as a starting point
+        if let Some(include) = include {
+            let mut overrides_builder = OverrideBuilder::new(path);
+            for glob in include {
+                overrides_builder
+                    .add(glob)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("invalid include entry: {glob}"))?;
+            }
+            builder.overrides(
+                overrides_builder
+                    .build()
+                    .into_diagnostic()
+                    .wrap_err("failed to build include filter")?,
+            );
+            // WalkBuilder only supports a single filter_entry callback — each
+            // call replaces the previous one. When exclude is also set, the
+            // exclude branch below installs its own filter_entry that already
+            // handles vendor-path exclusion, so we must skip setting one here
+            // to avoid overwriting the exclude filter (or vice versa).
+            if exclude.is_empty() {
+                let vendor_path = self.proto_vendor_path();
+                builder.filter_entry(move |e| {
+                    let path = e.path();
+                    // filtering this here and not after building prevents
+                    // descending into the vendor directory completely
+                    if vendored {
+                        true
+                    } else {
+                        !path.starts_with(&vendor_path)
+                    }
+                });
+            }
+        } else {
+            // Otherwise we use the default behaviour of including only .proto files
+            let proto_types = {
+                let mut types = TypesBuilder::new();
+                types.add("proto", "*.proto").expect("valid name");
+                types.select("proto");
+                types.build().expect("no conflicting definitions")
+            };
+            let vendor_path = self.proto_vendor_path();
+            builder.types(proto_types).filter_entry(move |e| {
+                let path = e.path();
+                // filtering this here and not after building prevents
+                // descending into the vendor directory completely
                 if vendored {
                     true
                 } else {
-                    !path.starts_with(self.proto_vendor_path())
+                    !path.starts_with(&vendor_path)
                 }
-            })
-            .filter(|path| {
-                let ext = path.extension().map(|s| s.to_str());
+            });
+        };
 
-                matches!(ext, Some(Some("proto")))
-            })
+        // process exclusion list
+        // NOTE: include and exclude can exist simultaneously, and their effects
+        // chain together (exclude operates on the output of include)
+        if !exclude.is_empty() {
+            let mut overrides_builder = OverrideBuilder::new(path);
+            for glob in exclude {
+                overrides_builder
+                    .add(glob)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("invalid exclude entry: {glob}"))?;
+            }
+            let overrides = overrides_builder
+                .build()
+                .into_diagnostic()
+                .wrap_err("failed to build exclude filter")?;
+            let vendor_path = self.proto_vendor_path();
+            // we apply the overrides manually with inverted semantics
+            builder.filter_entry(move |e| {
+                let Some(ftype) = e.file_type() else {
+                    // file_type() returns None for stdin or broken symlinks;
+                    // exclude the entry in either case
+                    return false;
+                };
+                let path = e.path();
+                match overrides.matched(path, ftype.is_dir()) {
+                    Match::None | Match::Ignore(_) => {
+                        if vendored {
+                            true
+                        } else {
+                            !path.starts_with(&vendor_path)
+                        }
+                    }
+                    Match::Whitelist(_) => false,
+                }
+            });
+        }
+
+        let mut paths: Vec<_> = builder
+            .build()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().map(|ft| ft.is_file()).unwrap_or(false))
+            .map(|entry| entry.into_path())
             .collect();
 
         // to ensure determinism
         paths.sort();
 
-        paths
+        Ok(paths)
     }
 
     /// Copies the package's source `.proto` files to the vendor directory
@@ -348,31 +446,44 @@ impl PackageStore {
         if tokio::fs::try_exists(&target_dir)
             .await
             .into_diagnostic()
-            .wrap_err(format!(
-                "failed to check whether directory {} still exists",
-                target_dir.to_str().unwrap()
-            ))?
+            .wrap_err_with(|| {
+                format!(
+                    "failed to check whether directory {} still exists",
+                    target_dir.display()
+                )
+            })?
         {
             tokio::fs::remove_dir_all(&target_dir)
                 .await
                 .into_diagnostic()
-                .wrap_err(format!(
-                    "failed to remove directory {} and its contents.",
-                    target_dir.to_str().unwrap()
-                ))?;
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to remove directory {} and its contents",
+                        target_dir.display()
+                    )
+                })?;
         }
 
-        for entry in self.collect(&source_path, false).await {
+        let include = manifest.include.as_deref();
+        for entry in self
+            .collect(&source_path, false, include, &manifest.exclude)
+            .await?
+        {
             let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
             let target_path = target_dir.join(file_name);
 
-            tokio::fs::create_dir_all(target_path.parent().unwrap())
+            let parent = target_path.parent().ok_or_else(|| {
+                miette!("unexpected root path in target: {}", target_path.display())
+            })?;
+            tokio::fs::create_dir_all(parent)
                 .await
                 .into_diagnostic()
-                .wrap_err(format!(
-                    "Failed to create directory {} and its parents.",
-                    target_path.parent().unwrap().to_str().unwrap()
-                ))?;
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to create directory {} and its parents",
+                        parent.display()
+                    )
+                })?;
 
             tokio::fs::copy(entry, target_path)
                 .await
@@ -391,8 +502,14 @@ impl PackageStore {
     /// # Returns
     ///
     /// A sorted vector of paths to all `.proto` files in the package's vendor directory.
-    pub async fn populated_files(&self, manifest: &PackageManifest) -> Vec<PathBuf> {
-        self.collect(&self.populated_path(manifest), true).await
+    pub async fn populated_files(
+        &self,
+        manifest: &PackageManifest,
+    ) -> miette::Result<Vec<PathBuf>> {
+        // Don't re-apply include/exclude here: files were already filtered
+        // by populate() when they were copied into the vendor directory.
+        self.collect(&self.populated_path(manifest), true, None, &[])
+            .await
     }
 }
 
@@ -403,14 +520,229 @@ pub struct Entry {
     pub metadata: Option<std::fs::Metadata>,
 }
 
-#[test]
-fn can_get_proto_path() {
-    assert_eq!(
-        PackageStore::new("/tmp".into()).proto_path(),
-        PathBuf::from("/tmp/proto")
-    );
-    assert_eq!(
-        PackageStore::new("/tmp".into()).proto_vendor_path(),
-        PathBuf::from("/tmp/proto/vendor")
-    );
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn can_get_proto_path() {
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_path(),
+            PathBuf::from("/tmp/proto")
+        );
+        assert_eq!(
+            PackageStore::new("/tmp".into()).proto_vendor_path(),
+            PathBuf::from("/tmp/proto/vendor")
+        );
+    }
+
+    /// Helper to create a test directory structure for collect() tests:
+    ///
+    /// ```text
+    /// proto/
+    ///   hello.proto
+    ///   subdir/
+    ///     nested.proto
+    ///   excluded.proto
+    ///   vendor/
+    ///     dep/
+    ///       dep.proto
+    /// ```
+    fn setup_test_dir(tmp: &Path) -> PackageStore {
+        let proto = tmp.join("proto");
+        let subdir = proto.join("subdir");
+        let vendor = proto.join("vendor");
+        let dep = vendor.join("dep");
+
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::create_dir_all(&dep).unwrap();
+
+        std::fs::write(proto.join("hello.proto"), "syntax = \"proto3\";").unwrap();
+        std::fs::write(subdir.join("nested.proto"), "syntax = \"proto3\";").unwrap();
+        std::fs::write(proto.join("excluded.proto"), "syntax = \"proto3\";").unwrap();
+        std::fs::write(dep.join("dep.proto"), "syntax = \"proto3\";").unwrap();
+
+        PackageStore::new(tmp.to_path_buf())
+    }
+
+    /// Strip the prefix and collect file names for easier assertion
+    fn relative_paths(paths: &[PathBuf], base: &Path) -> Vec<String> {
+        let mut result: Vec<String> = paths
+            .iter()
+            .map(|p| p.strip_prefix(base).unwrap().to_string_lossy().to_string())
+            .collect();
+        result.sort();
+        result
+    }
+
+    #[tokio::test]
+    async fn collect_default_only_proto_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        // Also create a non-proto file to verify it's excluded
+        std::fs::write(store.proto_path().join("readme.txt"), "not a proto").unwrap();
+
+        let paths = store
+            .collect(&store.proto_path(), false, None, &[])
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert_eq!(
+            names,
+            vec!["excluded.proto", "hello.proto", "subdir/nested.proto"]
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_with_include_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let include = vec!["subdir/*.proto".to_string()];
+        let paths = store
+            .collect(&store.proto_path(), false, Some(&include), &[])
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert_eq!(names, vec!["subdir/nested.proto"]);
+    }
+
+    #[tokio::test]
+    async fn collect_with_exclude_pattern() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let exclude = vec!["excluded.proto".to_string()];
+        let paths = store
+            .collect(&store.proto_path(), false, None, &exclude)
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert_eq!(names, vec!["hello.proto", "subdir/nested.proto"]);
+    }
+
+    #[tokio::test]
+    async fn collect_with_include_and_exclude() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let include = vec!["*.proto".to_string()];
+        let exclude = vec!["excluded.proto".to_string()];
+        let paths = store
+            .collect(&store.proto_path(), false, Some(&include), &exclude)
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert_eq!(names, vec!["hello.proto", "subdir/nested.proto"]);
+    }
+
+    #[tokio::test]
+    async fn collect_excludes_vendor_when_not_vendored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let paths = store
+            .collect(&store.proto_path(), false, None, &[])
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert!(
+            !names.iter().any(|n| n.starts_with("vendor/")),
+            "vendor files should not be included when vendored=false"
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_includes_vendor_when_vendored() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let paths = store
+            .collect(&store.proto_path(), true, None, &[])
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert!(
+            names.iter().any(|n| n.starts_with("vendor/")),
+            "vendor files should be included when vendored=true"
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_returns_only_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let paths = store
+            .collect(&store.proto_path(), true, None, &[])
+            .await
+            .unwrap();
+
+        for path in &paths {
+            assert!(
+                path.is_file(),
+                "{} should be a file, not a directory",
+                path.display()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn collect_returns_only_files_with_include() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let include = vec!["**/*.proto".to_string()];
+        let paths = store
+            .collect(&store.proto_path(), true, Some(&include), &[])
+            .await
+            .unwrap();
+
+        for path in &paths {
+            assert!(
+                path.is_file(),
+                "{} should be a file, not a directory",
+                path.display()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn collect_invalid_include_glob_returns_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let include = vec!["[invalid".to_string()];
+        let result = store
+            .collect(&store.proto_path(), false, Some(&include), &[])
+            .await;
+
+        assert!(
+            result.is_err(),
+            "invalid include glob should produce an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn collect_invalid_exclude_glob_returns_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let exclude = vec!["[invalid".to_string()];
+        let result = store
+            .collect(&store.proto_path(), false, None, &exclude)
+            .await;
+
+        assert!(
+            result.is_err(),
+            "invalid exclude glob should produce an error"
+        );
+    }
 }

@@ -194,6 +194,7 @@ mod deserializer {
 
                     match Edition::from(edition.as_str()) {
                         Edition::Canary
+                        | Edition::Canary13
                         | Edition::Canary12
                         | Edition::Canary11
                         | Edition::Canary10
@@ -387,6 +388,8 @@ mod tests {
             name: PackageName::from_str("test").unwrap(),
             version: Version::new(1, 0, 0),
             description: None,
+            include: Some(vec!["foo".into()]),
+            exclude: vec!["bar".into()],
         };
 
         let raw = RawManifest::Canary {
@@ -408,6 +411,8 @@ mod tests {
             name: PackageName::from_str("test").unwrap(),
             version: Version::new(1, 0, 0),
             description: None,
+            include: Some(vec!["foo".into()]),
+            exclude: vec!["bar".into()],
         };
 
         let raw = RawManifest::Unknown {
@@ -552,6 +557,8 @@ mod tests {
                     name: PackageName::new("test").unwrap(),
                     version: Version::new(1, 0, 0),
                     description: None,
+                    include: Default::default(),
+                    exclude: Default::default(),
                 }),
                 dependencies: None,
                 workspace: None,
