@@ -675,6 +675,27 @@ mod tests {
         }
 
         #[test]
+        fn deserialize_manifest_with_empty_include_fails() {
+            let toml = r#"
+                edition = "0.14"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+                include = []
+
+                [dependencies]
+            "#;
+
+            let result = PackagesManifest::from_str(toml);
+            assert!(
+                result.is_err(),
+                "manifest with empty include list should fail"
+            );
+        }
+
+        #[test]
         fn deserialize_manifest_with_local_dependency() {
             let toml = r#"
                 edition = "0.12"

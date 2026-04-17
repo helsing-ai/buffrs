@@ -254,6 +254,12 @@ impl PackageStore {
         manifest: &PackagesManifest,
         preserve_mtime: bool,
     ) -> miette::Result<Package> {
+        if manifest.package.is_none() {
+            return Err(miette!(
+                "cannot release a package without a [package] declaration in the manifest"
+            ));
+        }
+
         let pkg_path = self.proto_path();
         let mut entries = BTreeMap::new();
 
@@ -509,6 +515,7 @@ pub struct Entry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::package::PackageType;
 
     #[test]
     fn can_get_proto_path() {
@@ -736,5 +743,49 @@ mod tests {
             result.is_err(),
             "invalid exclude glob should produce an error"
         );
+    }
+
+    #[tokio::test]
+    async fn populate_with_include_filters_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let manifest = PackageManifest {
+            kind: PackageType::Lib,
+            name: PackageName::new("test-pkg").unwrap(),
+            version: semver::Version::new(0, 1, 0),
+            description: None,
+            include: Some(vec!["hello.proto".to_string()]),
+            exclude: Default::default(),
+        };
+
+        store.populate(&manifest).await.unwrap();
+
+        let target_dir = store.proto_vendor_path().join("test-pkg");
+        assert!(target_dir.join("hello.proto").exists());
+        assert!(!target_dir.join("excluded.proto").exists());
+        assert!(!target_dir.join("subdir/nested.proto").exists());
+    }
+
+    #[tokio::test]
+    async fn populate_with_exclude_filters_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        let manifest = PackageManifest {
+            kind: PackageType::Lib,
+            name: PackageName::new("test-pkg").unwrap(),
+            version: semver::Version::new(0, 1, 0),
+            description: None,
+            include: None,
+            exclude: vec!["excluded.proto".to_string()],
+        };
+
+        store.populate(&manifest).await.unwrap();
+
+        let target_dir = store.proto_vendor_path().join("test-pkg");
+        assert!(target_dir.join("hello.proto").exists());
+        assert!(target_dir.join("subdir/nested.proto").exists());
+        assert!(!target_dir.join("excluded.proto").exists());
     }
 }
