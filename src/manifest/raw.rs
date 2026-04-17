@@ -194,6 +194,7 @@ mod deserializer {
 
                     match Edition::from(edition.as_str()) {
                         Edition::Canary
+                        | Edition::Canary13
                         | Edition::Canary12
                         | Edition::Canary11
                         | Edition::Canary10
@@ -333,9 +334,26 @@ impl TryFrom<RawManifest> for PackagesManifest {
     type Error = miette::Report;
 
     fn try_from(raw: RawManifest) -> Result<Self, Self::Error> {
+        let package = raw.package().cloned();
+
+        if let Some(pkg) = &package
+            && pkg.include.is_some()
+            && !pkg.exclude.is_empty()
+        {
+            bail!("manifest cannot have both `include` and `exclude`; use one or the other");
+        }
+
+        if let Some(pkg) = &package
+            && pkg.include.as_ref().is_some_and(|v| v.is_empty())
+        {
+            bail!(
+                "`include` must not be empty; either list the patterns to include or omit the field entirely"
+            );
+        }
+
         Ok(PackagesManifest {
             edition: raw.edition(),
-            package: raw.package().cloned(),
+            package,
             dependencies: raw.dependencies_as_vec(),
         })
     }
@@ -387,6 +405,8 @@ mod tests {
             name: PackageName::from_str("test").unwrap(),
             version: Version::new(1, 0, 0),
             description: None,
+            include: Some(vec!["*.proto".into()]),
+            exclude: Default::default(),
         };
 
         let raw = RawManifest::Canary {
@@ -408,6 +428,8 @@ mod tests {
             name: PackageName::from_str("test").unwrap(),
             version: Version::new(1, 0, 0),
             description: None,
+            include: Default::default(),
+            exclude: vec!["internal.proto".into()],
         };
 
         let raw = RawManifest::Unknown {
@@ -552,6 +574,8 @@ mod tests {
                     name: PackageName::new("test").unwrap(),
                     version: Version::new(1, 0, 0),
                     description: None,
+                    include: Default::default(),
+                    exclude: Default::default(),
                 }),
                 dependencies: None,
                 workspace: None,

@@ -121,6 +121,8 @@ mod tests {
                 name: "test-api".parse().unwrap(),
                 version: "0.1.0".parse().unwrap(),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(Default::default())
             .build();
