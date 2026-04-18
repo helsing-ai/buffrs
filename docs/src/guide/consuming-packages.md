@@ -35,7 +35,7 @@ type = "lib"
 version = "1.0.0"
 
 [dependencies]
-google = { version = "=1.0.0", registry = "<your-registry>", repository = "<your-repository> }
+google = { version = "^1.0.0", registry = "<your-registry>", repository = "<your-repository>" }
 ```
 
 Running `buffrs install` yields you with the following filesystem:
@@ -65,7 +65,7 @@ major difference is the lack of the `[package]` section in your manifest.
 
 ```
 [dependencies]
-logging = { version = "=1.0.0", registry = "<your-registry>", repository = "<your-repository> }
+logging = { version = "^1.0.0", registry = "<your-registry>", repository = "<your-repository>" }
 ```
 
 Running a `buffrs install` yields you the very same as above, except for the

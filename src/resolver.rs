@@ -51,8 +51,10 @@ pub struct DependencyNode {
     pub source: DependencySource,
     /// Packages that this package depends on
     pub dependencies: Vec<PackageName>,
-    /// Version requirement
+    /// Version requirement from the manifest
     pub version: VersionReq,
+    /// The concrete version that was resolved and downloaded (None for local deps)
+    pub resolved_version: Option<semver::Version>,
 }
 
 /// Maps a package name to metadata describing the package
@@ -314,6 +316,7 @@ impl<'a> GraphBuilder<'a> {
                 },
                 dependencies: sub_dependencies.clone(),
                 version: VersionReq::STAR,
+                resolved_version: None,
             },
         );
 
@@ -361,68 +364,79 @@ impl<'a> GraphBuilder<'a> {
         let package_name = &dependency.package;
         let registry = &remote_manifest.registry;
         let repository = &remote_manifest.repository;
-        let version = &remote_manifest.version;
+        let version_req = &remote_manifest.version;
 
-        let package = {
-            let reformatted = version
-                .to_string()
-                .chars()
-                .skip_while(|c| *c == '=')
-                .collect::<String>();
+        // Reuse or create artifactory client
+        let artifactory = if let Some(client) = self.registry_clients.get(registry) {
+            client.clone()
+        } else {
+            let client = Artifactory::new(registry.clone(), self.credentials)
+                .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+            self.registry_clients
+                .insert(registry.clone(), client.clone());
+            client
+        };
 
-            let version = reformatted
-                .parse()
-                .map_err(|e| miette::miette!("{e}"))
+        // Phase 1: resolve the requirement to a concrete version.
+        // Try the lockfile first (avoids a registry round-trip when the lock is fresh).
+        let (resolved_version, cached_package) = if let Some(lockfile) = &self.lockfile
+            && let Some((locked_version, file_req)) =
+                lockfile.find_satisfying(package_name, version_req)
+            && file_req.url().as_str().starts_with(registry.as_str())
+        {
+            let cache = Cache::open().await?;
+            let cached = cache.get(file_req).await.ok().flatten();
+            tracing::debug!(
+                "lockfile pins {}@{} (satisfies {})",
+                package_name,
+                locked_version,
+                version_req
+            );
+            (locked_version, cached)
+        } else {
+            // No usable lockfile entry — resolve from registry.
+            let version = artifactory
+                .resolve_version(repository.clone(), package_name.clone(), version_req)
+                .await
                 .wrap_err_with(|| {
-                    format!("expected only exact version requirements: {package_name}@{version}")
+                    format!(
+                        "could not resolve {}@{} from registry {}",
+                        package_name, version_req, registry
+                    )
                 })?;
+            tracing::debug!("resolved {} {} -> {}", package_name, version_req, version);
+            (version, None)
+        };
 
-            let mut cached_package = None;
-
-            // Try to resolve from lockfile + cache first
-            if let Some(lockfile) = &self.lockfile
-                && let Some(file_req) = lockfile.get(package_name, &version)
-            {
-                // Verify registry matches (lockfile vs manifest)
-                if file_req.url().as_str().starts_with(registry.as_str()) {
-                    let cache = Cache::open().await?;
-                    if let Ok(Some(pkg)) = cache.get(file_req).await {
-                        tracing::debug!("resolved {}@{} from local cache", package_name, version);
-                        cached_package = Some(pkg);
-                    }
-                }
+        // Phase 2: obtain the package bytes (cache hit or download).
+        let package = match (cached_package, self.network_mode) {
+            (Some(pkg), _) => {
+                tracing::debug!(
+                    "resolved {}@{} from local cache",
+                    package_name,
+                    resolved_version
+                );
+                pkg
             }
-
-            match (cached_package, self.network_mode) {
-                (Some(pkg), _) => pkg,
-                (None, NetworkMode::Online) => {
-                    tracing::debug!("downloading {}@{} from registry", package_name, version);
-
-                    // Reuse or create artifactory client
-                    let artifactory = if let Some(client) = self.registry_clients.get(registry) {
-                        client.clone()
-                    } else {
-                        let client = Artifactory::new(registry.clone(), self.credentials)
-                            .wrap_err_with(|| {
-                                format!("failed to initialize registry {}", registry)
-                            })?;
-                        self.registry_clients
-                            .insert(registry.clone(), client.clone());
-                        client
-                    };
-
-                    artifactory.download(dependency.clone()).await?
-                }
-                (None, NetworkMode::Offline) => {
-                    bail!(DependencyError::Offline {
-                        name: package_name.clone(),
-                        version: remote_manifest.version.clone(),
-                    });
-                }
+            (None, NetworkMode::Online) => {
+                tracing::debug!(
+                    "downloading {}@{} from registry",
+                    package_name,
+                    resolved_version
+                );
+                artifactory
+                    .download(dependency.clone(), &resolved_version)
+                    .await?
+            }
+            (None, NetworkMode::Offline) => {
+                bail!(DependencyError::Offline {
+                    name: package_name.clone(),
+                    version: remote_manifest.version.clone(),
+                });
             }
         };
 
-        // Read the package manifest to discover dependencies and package type
+        // Read the package manifest to discover dependencies and package type.
         let manifest = package.manifest;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
@@ -430,7 +444,7 @@ impl<'a> GraphBuilder<'a> {
 
         let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
 
-        // Add node with discovered metadata
+        // Add node with discovered metadata.
         self.nodes.insert(
             package_name.clone(),
             DependencyNode {
@@ -441,11 +455,12 @@ impl<'a> GraphBuilder<'a> {
                     repository: repository.clone(),
                 },
                 dependencies: sub_dependencies.clone(),
-                version: version.clone(),
+                version: version_req.clone(),
+                resolved_version: Some(resolved_version),
             },
         );
 
-        // Recursively process transitive dependencies
+        // Recursively process transitive dependencies.
         for sub_dep in manifest.dependencies.unwrap_or_default() {
             self.add_dependency(&sub_dep, package_type)
                 .await
@@ -469,24 +484,30 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
-    /// Validates that version requirements are compatible when the same package is requested multiple times
+    /// Validates that a new version requirement is compatible with the already-resolved version
     fn validate_version_compatibility(
         &self,
         dependency: &Dependency,
         existing: &DependencyNode,
     ) -> miette::Result<()> {
-        // Only check version compatibility for remote dependencies
-        if let (DependencyManifest::Remote(new_remote), DependencySource::Remote { .. }) =
-            (&dependency.manifest, &existing.source)
-        {
-            // For now, buffrs only supports pinned versions (see TODO #205)
-            // We check if the version requirements are equal since they should be exact pins
-            // In the future with dynamic version resolution, this would need to check for compatibility
-            if new_remote.version != existing.version {
+        if let (
+            DependencyManifest::Remote(new_remote),
+            DependencySource::Remote { .. },
+            Some(resolved_version),
+        ) = (
+            &dependency.manifest,
+            &existing.source,
+            &existing.resolved_version,
+        ) {
+            // The package was already resolved to `resolved_version`. Check that the new
+            // requirement is also satisfied by that version (merge-and-resolve: accept when
+            // compatible, fail only when truly incompatible).
+            if !new_remote.version.matches(resolved_version) {
                 bail!(DependencyError::VersionConflict {
                     package: dependency.package.clone(),
                     required_version: new_remote.version.clone(),
                     existing_version: existing.version.clone(),
+                    resolved_version: resolved_version.clone(),
                 });
             }
         }
@@ -543,15 +564,18 @@ pub enum DependencyError {
 
     /// Version conflict between multiple dependants
     #[error(
-        "version conflict for {package}: requires {required_version} but already resolved to {existing_version}"
+        "version conflict for {package}: requirement {required_version} is not satisfied by \
+         resolved version {resolved_version} (chosen to satisfy {existing_version})"
     )]
     VersionConflict {
         /// The package with conflicting versions
         package: PackageName,
-        /// The version requirement that conflicts
+        /// The new requirement that cannot be satisfied
         required_version: VersionReq,
-        /// The version already resolved in the graph
+        /// The requirement that led to the current resolved version
         existing_version: VersionReq,
+        /// The concrete version that was already resolved and downloaded
+        resolved_version: semver::Version,
     },
 
     /// Failed to download a dependency from the registry

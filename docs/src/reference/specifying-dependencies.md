@@ -1,52 +1,81 @@
 # Specifying Dependencies
 
-Dependencies are declared in the `[dependencies]` section of the `Proto.toml`
-manifest. Each entry maps a dependency package name to a dependency
-specification object.
+Dependencies are declared in the `[dependencies]` section of `Proto.toml`.
+Each entry names the package and provides a version requirement, registry URL,
+and repository name.
 
-## Remote Dependencies
-
-Remote dependencies are downloaded from an Artifactory registry during
-[`buffrs install`](../commands/buffrs-install.md).
+## Inline table syntax
 
 ```toml
-[dependencies]
-my-package = { registry = "https://your.registry/artifactory", repository = "my-repo", version = "1.2.3" }
+[dependencies.my-lib]
+version = "^1.0.0"
+registry = "https://my-registry.example.com"
+repository = "my-repo"
 ```
 
-The `version` field must be an exact semantic version (e.g. `"1.2.3"`).
-Version ranges or operators (`^`, `~`, `<`, `>`) are not currently supported.
+The three required fields for a remote dependency are:
 
-Use [`buffrs add`](../commands/buffrs-add.md) to add a remote dependency from
-the command line:
+| Field | Description |
+|-------|-------------|
+| `version` | A SemVer requirement — see [SemVer Compatibility](./semver.md) |
+| `registry` | Base URL of the Artifactory registry |
+| `repository` | Repository name within that registry |
 
+## Adding dependencies via the CLI
+
+The `buffrs add` command writes the manifest entry for you:
+
+```bash
+# Caret range (recommended): resolves to the highest 1.x.y
+buffrs add --registry https://my-registry.example.com my-repo/my-lib@^1.0.0
+
+# Exact pin: resolves to exactly 1.2.3
+buffrs add --registry https://my-registry.example.com my-repo/my-lib@=1.2.3
+
+# Latest: omitting the version resolves to the latest available
+buffrs add --registry https://my-registry.example.com my-repo/my-lib
 ```
-buffrs add --registry https://your.registry/artifactory my-repo/my-package@1.2.3
-```
 
-## Local Dependencies
+After adding a dependency, run `buffrs install` to resolve and download it.
 
-Local dependencies are resolved from the local filesystem relative to the
-manifest. They are useful for multi-package repositories where packages depend
-on each other without going through a remote registry.
+## Version requirements
+
+buffrs supports the full range of SemVer requirement operators:
 
 ```toml
-[dependencies]
-my-lib = { path = "../my-lib" }
+version = "^1.0.0"      # >=1.0.0, <2.0.0  (recommended for most deps)
+version = "~1.2.0"      # >=1.2.0, <1.3.0  (patch updates only)
+version = ">=1.5.0"     # any version at or above 1.5.0
+version = "=1.2.3"      # exactly 1.2.3
+version = ">=1.0, <2.0" # explicit intersection
 ```
 
-The `path` field is a relative path from the manifest file to the dependency's
-root directory (the directory containing the dependency's `Proto.toml`).
+The resolver queries the registry and selects the **highest** available version
+satisfying the requirement. See [SemVer Compatibility](./semver.md) for the
+full operator reference.
 
-See [Local Dependencies](../guide/local-dependencies.md) for more information.
+## Local dependencies
 
-## Lockfile
+You can depend on a package in a local directory (useful in monorepos or during
+development):
 
-After adding or modifying dependencies in the manifest, run
-[`buffrs install`](../commands/buffrs-install.md) to resolve and lock them.
-The lockfile (`Proto.lock`) records the exact resolved versions and checksums
-and should be committed to version control.
+```toml
+[dependencies.my-lib]
+path = "../my-lib"
+```
 
-See [Manifest vs Lockfile](../guide/manifest-vs-lockfile.md) for more
-information.
+Local dependencies do not have a version requirement — the package at that
+path is used as-is. They cannot be mixed with a remote entry for the same
+package name.
 
+## The lockfile
+
+Once resolved, the concrete version is recorded in `Proto.lock`. Subsequent
+installs use the locked version without re-querying the registry, ensuring
+reproducible builds across machines and CI environments.
+
+Commit `Proto.lock` to version control for applications and services. For
+libraries intended to be consumed by others, committing the lockfile is
+optional — consumers will resolve their own versions.
+
+See [Manifest vs Lockfile](../guide/manifest-vs-lockfile.md) for more detail.
