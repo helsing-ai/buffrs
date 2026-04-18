@@ -93,6 +93,7 @@ impl Artifactory {
         tracing::debug!("  repository: {}", repository);
         tracing::debug!("  registry: {}", self.registry);
 
+        // First retrieve all packages matching the given name
         let search_query_url: Url = {
             let mut url = self.registry.clone();
             url.set_path("artifactory/api/search/artifact");
@@ -102,16 +103,19 @@ impl Artifactory {
 
         tracing::debug!("search query URL: {}", search_query_url);
 
+        tracing::debug!("sending artifact search request to artifactory");
         let response = self
             .new_request(Method::GET, search_query_url)
             .send()
             .await?;
         let response: reqwest::Response = response.0;
+        tracing::debug!("received response from artifactory");
 
         let headers = response.headers();
         let content_type = headers
             .get(&reqwest::header::CONTENT_TYPE)
             .ok_or_else(|| miette!("missing content-type header"))?;
+        tracing::debug!("response content-type: {:?}", content_type);
 
         ensure!(
             content_type
@@ -121,10 +125,13 @@ impl Artifactory {
             "server response has incorrect mime type: {content_type:?}"
         );
 
+        tracing::debug!("parsing response body as text");
         let response_str = response.text().await.into_diagnostic().wrap_err(miette!(
             "unexpected error: unable to retrieve response payload"
         ))?;
+        tracing::debug!("response body length: {} bytes", response_str.len());
 
+        tracing::debug!("deserializing response to ArtifactSearchResponse");
         let parsed_response = serde_json::from_str::<ArtifactSearchResponse>(&response_str)
             .into_diagnostic()
             .wrap_err(miette!(
@@ -136,6 +143,8 @@ impl Artifactory {
             parsed_response.results.len()
         );
 
+        // From the package names retrieved from artifactory, list the versions
+        tracing::debug!("extracting version numbers from artifact URIs");
         let mut versions: Vec<Version> = parsed_response
             .results
             .iter()
@@ -148,9 +157,16 @@ impl Artifactory {
                     .next_back()
                     .map(|name_tgz| name_tgz.trim_end_matches(".tgz"));
 
+                if let Some(artifact_name) = full_artifact_name {
+                    tracing::debug!("    artifact name: {}", artifact_name);
+                }
+
                 let artifact_version = full_artifact_name
                     .and_then(|name| name.split('-').next_back())
-                    .and_then(|version_str| Version::parse(version_str).ok());
+                    .and_then(|version_str| {
+                        tracing::debug!("    parsing version string: {}", version_str);
+                        Version::parse(version_str).ok()
+                    });
 
                 // Double-check that the artifact name matches exactly
                 let expected_artifact_name =
@@ -158,6 +174,9 @@ impl Artifactory {
                 if full_artifact_name.is_some_and(|actual| {
                     expected_artifact_name.is_some_and(|expected| expected == actual)
                 }) {
+                    if let Some(ref version) = artifact_version {
+                        tracing::debug!("    valid version found: {}", version);
+                    }
                     artifact_version
                 } else {
                     tracing::debug!("    artifact name doesn't match expected format, skipping");
