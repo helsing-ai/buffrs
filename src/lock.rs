@@ -386,11 +386,7 @@ impl WorkspaceLockfile {
     }
 
     /// Finds the highest locked version of `name` that satisfies `req`
-    pub fn find_satisfying(
-        &self,
-        name: &PackageName,
-        req: &VersionReq,
-    ) -> Option<&LockedPackage> {
+    pub fn find_satisfying(&self, name: &PackageName, req: &VersionReq) -> Option<&LockedPackage> {
         self.packages
             .values()
             .filter(|p| p.name == *name && req.matches(&p.version))
