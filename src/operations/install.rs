@@ -250,18 +250,20 @@ impl Install for WorkspaceManifest {
         let mut locked = vec![];
 
         for package in packages {
-            let manifest = Manifest::require_package_manifest(&package).await?;
+            let member_path = ctx.cwd.join(&package);
 
-            if PackageLockfile::exists_at(&package).await? {
+            let manifest = Manifest::require_package_manifest(&member_path).await?;
+
+            if PackageLockfile::exists_at(&member_path).await? {
                 tracing::warn!(
                     "[warn] package lockfile found at {}. Consider removing it - workspace installs use workspace-level lockfile",
-                    PackageLockfile::resolve(&package)?.display()
+                    PackageLockfile::resolve(&member_path)?.display()
                 );
             }
 
-            tracing::info!("running install for package: {}", package.display());
+            tracing::info!("running install for package: {}", member_path.display());
 
-            let member_ctx = ctx.child(ctx.cwd.join(&package)).await?;
+            let member_ctx = ctx.child(member_path).await?;
             let new = manifest.install(&member_ctx).await?;
 
             locked.extend_from_slice(&new);
@@ -684,5 +686,75 @@ mod tests {
             .expect("v2.0.0 should exist");
         assert_eq!(v2.version, Version::new(2, 0, 0));
         assert_eq!(v2.dependants, 1);
+    }
+
+    #[tokio::test]
+    async fn test_workspace_install_uses_ctx_cwd_not_process_cwd() {
+        use std::collections::HashMap;
+        use std::fs;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        fs::write(
+            root.join("Proto.toml"),
+            "edition = \"0.13\"\n\n[workspace]\nmembers = [\"pkg-a\", \"pkg-b\"]\n",
+        )
+        .unwrap();
+
+        for name in ["pkg-a", "pkg-b"] {
+            fs::create_dir(root.join(name)).unwrap();
+            fs::write(
+                root.join(name).join("Proto.toml"),
+                format!(
+                    "edition = \"0.13\"\n\n[package]\nname = \"{name}\"\ntype = \"lib\"\nversion = \"0.1.0\"\n"
+                ),
+            )
+            .unwrap();
+        }
+
+        // The process CWD (crate root during cargo test) must differ from the
+        // temp dir — this is what makes the test meaningful. With the old buggy
+        // code, relative member paths would be resolved against the process CWD
+        // instead of ctx.cwd, causing a file-not-found failure.
+        assert_ne!(
+            std::env::current_dir().unwrap(),
+            root,
+            "process CWD must differ from ctx.cwd for this test to be meaningful"
+        );
+
+        let manifest = Manifest::load_from(root)
+            .await
+            .expect("should parse workspace manifest");
+        let workspace_manifest = match manifest {
+            Manifest::Workspace(ws) => ws,
+            _ => panic!("expected workspace manifest"),
+        };
+
+        let ctx = InstallationContext {
+            cwd: root.to_path_buf(),
+            credentials: Credentials {
+                registry_tokens: HashMap::new(),
+            },
+            cache: Cache::open().await.unwrap(),
+            store: PackageStore::open(root).await.unwrap(),
+            lock: Lockfile::Workspace(WorkspaceLockfile::default()),
+            preserve_mtime: false,
+            network_mode: NetworkMode::Offline,
+        };
+
+        let result = workspace_manifest.install(&ctx).await;
+        assert!(
+            result.is_ok(),
+            "workspace install failed — member paths were likely resolved against \
+             process CWD instead of ctx.cwd: {:?}",
+            result.unwrap_err()
+        );
+        assert_eq!(
+            result.unwrap(),
+            vec![],
+            "no-dep workspace should produce no locked packages"
+        );
     }
 }
