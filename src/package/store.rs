@@ -460,10 +460,7 @@ impl PackageStore {
 
         let include = manifest.include.as_deref();
         let exclude = manifest.exclude.as_deref();
-        for entry in self
-            .collect(&source_path, false, include, exclude)
-            .await?
-        {
+        for entry in self.collect(&source_path, false, include, exclude).await? {
             let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
             let target_path = target_dir.join(file_name);
 
