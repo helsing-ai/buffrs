@@ -579,7 +579,7 @@ mod tests {
                     version: Version::new(1, 0, 0),
                     description: None,
                     include: None,
-                    exclude: vec!["bar".to_string()],
+                    exclude: Some(vec!["bar".to_string()]),
                 })
                 .build();
 
@@ -629,7 +629,7 @@ mod tests {
                     "api/*.proto".to_string()
                 ])
             );
-            assert!(pkg.exclude.is_empty());
+            assert!(pkg.exclude.is_none());
         }
 
         #[test]
@@ -649,7 +649,26 @@ mod tests {
             let manifest = PackagesManifest::from_str(toml).expect("should parse");
             let pkg = manifest.package.expect("package should be present");
             assert!(pkg.include.is_none());
-            assert_eq!(pkg.exclude, vec!["internal.proto".to_string()]);
+            assert_eq!(pkg.exclude, Some(vec!["internal.proto".to_string()]));
+        }
+
+        #[test]
+        fn deserialize_manifest_with_empty_exclude_preserves_distinction() {
+            let toml = r#"
+                edition = "0.14"
+
+                [package]
+                type = "lib"
+                name = "test"
+                version = "1.0.0"
+                exclude = []
+
+                [dependencies]
+            "#;
+
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let pkg = manifest.package.expect("package should be present");
+            assert_eq!(pkg.exclude, Some(vec![]));
         }
 
         #[test]

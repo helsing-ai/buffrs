@@ -264,11 +264,7 @@ impl PackageStore {
         let mut entries = BTreeMap::new();
 
         let include = manifest.package.as_ref().and_then(|p| p.include.as_deref());
-        let exclude = manifest
-            .package
-            .as_ref()
-            .map(|p| p.exclude.as_slice())
-            .unwrap_or(&[]);
+        let exclude = manifest.package.as_ref().and_then(|p| p.exclude.as_deref());
         for entry in self.collect(&pkg_path, false, include, exclude).await? {
             let path = entry.strip_prefix(&pkg_path).into_diagnostic()?;
             let contents = tokio::fs::read(&entry)
@@ -318,10 +314,10 @@ impl PackageStore {
         path: &Path,
         vendored: bool,
         include: Option<&[String]>,
-        exclude: &[String],
+        exclude: Option<&[String]>,
     ) -> miette::Result<Vec<PathBuf>> {
         debug_assert!(
-            include.is_none() || exclude.is_empty(),
+            include.is_none() || exclude.is_none(),
             "include and exclude are mutually exclusive"
         );
 
@@ -352,7 +348,7 @@ impl PackageStore {
                     !e.path().starts_with(&vendor_path)
                 }
             });
-        } else if !exclude.is_empty() {
+        } else if let Some(exclude) = exclude {
             // Start from all files (no type filter) and exclude matches
             let mut overrides_builder = OverrideBuilder::new(path);
             for glob in exclude {
@@ -457,8 +453,9 @@ impl PackageStore {
         }
 
         let include = manifest.include.as_deref();
+        let exclude = manifest.exclude.as_deref();
         for entry in self
-            .collect(&source_path, false, include, &manifest.exclude)
+            .collect(&source_path, false, include, exclude)
             .await?
         {
             let file_name = entry.strip_prefix(&source_path).into_diagnostic()?;
@@ -500,7 +497,7 @@ impl PackageStore {
     ) -> miette::Result<Vec<PathBuf>> {
         // Don't re-apply include/exclude here: files were already filtered
         // by populate() when they were copied into the vendor directory.
-        self.collect(&self.populated_path(manifest), true, None, &[])
+        self.collect(&self.populated_path(manifest), true, None, None)
             .await
     }
 }
@@ -577,7 +574,7 @@ mod tests {
         std::fs::write(store.proto_path().join("readme.txt"), "not a proto").unwrap();
 
         let paths = store
-            .collect(&store.proto_path(), false, None, &[])
+            .collect(&store.proto_path(), false, None, None)
             .await
             .unwrap();
 
@@ -595,7 +592,7 @@ mod tests {
 
         let include = vec!["subdir/*.proto".to_string()];
         let paths = store
-            .collect(&store.proto_path(), false, Some(&include), &[])
+            .collect(&store.proto_path(), false, Some(&include), None)
             .await
             .unwrap();
 
@@ -610,7 +607,7 @@ mod tests {
 
         let exclude = vec!["excluded.proto".to_string()];
         let paths = store
-            .collect(&store.proto_path(), false, None, &exclude)
+            .collect(&store.proto_path(), false, None, Some(&exclude))
             .await
             .unwrap();
 
@@ -629,7 +626,7 @@ mod tests {
 
         let exclude = vec!["excluded.proto".to_string()];
         let paths = store
-            .collect(&store.proto_path(), false, None, &exclude)
+            .collect(&store.proto_path(), false, None, Some(&exclude))
             .await
             .unwrap();
 
@@ -641,12 +638,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn collect_with_empty_exclude_includes_all_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        // `exclude = []` must be distinct from omitting exclude: it
+        // means "start from all files, exclude nothing", so even
+        // non-.proto files are bundled.
+        std::fs::write(store.proto_path().join("readme.txt"), "hello").unwrap();
+
+        let paths = store
+            .collect(&store.proto_path(), false, None, Some(&[]))
+            .await
+            .unwrap();
+
+        let names = relative_paths(&paths, &store.proto_path());
+        assert_eq!(
+            names,
+            vec![
+                "excluded.proto",
+                "hello.proto",
+                "readme.txt",
+                "subdir/nested.proto"
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn collect_excludes_vendor_when_not_vendored() {
         let tmp = tempfile::tempdir().unwrap();
         let store = setup_test_dir(tmp.path());
 
         let paths = store
-            .collect(&store.proto_path(), false, None, &[])
+            .collect(&store.proto_path(), false, None, None)
             .await
             .unwrap();
 
@@ -663,7 +687,7 @@ mod tests {
         let store = setup_test_dir(tmp.path());
 
         let paths = store
-            .collect(&store.proto_path(), true, None, &[])
+            .collect(&store.proto_path(), true, None, None)
             .await
             .unwrap();
 
@@ -680,7 +704,7 @@ mod tests {
         let store = setup_test_dir(tmp.path());
 
         let paths = store
-            .collect(&store.proto_path(), true, None, &[])
+            .collect(&store.proto_path(), true, None, None)
             .await
             .unwrap();
 
@@ -700,7 +724,7 @@ mod tests {
 
         let include = vec!["**/*.proto".to_string()];
         let paths = store
-            .collect(&store.proto_path(), true, Some(&include), &[])
+            .collect(&store.proto_path(), true, Some(&include), None)
             .await
             .unwrap();
 
@@ -720,7 +744,7 @@ mod tests {
 
         let include = vec!["[invalid".to_string()];
         let result = store
-            .collect(&store.proto_path(), false, Some(&include), &[])
+            .collect(&store.proto_path(), false, Some(&include), None)
             .await;
 
         assert!(
@@ -736,7 +760,7 @@ mod tests {
 
         let exclude = vec!["[invalid".to_string()];
         let result = store
-            .collect(&store.proto_path(), false, None, &exclude)
+            .collect(&store.proto_path(), false, None, Some(&exclude))
             .await;
 
         assert!(
@@ -778,7 +802,7 @@ mod tests {
             version: semver::Version::new(0, 1, 0),
             description: None,
             include: None,
-            exclude: vec!["excluded.proto".to_string()],
+            exclude: Some(vec!["excluded.proto".to_string()]),
         };
 
         store.populate(&manifest).await.unwrap();

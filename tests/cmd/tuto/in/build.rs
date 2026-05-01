@@ -9,7 +9,7 @@ async fn main() {
     let protos = PackageStore::current()
         .await
         .unwrap()
-        .collect(store, true, None, &[])
+        .collect(store, true, None, None)
         .await
         .unwrap();
 

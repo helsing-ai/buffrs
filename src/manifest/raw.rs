@@ -338,7 +338,7 @@ impl TryFrom<RawManifest> for PackagesManifest {
 
         if let Some(pkg) = &package
             && pkg.include.is_some()
-            && !pkg.exclude.is_empty()
+            && pkg.exclude.is_some()
         {
             bail!("manifest cannot have both `include` and `exclude`; use one or the other");
         }
@@ -406,7 +406,7 @@ mod tests {
             version: Version::new(1, 0, 0),
             description: None,
             include: Some(vec!["*.proto".into()]),
-            exclude: Default::default(),
+            exclude: None,
         };
 
         let raw = RawManifest::Canary {
@@ -428,8 +428,8 @@ mod tests {
             name: PackageName::from_str("test").unwrap(),
             version: Version::new(1, 0, 0),
             description: None,
-            include: Default::default(),
-            exclude: vec!["internal.proto".into()],
+            include: None,
+            exclude: Some(vec!["internal.proto".into()]),
         };
 
         let raw = RawManifest::Unknown {

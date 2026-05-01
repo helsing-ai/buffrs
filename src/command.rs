@@ -376,7 +376,7 @@ pub async fn list() -> miette::Result<()> {
     }
 
     let protos = store
-        .collect(&store.proto_vendor_path(), true, None, &[])
+        .collect(&store.proto_vendor_path(), true, None, None)
         .await?;
 
     let cwd = {

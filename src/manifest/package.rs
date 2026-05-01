@@ -254,17 +254,19 @@ pub struct PackageManifest {
     pub include: Option<Vec<String>>,
     /// List of paths that should be **excluded** from the package.
     ///
-    /// Gitignore syntax is supported. Starts from the set of all files
-    /// under the package root (any file type, not limited to `.proto`)
-    /// and removes files matching any of the globs.
+    /// Gitignore syntax is supported. When set, starts from the set of
+    /// all files under the package root (any file type, not limited to
+    /// `.proto`) and removes files matching any of the globs. An empty
+    /// list (`exclude = []`) means "include every file with no
+    /// exclusions" — distinct from omitting the field, which falls back
+    /// to the default of every `.proto` file under the package root.
     ///
     /// The manifest file (`Proto.toml`) is always included in the
     /// package regardless of this setting.
     ///
     /// Mutually exclusive with `include`.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub exclude: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 /// Represents a single project dependency
