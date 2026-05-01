@@ -36,6 +36,8 @@ fn create_test_manifest(
             name: name.parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(dependencies)
         .build()
@@ -82,6 +84,8 @@ async fn test_single_local_dependency() {
             name: "api-package".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "lib-package".parse().expect("valid package name"),
@@ -136,6 +140,8 @@ async fn test_transitive_dependencies() {
             name: "lib1".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "lib2".parse().expect("valid package name"),
@@ -157,6 +163,8 @@ async fn test_transitive_dependencies() {
             name: "api".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "lib1".parse().expect("valid package name"),
@@ -220,6 +228,8 @@ async fn test_lib_cannot_depend_on_api() {
             name: "lib-package".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "api-package".parse().expect("valid package name"),
@@ -269,6 +279,8 @@ async fn test_api_can_depend_on_lib() {
             name: "api-package".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "lib-package".parse().expect("valid package name"),
@@ -312,6 +324,8 @@ async fn test_circular_dependency_direct() {
             name: "pkg2".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "pkg1".parse().expect("valid package name"),
@@ -333,6 +347,8 @@ async fn test_circular_dependency_direct() {
             name: "pkg1".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "pkg2".parse().expect("valid package name"),
@@ -394,6 +410,8 @@ async fn test_circular_dependency_indirect() {
             name: "pkg3".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "pkg1".parse().expect("valid package name"),
@@ -414,6 +432,8 @@ async fn test_circular_dependency_indirect() {
             name: "pkg2".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "pkg3".parse().expect("valid package name"),
@@ -434,6 +454,8 @@ async fn test_circular_dependency_indirect() {
             name: "pkg1".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "pkg2".parse().expect("valid package name"),
@@ -493,6 +515,8 @@ async fn test_diamond_dependency() {
             name: "lib1".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "common".parse().expect("valid package name"),
@@ -517,6 +541,8 @@ async fn test_diamond_dependency() {
             name: "lib2".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "common".parse().expect("valid package name"),
@@ -538,6 +564,8 @@ async fn test_diamond_dependency() {
             name: "api".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![
             Dependency {
@@ -628,6 +656,8 @@ async fn test_multiple_dependencies_from_single_package() {
             name: "api".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![
             Dependency {
@@ -704,6 +734,8 @@ async fn test_local_remote_conflict() {
             name: "api-package".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![
             Dependency {
@@ -773,6 +805,8 @@ async fn test_relative_path_resolution() {
             name: "api".parse().expect("valid package name"),
             version: Version::new(0, 1, 0),
             description: None,
+            include: Default::default(),
+            exclude: Default::default(),
         })
         .dependencies(vec![Dependency {
             package: "lib1".parse().expect("valid package name"),

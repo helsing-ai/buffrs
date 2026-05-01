@@ -237,6 +237,36 @@ pub struct PackageManifest {
     pub version: Version,
     /// Description of the api package
     pub description: Option<String>,
+    /// List of paths that should be **included** in the package.
+    ///
+    /// Gitignore syntax is supported. Starts from an empty set: only
+    /// files matching one of the globs are included (any file type,
+    /// not limited to `.proto`).
+    ///
+    /// If neither `include` nor `exclude` is set, the default is
+    /// every `.proto` file under the package root.
+    ///
+    /// The manifest file (`Proto.toml`) is always included in the
+    /// package regardless of this setting.
+    ///
+    /// Mutually exclusive with `exclude`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
+    /// List of paths that should be **excluded** from the package.
+    ///
+    /// Gitignore syntax is supported. When set, starts from the set of
+    /// all files under the package root (any file type, not limited to
+    /// `.proto`) and removes files matching any of the globs. An empty
+    /// list (`exclude = []`) means "include every file with no
+    /// exclusions" — distinct from omitting the field, which falls back
+    /// to the default of every `.proto` file under the package root.
+    ///
+    /// The manifest file (`Proto.toml`) is always included in the
+    /// package regardless of this setting.
+    ///
+    /// Mutually exclusive with `include`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 /// Represents a single project dependency
@@ -371,6 +401,8 @@ mod tests {
             name: PackageName::from_str("test-pkg").unwrap(),
             version: Version::new(1, 2, 3),
             description: Some("A test package".to_string()),
+            include: Default::default(),
+            exclude: Default::default(),
         };
 
         let deps = vec![Dependency::new(
@@ -440,6 +472,8 @@ mod tests {
                 name: PackageName::from_str("test").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(vec![])
             .build();
@@ -562,6 +596,8 @@ mod tests {
                 name: PackageName::from_str("test").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(vec![])
             .build();
@@ -589,6 +625,8 @@ mod tests {
                 name: PackageName::from_str("test-pkg").unwrap(),
                 version: Version::new(1, 0, 0),
                 description: None,
+                include: Default::default(),
+                exclude: Default::default(),
             })
             .dependencies(Default::default())
             .build();

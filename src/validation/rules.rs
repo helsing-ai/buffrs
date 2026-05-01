@@ -136,6 +136,8 @@ mod tests {
             name: crate::package::PackageName::new("package")?,
             version: Version::new(0, 1, 0),
             description: Default::default(),
+            include: Default::default(),
+            exclude: Default::default(),
         };
 
         let all = all(&manifest)
@@ -162,6 +164,8 @@ mod tests {
             name: crate::package::PackageName::new("package")?,
             version: Version::new(0, 1, 0),
             description: Default::default(),
+            include: Default::default(),
+            exclude: Default::default(),
         };
 
         let all = all(&manifest)

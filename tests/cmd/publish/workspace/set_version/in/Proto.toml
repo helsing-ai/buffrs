@@ -1,4 +1,4 @@
-edition = "0.13"
+edition = "0.14"
 
 [workspace]
 members = ["pkg-a", "pkg-b"]
