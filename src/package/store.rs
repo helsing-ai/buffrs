@@ -389,9 +389,15 @@ impl PackageStore {
             // Default: include only .proto files
             let proto_types = {
                 let mut types = TypesBuilder::new();
-                types.add("proto", "*.proto").expect("valid name");
+                types
+                    .add("proto", "*.proto")
+                    .into_diagnostic()
+                    .wrap_err("internal error: failed to register `proto` file type")?;
                 types.select("proto");
-                types.build().expect("no conflicting definitions")
+                types
+                    .build()
+                    .into_diagnostic()
+                    .wrap_err("internal error: failed to build `proto` file type matcher")?
             };
             builder.types(proto_types).filter_entry(move |e| {
                 if vendored {
