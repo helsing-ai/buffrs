@@ -327,6 +327,12 @@ impl PackageStore {
         let vendor_path = self.proto_vendor_path();
 
         if let Some(include) = include {
+            // An empty include list means "include nothing" — but an empty
+            // `OverrideBuilder` is a no-op filter that lets every file
+            // through, so short-circuit here instead of walking the tree.
+            if include.is_empty() {
+                return Ok(Vec::new());
+            }
             // Use the inclusions list to select files via overrides
             let mut overrides_builder = OverrideBuilder::new(path);
             for glob in include {
@@ -635,6 +641,22 @@ mod tests {
             names,
             vec!["hello.proto", "readme.txt", "subdir/nested.proto"]
         );
+    }
+
+    #[tokio::test]
+    async fn collect_with_empty_include_yields_no_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = setup_test_dir(tmp.path());
+
+        // `include = []` means "include nothing matching": no files
+        // should be collected, even though the manifest and lockfile
+        // are added separately by the packaging layer.
+        let paths = store
+            .collect(&store.proto_path(), false, Some(&[]), None)
+            .await
+            .unwrap();
+
+        assert!(paths.is_empty(), "expected no files, got {paths:?}");
     }
 
     #[tokio::test]

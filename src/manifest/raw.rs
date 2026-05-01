@@ -343,14 +343,6 @@ impl TryFrom<RawManifest> for PackagesManifest {
             bail!("manifest cannot have both `include` and `exclude`; use one or the other");
         }
 
-        if let Some(pkg) = &package
-            && pkg.include.as_ref().is_some_and(|v| v.is_empty())
-        {
-            bail!(
-                "`include` must not be empty; either list the patterns to include or omit the field entirely"
-            );
-        }
-
         Ok(PackagesManifest {
             edition: raw.edition(),
             package,

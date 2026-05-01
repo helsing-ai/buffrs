@@ -249,7 +249,7 @@ pub struct PackageManifest {
     /// The manifest file (`Proto.toml`) is always included in the
     /// package regardless of this setting.
     ///
-    /// Mutually exclusive with `exclude`. Must not be empty.
+    /// Mutually exclusive with `exclude`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include: Option<Vec<String>>,
     /// List of paths that should be **excluded** from the package.

@@ -694,7 +694,7 @@ mod tests {
         }
 
         #[test]
-        fn deserialize_manifest_with_empty_include_fails() {
+        fn deserialize_manifest_with_empty_include_preserves_distinction() {
             let toml = r#"
                 edition = "0.14"
 
@@ -707,11 +707,9 @@ mod tests {
                 [dependencies]
             "#;
 
-            let result = PackagesManifest::from_str(toml);
-            assert!(
-                result.is_err(),
-                "manifest with empty include list should fail"
-            );
+            let manifest = PackagesManifest::from_str(toml).expect("should parse");
+            let pkg = manifest.package.expect("package should be present");
+            assert_eq!(pkg.include, Some(vec![]));
         }
 
         #[test]
