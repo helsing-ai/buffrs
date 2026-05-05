@@ -229,7 +229,7 @@ impl Maven {
             )?);
             if package_hash == expected_hash {
                 tracing::info!(
-                    ":: {}/{}@{} is already published, skipping",
+                    "{}/{}@{} is already published, skipping",
                     repository,
                     package.name(),
                     package.version()
@@ -257,7 +257,7 @@ impl Maven {
             .await?;
 
         tracing::info!(
-            ":: published {}/{}@{}",
+            "published {}/{}@{}",
             repository,
             package.name(),
             package.version()

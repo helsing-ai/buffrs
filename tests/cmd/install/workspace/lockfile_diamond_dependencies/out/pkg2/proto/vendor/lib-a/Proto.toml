@@ -8,4 +8,4 @@ version = "1.0.0"
 [dependencies.lib-b]
 version = "=1.0.0"
 repository = "test-repo"
-registry = "REGISTRY_URL"
+registry = "artifactory+REGISTRY_URL"
