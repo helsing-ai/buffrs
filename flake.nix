@@ -53,6 +53,15 @@
           lib.vendorDependencies =
             pkgs.callPackage ./nix/cache.nix { buffrs = buffrs.package; };
 
+          # Pure-Nix alternative: parses `Proto.lock` directly with
+          # `fromTOML` instead of shelling out to `buffrs lock
+          # print-files` under IFD. Use this when the caller may
+          # evaluate `vendorDependencies` for a system it can't
+          # build (e.g. enumerating `aarch64-darwin` outputs from
+          # `x86_64-linux` via flake-parts).
+          lib.vendorDependenciesPure =
+            pkgs.callPackage ./nix/cache-pure.nix { };
+
           devShells.default = pkgs.mkShell ({
             nativeBuildInputs = nativeBuildInputs ++ [ pkgs.protobuf ];
             buildInputs = devTools ++ dependencies;
