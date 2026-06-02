@@ -618,9 +618,8 @@ impl Publisher {
         tracing::debug!("upload complete: {} v{}", package.name(), package.version());
         tracing::debug!("package uploaded successfully to registry");
 
-        // Store the mapping for this package
-        let package_version =
-            VersionReq::from_str(&package.version().to_string()).into_diagnostic()?;
+        // Store the mapping for this package.
+        let package_version = exact_version_req(package.version())?;
 
         tracing::debug!(
             "converted package version to version requirement: {}",
@@ -765,6 +764,18 @@ impl Publisher {
     }
 }
 
+/// Builds an exact (`=x.y.z`) requirement pinning to a published version.
+///
+/// Used when rewriting a local workspace dependency into a remote one on
+/// publish. Workspace members are versioned and released in lockstep, so a
+/// former local dependency must resolve to exactly the sibling version that was
+/// just published. Parsing a bare version string would instead yield semver's
+/// caret default (`^x.y.z`), letting consumers drift onto a different version
+/// than the one this package was built and tested against.
+fn exact_version_req(version: &Version) -> miette::Result<VersionReq> {
+    VersionReq::from_str(&format!("={version}")).into_diagnostic()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,7 +827,9 @@ mod tests {
         let remote_manifest = RemoteDependencyManifest {
             registry: RegistryUri::from_str("https://test.registry.com").unwrap(),
             repository: "test-repo".to_string(),
-            version: VersionReq::parse("1.0.0").unwrap(),
+            // Published workspace siblings are recorded as exact pins (see
+            // `exact_version_req`); use one here so the fixture is representative.
+            version: VersionReq::parse("=1.0.0").unwrap(),
         };
         publisher
             .manifest_mappings
@@ -841,7 +854,7 @@ mod tests {
         match &result[0].manifest {
             DependencyManifest::Remote(remote) => {
                 assert_eq!(remote.repository, "test-repo");
-                assert_eq!(remote.version.to_string(), "^1.0.0");
+                assert_eq!(remote.version.to_string(), "=1.0.0");
             }
             _ => panic!("Expected remote dependency"),
         }
@@ -997,5 +1010,26 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn exact_version_req_pins_exactly() {
+        // A bare version parses to semver's caret default; the helper must pin.
+        assert_eq!(
+            VersionReq::parse("0.393.2").unwrap().to_string(),
+            "^0.393.2"
+        );
+
+        let req = exact_version_req(&Version::new(0, 393, 2)).unwrap();
+        assert_eq!(req.to_string(), "=0.393.2");
+        assert_eq!(req.comparators.len(), 1);
+        assert_eq!(req.comparators[0].op, semver::Op::Exact);
+
+        // Pre-release versions must also pin exactly.
+        let prerelease = Version::from_str("0.393.2-snap.5").unwrap();
+        assert_eq!(
+            exact_version_req(&prerelease).unwrap().to_string(),
+            "=0.393.2-snap.5"
+        );
     }
 }
