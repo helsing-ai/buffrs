@@ -30,7 +30,7 @@ Useful resources:
 
 - [The Buffrs Book](https://helsing-ai.github.io/buffrs)
 - [Crate Documentation](https://docs.rs/buffrs)
-- [Announcement Post](https://blog.helsing.ai/buffrs-a-package-manager-for-protocol-buffers-1-2-aaf7c00153d2)
+- [Announcement Post](https://blog.helsing.ai/posts/buffrs-a-package-manager-for-protocol-buffers-12)
 - `buffrs help`
 
 ## Features

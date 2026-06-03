@@ -21,7 +21,7 @@ _[announcement post.]_
 
 <!-- ### Differerntion -->
 
-[announcement post.]: https://blog.helsing.ai/buffrs-a-package-manager-for-protocol-buffers-1-2-aaf7c00153d2
+[announcement post.]: https://blog.helsing.ai/posts/buffrs-a-package-manager-for-protocol-buffers-12
 [buf]: https://buf.build/
 [bazel]: https://bazel.build/
 [git submodules]: https://git-scm.com/book/en/v2/Git-Tools-Submodules
