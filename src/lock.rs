@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, HashSet},
     path::Path,
 };
 
@@ -42,7 +42,7 @@ pub const LOCKFILE: &str = "Proto.lock";
 /// A locked dependency with exact name and version
 ///
 /// Serializes as "name version" string (Cargo format)
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LockedDependency {
     /// A dependency identified only by name
     Named {
@@ -659,8 +659,8 @@ impl TryFrom<Vec<LockedPackage>> for WorkspaceLockfile {
                     }
                     // Dependencies are conceptually an unordered set for a
                     // given (name, version) — compare without regard to order.
-                    let existing_deps: BTreeSet<_> = existing.dependencies.iter().collect();
-                    let locked_deps: BTreeSet<_> = locked.dependencies.iter().collect();
+                    let existing_deps: HashSet<_> = existing.dependencies.iter().collect();
+                    let locked_deps: HashSet<_> = locked.dependencies.iter().collect();
                     if existing_deps != locked_deps {
                         tracing::warn!(
                             "dependencies mismatch for {}@{}: {:?} vs {:?}. Using first seen.",
