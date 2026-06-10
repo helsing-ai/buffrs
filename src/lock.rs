@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use miette::{Context, IntoDiagnostic, ensure};
 use semver::Version;
@@ -654,8 +657,11 @@ impl TryFrom<Vec<LockedPackage>> for WorkspaceLockfile {
                             locked.digest
                         );
                     }
-                    // Dependencies should be identical for same (name, version)
-                    if existing.dependencies != locked.dependencies {
+                    // Dependencies are conceptually an unordered set for a
+                    // given (name, version) — compare without regard to order.
+                    let existing_deps: BTreeSet<_> = existing.dependencies.iter().collect();
+                    let locked_deps: BTreeSet<_> = locked.dependencies.iter().collect();
+                    if existing_deps != locked_deps {
                         tracing::warn!(
                             "dependencies mismatch for {}@{}: {:?} vs {:?}. Using first seen.",
                             locked.name,
