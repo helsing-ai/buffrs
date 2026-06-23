@@ -8,10 +8,12 @@ use pretty_assertions::{assert_eq, assert_str_eq};
 
 mod cmd;
 mod compat;
+mod helper;
 mod nix;
 mod registry;
 mod resolver;
 
+pub use helper::*;
 pub use registry::*;
 
 /// Create a command which runs the cli

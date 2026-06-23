@@ -8,30 +8,16 @@ fn fixture() {
         let cwd = vfs.root();
 
         // Publish a remote-lib to the registry
-        {
-            std::fs::create_dir(cwd.join("remote-lib")).unwrap();
-            let lib_dir = cwd.join("remote-lib");
-
-            crate::cli!()
-                .args(["init", "--lib", "remote-lib"])
-                .env("BUFFRS_HOME", &buffrs_home)
-                .current_dir(&lib_dir)
-                .assert()
-                .success();
-
-            std::fs::write(
-                lib_dir.join("proto/remote.proto"),
-                "syntax = \"proto3\";\n\npackage remote;\n\nmessage Data {\n  string value = 1;\n}\n",
-            )
-            .unwrap();
-
-            crate::cli!()
-                .args(["publish", "--registry", url, "--repository", "test-repo"])
-                .env("BUFFRS_HOME", &buffrs_home)
-                .current_dir(&lib_dir)
-                .assert()
-                .success();
-        }
+        crate::publish_test_library(
+            &cwd,
+            &buffrs_home,
+            url,
+            "test-repo",
+            "remote-lib",
+            None,
+            "remote.proto",
+            "syntax = \"proto3\";\n\npackage remote;\n\nmessage Data {\n  string value = 1;\n}\n",
+        );
 
         // Add the dependency
         crate::cli!()
