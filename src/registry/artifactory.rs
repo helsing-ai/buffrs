@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::RegistryUri;
+use super::{
+    RegistryUri,
+    http::{RequestBuilder, ValidatedResponse},
+};
 use crate::{
     credentials::Credentials,
     lock::DigestAlgorithm,
@@ -20,7 +23,7 @@ use crate::{
     package::{Package, PackageName},
 };
 use miette::{Context, IntoDiagnostic, ensure, miette};
-use reqwest::{Body, Method, Response};
+use reqwest::Method;
 use semver::Version;
 use serde::Deserialize;
 use url::Url;
@@ -70,10 +73,10 @@ impl Artifactory {
     /// Pings artifactory to ensure registry access is working
     pub async fn ping(&self) -> miette::Result<()> {
         let repositories_url: Url = {
-            let mut uri = self.registry.to_owned();
-            let path = &format!("{}/api/repositories", uri.path());
-            uri.set_path(path);
-            uri.into()
+            let mut url = self.registry.url().clone();
+            let path = &format!("{}/api/repositories", url.path());
+            url.set_path(path);
+            url
         };
 
         self.new_request(Method::GET, repositories_url)
@@ -95,10 +98,10 @@ impl Artifactory {
 
         // First retrieve all packages matching the given name
         let search_query_url: Url = {
-            let mut url = self.registry.clone();
+            let mut url = self.registry.url().clone();
             url.set_path("artifactory/api/search/artifact");
             url.set_query(Some(&format!("name={name}&repos={repository}")));
-            url.into()
+            url
         };
 
         tracing::debug!("search query URL: {}", search_query_url);
@@ -218,15 +221,15 @@ impl Artifactory {
             let version = super::dependency_version_string(&dependency)?;
             tracing::debug!("  resolved version: {}", version);
 
-            let path = manifest.registry.path().to_owned();
+            let path = manifest.registry.url().path().to_owned();
 
-            let mut url = manifest.registry.clone();
+            let mut url = manifest.registry.url().clone();
             url.set_path(&format!(
                 "{}/{}/{}/{}-{}.tgz",
                 path, manifest.repository, dependency.package, dependency.package, version
             ));
 
-            url.into()
+            url
         };
 
         tracing::debug!("constructed download URL: {}", artifact_url);
@@ -310,7 +313,7 @@ impl Artifactory {
 
         let artifact_uri: Url = format!(
             "{}/{}/{}/{}-{}.tgz",
-            self.registry,
+            self.registry.url(),
             repository,
             package.name(),
             package.name(),
@@ -413,52 +416,6 @@ impl Artifactory {
     }
 }
 
-struct RequestBuilder(reqwest::RequestBuilder);
-
-impl RequestBuilder {
-    fn new(client: reqwest::Client, method: reqwest::Method, url: Url) -> Self {
-        Self(client.request(method, url))
-    }
-
-    fn auth(mut self, token: String) -> Self {
-        self.0 = self.0.bearer_auth(token);
-        self
-    }
-
-    fn body(mut self, payload: impl Into<Body>) -> Self {
-        self.0 = self.0.body(payload);
-        self
-    }
-
-    async fn send(self) -> miette::Result<ValidatedResponse> {
-        tracing::debug!("sending HTTP request");
-        let response = self.0.send().await.into_diagnostic()?;
-        tracing::debug!("HTTP response received, status: {}", response.status());
-        response.try_into()
-    }
-}
-
-#[derive(Debug)]
-struct ValidatedResponse(reqwest::Response);
-
-impl TryFrom<Response> for ValidatedResponse {
-    type Error = miette::Report;
-
-    fn try_from(value: Response) -> Result<Self, Self::Error> {
-        ensure!(
-            !value.status().is_redirection(),
-            "remote server attempted to redirect request - is this registry URL valid?"
-        );
-
-        ensure!(
-            value.status() != 401,
-            "unauthorized - please provide registry credentials with `buffrs login`"
-        );
-
-        value.error_for_status().into_diagnostic().map(Self)
-    }
-}
-
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 struct ArtifactSearchResponse {
     results: Vec<ArtifactSearchResult>,
@@ -467,4 +424,27 @@ struct ArtifactSearchResponse {
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 struct ArtifactSearchResult {
     uri: String,
+}
+
+#[async_trait::async_trait]
+impl super::Registry for Artifactory {
+    async fn ping(&self) -> miette::Result<()> {
+        self.ping().await
+    }
+
+    async fn get_latest_version(
+        &self,
+        repository: String,
+        name: PackageName,
+    ) -> miette::Result<Version> {
+        self.get_latest_version(repository, name).await
+    }
+
+    async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+        self.download(dependency).await
+    }
+
+    async fn publish(&self, package: Package, repository: String) -> miette::Result<()> {
+        self.publish(package, repository).await
+    }
 }

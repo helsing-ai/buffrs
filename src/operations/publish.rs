@@ -6,6 +6,7 @@ use std::path::Path;
 #[cfg(feature = "git")]
 use std::process::Stdio;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use miette::{Context as _, IntoDiagnostic, bail, miette};
 use semver::{Version, VersionReq};
@@ -18,7 +19,7 @@ use crate::{
     },
     operations::install::NetworkMode,
     package::PackageStore,
-    registry::{Artifactory, RegistryUri},
+    registry::{Registry, RegistryBuilder, RegistryUri},
     resolver::{DependencyGraph, DependencySource},
 };
 
@@ -26,7 +27,7 @@ use crate::{
 pub struct Publisher {
     registry: RegistryUri,
     repository: String,
-    artifactory: Artifactory,
+    registry_client: Arc<dyn Registry>,
     preserve_mtime: bool,
     /// Mapping from local dependency paths to their remote published locations
     manifest_mappings: HashMap<LocalDependencyManifest, RemoteDependencyManifest>,
@@ -48,15 +49,21 @@ impl Publisher {
         let credentials = Credentials::load().await?;
         tracing::debug!("credentials loaded successfully");
 
-        tracing::debug!("creating artifactory client for registry: {}", registry);
-        let artifactory = Artifactory::new(registry.clone(), &credentials)?;
-        tracing::debug!("artifactory client created successfully");
+        tracing::debug!("creating registry client for registry: {}", registry);
+        let registry_client: Arc<dyn Registry> = Arc::from(
+            RegistryBuilder::builder()
+                .kind(registry.registry_type())
+                .uri(registry.clone())
+                .credentials(&credentials)
+                .build()?,
+        );
+        tracing::debug!("registry client created successfully");
 
         tracing::debug!("publisher instance created successfully");
         Ok(Self {
             registry,
             repository,
-            artifactory,
+            registry_client,
             preserve_mtime,
             manifest_mappings: HashMap::new(),
         })
@@ -610,7 +617,7 @@ impl Publisher {
             self.repository
         );
 
-        self.artifactory
+        self.registry_client
             .publish(package.clone(), self.repository.clone())
             .await
             .wrap_err_with(|| format!("publishing of package {} failed", package.name()))?;
@@ -793,12 +800,19 @@ mod tests {
         let credentials = Credentials {
             registry_tokens: HashMap::new(),
         };
-        let artifactory = Artifactory::new(registry.clone(), &credentials).unwrap();
+        let registry_client: Arc<dyn Registry> = Arc::from(
+            RegistryBuilder::builder()
+                .kind(registry.registry_type())
+                .uri(registry.clone())
+                .credentials(&credentials)
+                .build()
+                .unwrap(),
+        );
 
         Publisher {
             registry,
             repository: "test-repo".to_string(),
-            artifactory,
+            registry_client,
             preserve_mtime: false,
             manifest_mappings: HashMap::new(),
         }

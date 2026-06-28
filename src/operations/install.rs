@@ -19,7 +19,7 @@ use crate::{
         workspace::WorkspaceManifest,
     },
     package::{Package, PackageName, PackageStore},
-    registry::{Artifactory, RegistryUri},
+    registry::{RegistryBuilder, RegistryUri},
     resolver::{DependencyError, DependencyGraph, DependencySource},
 };
 
@@ -333,8 +333,12 @@ mod utils {
             });
         }
 
-        // 1. Download the package from artifactory
-        let artifactory = Artifactory::new(registry.clone(), &ctx.credentials)
+        // 1. Download the package from the configured registry
+        let registry_client = RegistryBuilder::builder()
+            .kind(registry.registry_type())
+            .uri(registry.clone())
+            .credentials(&ctx.credentials)
+            .build()
             .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
 
         let dependency = Dependency {
@@ -346,7 +350,7 @@ mod utils {
             }),
         };
 
-        let downloaded_package = artifactory.download(dependency).await?;
+        let downloaded_package = registry_client.download(dependency).await?;
 
         // 2. Cache the downloaded package for future installs
         let cache_key = CacheEntry::from(&downloaded_package);
