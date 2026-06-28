@@ -89,6 +89,7 @@ assert_fs = "1.0"
 axum = { version = "0.8", default-features = false, features = [
   "tokio",
   "http1",
+  "query",
 ] }
 hex = "0.4.3"
 pretty_assertions = "1.4"

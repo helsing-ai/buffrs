@@ -24,12 +24,8 @@ mod cache;
 
 pub use artifactory::Artifactory;
 use miette::{Context, IntoDiagnostic, ensure, miette};
-use semver::VersionReq;
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use url::Url;
-
-use crate::manifest::{Dependency, DependencyManifest};
 
 /// A representation of a registry URI
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -91,118 +87,5 @@ fn sanity_check_url(url: &Url) -> miette::Result<()> {
         Ok(())
     } else {
         Err(miette!("the URI must contain a host component: {url}"))
-    }
-}
-
-#[derive(Error, Debug)]
-#[error("{0} is not a supported version requirement")]
-struct UnsupportedVersionRequirement(VersionReq);
-
-#[derive(Error, Debug)]
-#[error(
-    "{0} is not supported yet. Pin the exact version you want to use with '='. For example: '=1.0.4' instead of '^1.0.0'"
-)]
-struct VersionNotPinned(VersionReq);
-
-fn dependency_version_string(dependency: &Dependency) -> miette::Result<String> {
-    let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
-        return Err(miette!(
-            "unable to serialize version of local dependency ({})",
-            dependency.package
-        ));
-    };
-
-    let version = manifest
-        .version
-        .comparators
-        .first()
-        .ok_or_else(|| UnsupportedVersionRequirement(manifest.version.clone()))
-        .into_diagnostic()?;
-
-    ensure!(
-        version.op == semver::Op::Exact,
-        VersionNotPinned(manifest.version.clone())
-    );
-
-    let minor_version = version
-        .minor
-        .ok_or_else(|| miette!("version missing minor number"))?;
-
-    let patch_version = version
-        .patch
-        .ok_or_else(|| miette!("version missing patch number"))?;
-
-    Ok(format!(
-        "{}.{}.{}{}",
-        version.major,
-        minor_version,
-        patch_version,
-        if version.pre.is_empty() {
-            "".to_owned()
-        } else {
-            format!("-{}", version.pre)
-        }
-    ))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use semver::VersionReq;
-
-    use crate::{
-        manifest::Dependency,
-        package::PackageName,
-        registry::{VersionNotPinned, dependency_version_string},
-    };
-
-    use super::RegistryUri;
-
-    fn get_dependency(version: &str) -> Dependency {
-        let registry = RegistryUri::from_str("https://my-registry.com").unwrap();
-        let repository = String::from("my-repo");
-        let package = PackageName::from_str("package").unwrap();
-        let version = VersionReq::from_str(version).unwrap();
-        Dependency::new(registry, repository, package, version)
-    }
-
-    #[test]
-    fn valid_version() {
-        let dependency = get_dependency("=0.0.1");
-        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1"));
-
-        let dependency = get_dependency("=0.0.1-23");
-        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1-23"));
-
-        let dependency = get_dependency("=0.0.1-ab");
-        assert!(dependency_version_string(&dependency).is_ok_and(|version| version == "0.0.1-ab"));
-    }
-
-    #[test]
-    fn unsupported_version_operator() {
-        let dependency = get_dependency("^0.0.1");
-        assert!(
-            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
-        );
-
-        let dependency = get_dependency("~0.0.1");
-        assert!(
-            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
-        );
-
-        let dependency = get_dependency("<=0.0.1");
-        assert!(
-            dependency_version_string(&dependency).is_err_and(|err| err.is::<VersionNotPinned>())
-        );
-    }
-
-    #[test]
-    fn incomplete_version() {
-        let dependency = get_dependency("=1.0");
-        assert!(dependency_version_string(&dependency).is_err());
-
-        let dependency = get_dependency("=1");
-        assert!(dependency_version_string(&dependency).is_err());
     }
 }

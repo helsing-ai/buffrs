@@ -37,15 +37,17 @@ impl LocalRegistry {
     }
 
     /// "Downloads" a package from the local filesystem
-    pub async fn download(&self, dependency: Dependency) -> miette::Result<Package> {
+    pub async fn download(
+        &self,
+        dependency: Dependency,
+        version: &semver::Version,
+    ) -> miette::Result<Package> {
         let DependencyManifest::Remote(ref manifest) = dependency.manifest else {
             return Err(miette!(
                 "unable to serialize version of local dependency ({})",
                 dependency.package
             ));
         };
-
-        let version = super::dependency_version_string(&dependency)?;
 
         let path = self.base_dir.join(PathBuf::from(format!(
             "{}/{}/{}-{}.tgz",
@@ -155,13 +157,17 @@ mod tests {
 
         // Download package from local registry and assert the tgz bytes and the metadata match what we
         // had published.
+        let version = semver::Version::new(0, 1, 0);
         let fetched = registry
-            .download(Dependency::new(
-                registry_uri,
-                "test-repo".into(),
-                "test-api".parse().unwrap(),
-                "=0.1.0".parse().unwrap(),
-            ))
+            .download(
+                Dependency::new(
+                    registry_uri,
+                    "test-repo".into(),
+                    "test-api".parse().unwrap(),
+                    "=0.1.0".parse().unwrap(),
+                ),
+                &version,
+            )
             .await
             .unwrap();
 

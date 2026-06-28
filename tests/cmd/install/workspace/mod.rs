@@ -3,3 +3,8 @@ mod lockfile;
 mod lockfile_diamond_dependencies;
 mod lockfile_multiple_versions;
 mod lockfile_transitive;
+mod range_caret_resolution;
+mod range_compatible_diamond;
+mod range_incompatible_diamond;
+mod range_multi_level_tree;
+mod range_tilde_resolution;

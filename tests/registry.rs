@@ -11,6 +11,7 @@ use axum::{
 };
 use bytes::Bytes;
 use miette::{Context as _, IntoDiagnostic, miette};
+use serde::Deserialize;
 use tokio::net::TcpListener;
 
 type State = Arc<RwLock<HashMap<String, Bytes>>>;
@@ -33,12 +34,60 @@ async fn test_registry(
         required_token,
     };
     let app = Router::new()
+        // Artifactory-compatible artifact search endpoint (must be registered before the wildcard)
+        .route("/artifactory/api/search/artifact", get(search_artifacts))
         .route("/{*path}", get(get_package).put(put_package))
         .with_state(state);
     axum::serve(listener, app)
         .await
         .into_diagnostic()
         .wrap_err(miette!("failed to read the token from the user"))
+}
+
+/// Query parameters for the Artifactory artifact search endpoint
+#[derive(Deserialize)]
+struct SearchQuery {
+    name: String,
+    repos: String,
+}
+
+/// Implements the Artifactory artifact search endpoint used by `list_versions`.
+///
+/// Scans stored packages whose path matches `{any}/{repos}/{name}/{name}-{version}.tgz`
+/// and returns them as an `ArtifactSearchResult` JSON payload.
+async fn search_artifacts(
+    extract::State(state): extract::State<RegistryState>,
+    extract::Query(query): extract::Query<SearchQuery>,
+) -> impl IntoResponse {
+    let state = state.packages.read().unwrap();
+
+    // Stored keys look like: "{prefix}/{repos}/{name}/{name}-{version}.tgz"
+    let results: Vec<serde_json::Value> = state
+        .keys()
+        .filter(|path| {
+            let segments: Vec<&str> = path.split('/').collect();
+            // Need at least 4 segments: prefix / repos / name / filename
+            if segments.len() < 4 {
+                return false;
+            }
+            let repo_seg = segments[segments.len() - 3];
+            let name_seg = segments[segments.len() - 2];
+            repo_seg == query.repos && name_seg == query.name
+        })
+        .map(|path| {
+            // The URI only needs to end with the correct filename for version parsing.
+            serde_json::json!({ "uri": format!("http://test-registry/{}", path) })
+        })
+        .collect();
+
+    let body = serde_json::json!({ "results": results }).to_string();
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/vnd.org.jfrog.artifactory.search.ArtifactSearchResult+json",
+        )],
+        body,
+    )
 }
 
 // basic handler that responds with a static string
