@@ -193,15 +193,12 @@ impl Package {
             .wrap_err(miette!("corrupted tar package"))?
             .filter_map(|entry| entry.ok())
             .find(|entry| {
-                entry
-                    .path()
-                    .ok()
-                    // TODO(rfink): The following line is a bug since it checks whether
-                    //  actual path (relative to the process pwd) is a file, *not* whether
-                    //  the tar entry would be a file if unpacked
-                    // .filter(|path| path.is_file())
-                    .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
-                    .is_some()
+                entry.header().entry_type().is_file()
+                    && entry
+                        .path()
+                        .ok()
+                        .filter(|path| path.ends_with(manifest::MANIFEST_FILE))
+                        .is_some()
             })
             .ok_or_else(|| miette!("missing manifest"))?;
 
@@ -268,5 +265,54 @@ impl TryFrom<Bytes> for Package {
 
     fn try_from(tgz: Bytes) -> Result<Self, Self::Error> {
         Package::parse(tgz)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest_bytes() -> Vec<u8> {
+        br#"
+edition = "0.12"
+
+[package]
+type = "lib"
+name = "test-pkg"
+version = "1.2.3"
+"#
+        .to_vec()
+    }
+
+    fn archive_with_directory_named_manifest() -> Bytes {
+        let mut tar = tar::Builder::new(Vec::new());
+
+        let mut directory = tar::Header::new_gnu();
+        directory.set_entry_type(tar::EntryType::Directory);
+        directory.set_mode(0o755);
+        directory.set_size(0);
+        tar.append_data(&mut directory, manifest::MANIFEST_FILE, io::empty())
+            .unwrap();
+
+        let manifest = manifest_bytes();
+        let mut file = tar::Header::new_gnu();
+        file.set_mode(0o444);
+        file.set_size(manifest.len() as u64);
+        tar.append_data(&mut file, "nested/Proto.toml", manifest.as_slice())
+            .unwrap();
+
+        let tar = tar.into_inner().unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&tar).unwrap();
+
+        encoder.finish().unwrap().into()
+    }
+
+    #[test]
+    fn parse_ignores_manifest_directories() {
+        let package = Package::parse(archive_with_directory_named_manifest()).unwrap();
+
+        assert_eq!(package.name().to_string(), "test-pkg");
+        assert_eq!(package.version(), &Version::new(1, 2, 3));
     }
 }
