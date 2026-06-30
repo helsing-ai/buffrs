@@ -102,7 +102,7 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
-        /// Indicate whether access time information is preserved when creating a package.
+        /// Indicate whether modification time information is preserved when creating a package.
         #[clap(long)]
         #[arg(default_value_t = false)]
         preserve_mtime: bool,
@@ -127,7 +127,7 @@ enum Command {
         /// Note: This overrides the version in the manifest.
         #[clap(long)]
         set_version: Option<Version>,
-        /// Indicate whether access time information is preserved when creating a package.
+        /// Indicate whether modification time information is preserved when creating a package.
         #[clap(long)]
         #[arg(default_value_t = true)]
         preserve_mtime: bool,
@@ -135,7 +135,7 @@ enum Command {
 
     /// Installs dependencies
     Install {
-        /// Indicate whether access time information is preserved when installing a local.
+        /// Indicate whether modification time information is preserved when installing a local.
         #[clap(long)]
         #[arg(default_value_t = true)]
         preserve_local_mtime: bool,

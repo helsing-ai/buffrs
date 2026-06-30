@@ -70,5 +70,5 @@ using the `BUFFRS_CACHE` environment variable (see
 
 #### `--preserve-local-mtime`
 
-Preserve access time information when installing a local dependency. Defaults to
+Preserve modification time information when installing a local dependency. Defaults to
 `true`.
