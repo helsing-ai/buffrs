@@ -824,6 +824,7 @@ fn build_test_graph(nodes: Vec<(PackageName, Vec<PackageName>)>) -> DependencyGr
                 },
                 dependencies,
                 version: VersionReq::STAR,
+                resolved_version: None,
             },
         );
     }
@@ -1102,6 +1103,7 @@ fn test_topo_sort_detects_cycle() {
             },
             dependencies: vec!["b".parse().expect("valid package name")],
             version: VersionReq::STAR,
+            resolved_version: None,
         },
     );
 
@@ -1115,6 +1117,7 @@ fn test_topo_sort_detects_cycle() {
             },
             dependencies: vec!["a".parse().expect("valid package name")],
             version: VersionReq::STAR,
+            resolved_version: None,
         },
     );
 

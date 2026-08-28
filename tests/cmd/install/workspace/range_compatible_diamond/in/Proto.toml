@@ -1,0 +1,4 @@
+edition = "0.12"
+
+[workspace]
+members = ["pkg1", "pkg2"]

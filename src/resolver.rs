@@ -1,22 +1,24 @@
 // (c) Copyright 2025 Helsing GmbH. All rights reserved.
+// thiserror v2 generates unused_assignments in Display impls when free-function
+// positional format args reference fields via .field syntax.
+#![allow(unused_assignments)]
 
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
 };
 
-use async_recursion::async_recursion;
 use miette::{Context as _, Diagnostic, bail};
-use semver::VersionReq;
+use semver::{Version, VersionReq};
 use thiserror::Error;
 
 use crate::{
     cache::Cache,
     credentials::Credentials,
-    lock::Lockfile,
+    lock::{FileRequirement, Lockfile},
     manifest::{
-        Dependency, DependencyManifest, LocalDependencyManifest, MANIFEST_FILE, Manifest,
-        PackagesManifest,
+        Dependency, DependencyManifest, MANIFEST_FILE, Manifest, PackagesManifest,
+        RemoteDependencyManifest,
     },
     operations::install::NetworkMode,
     package::{PackageName, PackageType},
@@ -51,8 +53,13 @@ pub struct DependencyNode {
     pub source: DependencySource,
     /// Packages that this package depends on
     pub dependencies: Vec<PackageName>,
-    /// Version requirement
+    /// Exact version requirement (`=<resolved>`) for remote deps, `*` for locals
+    ///
+    /// Consumed by the installer to fetch the package, so it pins the version the
+    /// resolver chose rather than the requirement that produced it.
     pub version: VersionReq,
+    /// The concrete version that was resolved and downloaded (None for local deps)
+    pub resolved_version: Option<Version>,
 }
 
 /// Maps a package name to metadata describing the package
@@ -90,33 +97,45 @@ impl DependencyGraph {
         lockfile: Option<Lockfile>,
         network_mode: NetworkMode,
     ) -> miette::Result<Self> {
-        let mut builder =
-            GraphBuilder::new(base_path.to_path_buf(), credentials, lockfile, network_mode);
+        let root_package_type = manifest.package.as_ref().map(|p| p.kind);
+        let root_name = manifest
+            .package
+            .as_ref()
+            .map(|p| p.name.to_string())
+            .unwrap_or_else(|| "root".to_string());
 
-        // Get the parent package type from the manifest
-        let parent_package_type = manifest.package.as_ref().map(|p| p.kind);
+        let mut builder = GraphBuilder::new(
+            base_path.to_path_buf(),
+            root_package_type,
+            credentials,
+            lockfile,
+            network_mode,
+        );
 
-        // Add root dependencies
+        // Phase 1: register every root edge before resolving anything, so a package
+        // required by several roots is picked against the merged requirement set.
         for dependency in manifest.dependencies.iter().flatten() {
             builder
-                .add_dependency(dependency, parent_package_type)
-                .await
-                .wrap_err_with(|| {
-                    format!(
-                        "while resolving dependencies of {}",
-                        manifest
-                            .package
-                            .as_ref()
-                            .map(|p| p.name.to_string())
-                            .unwrap_or_else(|| "root".to_string())
-                    )
-                })?;
+                .add_edge(None, dependency)
+                .wrap_err_with(|| format!("while resolving dependencies of {}", root_name))?;
         }
 
-        Ok(Self {
+        // Phase 2: drain the worklist.
+        builder
+            .drive()
+            .await
+            .wrap_err_with(|| format!("while resolving dependencies of {}", root_name))?;
+
+        let graph = Self {
             nodes: builder.nodes,
             network_mode,
-        })
+        };
+
+        // The worklist is BFS, so a cycle produces a cyclic graph rather than
+        // unbounded recursion. Detect it on the finished graph.
+        graph.topological_sort()?;
+
+        Ok(graph)
     }
 
     /// Returns dependencies in topological order (dependencies before dependents)
@@ -214,12 +233,27 @@ impl DependencyGraph {
     }
 }
 
+/// A single edge contributing a `VersionReq` to a package's accumulated set.
+#[derive(Debug, Clone)]
+struct RequirementEdge {
+    /// The contributing parent package, or `None` for a root manifest edge.
+    from: Option<PackageName>,
+    /// The version requirement carried by this edge. `VersionReq::STAR` for locals.
+    req: VersionReq,
+}
+
 /// Internal builder for constructing the dependency graph
 struct GraphBuilder<'a> {
     nodes: HashMap<PackageName, DependencyNode>,
+    /// Per-package accumulated requirement edges.
+    requirements: HashMap<PackageName, Vec<RequirementEdge>>,
+    /// First-seen source for each package, used to detect local/remote conflicts.
+    sources: HashMap<PackageName, DependencySource>,
+    /// FIFO of package names whose resolution must be (re-)attempted.
+    worklist: VecDeque<PackageName>,
     base_path: PathBuf,
-    /// Track which packages we're currently visiting to detect cycles during construction
-    visiting: HashSet<PackageName>,
+    /// Package type of the root manifest, used as the parent type for root edges.
+    root_package_type: Option<PackageType>,
     credentials: &'a Credentials,
     lockfile: Option<Lockfile>,
     registry_clients: HashMap<RegistryUri, Artifactory>,
@@ -229,14 +263,18 @@ struct GraphBuilder<'a> {
 impl<'a> GraphBuilder<'a> {
     fn new(
         base_path: PathBuf,
+        root_package_type: Option<PackageType>,
         credentials: &'a Credentials,
         lockfile: Option<Lockfile>,
         network_mode: NetworkMode,
     ) -> Self {
         Self {
             nodes: HashMap::new(),
+            requirements: HashMap::new(),
+            sources: HashMap::new(),
+            worklist: VecDeque::new(),
             base_path,
-            visiting: HashSet::new(),
+            root_package_type,
             credentials,
             lockfile,
             registry_clients: HashMap::new(),
@@ -244,249 +282,373 @@ impl<'a> GraphBuilder<'a> {
         }
     }
 
-    #[async_recursion]
-    async fn add_dependency(
+    /// Records a requirement edge from `parent` (None = root manifest) to
+    /// `dependency`, scheduling the dependency if it needs (re-)resolution.
+    fn add_edge(
         &mut self,
+        parent: Option<PackageName>,
         dependency: &Dependency,
-        parent_type: Option<PackageType>,
     ) -> miette::Result<()> {
-        let package_name = &dependency.package;
+        let name = dependency.package.clone();
 
-        // Check for cycle during traversal
-        if self.visiting.contains(package_name) {
-            bail!(DependencyError::CircularDependency(format!(
-                "detected while processing {}",
-                package_name
-            )));
-        }
+        let new_source = match &dependency.manifest {
+            DependencyManifest::Local(local) => DependencySource::Local {
+                path: self.base_path.join(&local.path),
+            },
+            DependencyManifest::Remote(remote) => DependencySource::Remote {
+                registry: remote.registry.clone(),
+                repository: remote.repository.clone(),
+            },
+        };
 
-        // If already processed, just validate compatibility
-        if let Some(existing) = self.nodes.get(package_name) {
-            self.validate_compatibility(dependency, existing)
-                .wrap_err_with(|| format!("conflicting dependency on {}", package_name))?;
-            return Ok(());
-        }
-
-        // Mark as visiting
-        self.visiting.insert(package_name.clone());
-
-        match &dependency.manifest {
-            DependencyManifest::Local(local) => {
-                self.add_local_dependency(dependency, local, parent_type)
-                    .await?;
-            }
-            DependencyManifest::Remote(remote) => {
-                self.add_remote_dependency(dependency, remote, parent_type)
-                    .await?;
+        match self.sources.get(&name) {
+            Some(existing) => Self::ensure_source_kinds_match(&name, existing, &new_source)?,
+            None => {
+                self.sources.insert(name.clone(), new_source);
             }
         }
 
-        // Unmark as visiting
-        self.visiting.remove(package_name);
+        let req = match &dependency.manifest {
+            DependencyManifest::Local(_) => VersionReq::STAR,
+            DependencyManifest::Remote(remote) => remote.version.clone(),
+        };
+
+        self.requirements
+            .entry(name.clone())
+            .or_default()
+            .push(RequirementEdge { from: parent, req });
+
+        if self.needs_visit(&name) && !self.worklist.contains(&name) {
+            self.worklist.push_back(name);
+        }
 
         Ok(())
     }
 
-    async fn add_local_dependency(
-        &mut self,
-        dependency: &Dependency,
-        local_manifest: &LocalDependencyManifest,
-        parent_type: Option<PackageType>,
-    ) -> miette::Result<()> {
-        let resolved_path = self.base_path.join(&local_manifest.path);
-        let manifest_path = resolved_path.join(MANIFEST_FILE);
-
-        let manifest = Manifest::require_package_manifest(&manifest_path).await?;
-        let package_type = manifest.package.as_ref().map(|p| p.kind);
-
-        Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
-
-        let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
-
-        // Add node
-        self.nodes.insert(
-            dependency.package.clone(),
-            DependencyNode {
-                name: dependency.package.clone(),
-                package_type,
-                source: DependencySource::Local {
-                    path: resolved_path.clone(),
-                },
-                dependencies: sub_dependencies.clone(),
-                version: VersionReq::STAR,
+    /// True when `name` has no node yet, or its resolved version no longer
+    /// satisfies the (possibly just-extended) requirement set.
+    ///
+    /// The conditional scheduling this drives is what makes the traversal
+    /// terminate on cyclic graphs: a back-edge into an already-inserted node
+    /// schedules no further work.
+    fn needs_visit(&self, name: &PackageName) -> bool {
+        match self.nodes.get(name) {
+            None => true,
+            Some(node) => match &node.resolved_version {
+                // Locals carry no version; once resolved they never need revisiting.
+                None => false,
+                Some(version) => !self
+                    .requirements
+                    .get(name)
+                    .is_some_and(|edges| edges.iter().all(|e| e.req.matches(version))),
             },
+        }
+    }
+
+    fn ensure_source_kinds_match(
+        name: &PackageName,
+        existing: &DependencySource,
+        new_kind: &DependencySource,
+    ) -> miette::Result<()> {
+        let mismatch = matches!(
+            (existing, new_kind),
+            (
+                DependencySource::Local { .. },
+                DependencySource::Remote { .. }
+            ) | (
+                DependencySource::Remote { .. },
+                DependencySource::Local { .. }
+            )
         );
 
-        // Recursively process dependencies with the new base path
-        for sub_dep in manifest.dependencies.unwrap_or_default() {
-            // We need to update the base path for sub-dependencies
-            let old_base = self.base_path.clone();
-            self.base_path = resolved_path.clone();
-            self.add_dependency(&sub_dep, package_type)
-                .await
-                .wrap_err_with(|| {
-                    format!("while resolving dependencies of {}", dependency.package)
-                })?;
-            self.base_path = old_base;
-        }
-
-        Ok(())
-    }
-
-    /// Ensures that a lib package doesn't depend on an api package
-    fn ensure_lib_not_depends_on_api(
-        dependency: &Dependency,
-        parent_type: Option<PackageType>,
-        package_type: Option<PackageType>,
-    ) -> miette::Result<()> {
-        // Validate package type constraint
-        if let Some(PackageType::Lib) = parent_type
-            && let Some(PackageType::Api) = package_type
-        {
-            bail!(DependencyError::InvalidPackageTypeDependency {
-                parent: PackageName::unchecked("parent"),
-                dependency: dependency.package.clone(),
+        if mismatch {
+            bail!(DependencyError::LocalRemoteConflict {
+                package: name.clone()
             });
         }
 
         Ok(())
     }
 
-    async fn add_remote_dependency(
+    /// Drains the worklist, resolving each package against its accumulated
+    /// requirement set and walking its transitives.
+    ///
+    /// Terminates because a package's merged requirement set only grows while its
+    /// parent set is stable (which can only hold or lower the chosen version),
+    /// retraction never raises a pick, and `fetch_and_walk` short-circuits when the
+    /// pick is unchanged — so each package is walked at most once per distinct
+    /// version, over a finite, non-increasing sequence.
+    async fn drive(&mut self) -> miette::Result<()> {
+        while let Some(name) = self.worklist.pop_front() {
+            // The package may have been retracted out of existence, or satisfied by
+            // an earlier pop, since it was scheduled.
+            if !self.requirements.contains_key(&name) || !self.needs_visit(&name) {
+                continue;
+            }
+
+            self.resolve_one(&name)
+                .await
+                .wrap_err_with(|| format!("while resolving {}", name))?;
+        }
+
+        Ok(())
+    }
+
+    async fn resolve_one(&mut self, name: &PackageName) -> miette::Result<()> {
+        let source = self
+            .sources
+            .get(name)
+            .cloned()
+            .expect("source recorded by add_edge");
+
+        match source {
+            DependencySource::Local { path } => self.resolve_local(name, &path).await,
+            DependencySource::Remote {
+                registry,
+                repository,
+            } => self.resolve_remote(name, &registry, &repository).await,
+        }
+    }
+
+    async fn resolve_local(
         &mut self,
-        dependency: &Dependency,
-        remote_manifest: &crate::manifest::RemoteDependencyManifest,
-        parent_type: Option<PackageType>,
+        name: &PackageName,
+        resolved_path: &Path,
     ) -> miette::Result<()> {
-        let package_name = &dependency.package;
-        let registry = &remote_manifest.registry;
-        let repository = &remote_manifest.repository;
-        let version = &remote_manifest.version;
-
-        let package = {
-            let reformatted = version
-                .to_string()
-                .chars()
-                .skip_while(|c| *c == '=')
-                .collect::<String>();
-
-            let version = reformatted
-                .parse()
-                .map_err(|e| miette::miette!("{e}"))
-                .wrap_err_with(|| {
-                    format!("expected only exact version requirements: {package_name}@{version}")
-                })?;
-
-            let mut cached_package = None;
-
-            // Try to resolve from lockfile + cache first
-            if let Some(lockfile) = &self.lockfile
-                && let Some(file_req) = lockfile.get(package_name, &version)
-            {
-                // Verify registry matches (lockfile vs manifest)
-                if file_req.url().as_str().starts_with(registry.as_str()) {
-                    let cache = Cache::open().await?;
-                    if let Ok(Some(pkg)) = cache.get(file_req).await {
-                        tracing::debug!("resolved {}@{} from local cache", package_name, version);
-                        cached_package = Some(pkg);
-                    }
-                }
-            }
-
-            match (cached_package, self.network_mode) {
-                (Some(pkg), _) => pkg,
-                (None, NetworkMode::Online) => {
-                    tracing::debug!("downloading {}@{} from registry", package_name, version);
-
-                    // Reuse or create artifactory client
-                    let artifactory = if let Some(client) = self.registry_clients.get(registry) {
-                        client.clone()
-                    } else {
-                        let client = Artifactory::new(registry.clone(), self.credentials)
-                            .wrap_err_with(|| {
-                                format!("failed to initialize registry {}", registry)
-                            })?;
-                        self.registry_clients
-                            .insert(registry.clone(), client.clone());
-                        client
-                    };
-
-                    artifactory.download(dependency.clone()).await?
-                }
-                (None, NetworkMode::Offline) => {
-                    bail!(DependencyError::Offline {
-                        name: package_name.clone(),
-                        version: remote_manifest.version.clone(),
-                    });
-                }
-            }
-        };
-
-        // Read the package manifest to discover dependencies and package type
-        let manifest = package.manifest;
+        let manifest_path = resolved_path.join(MANIFEST_FILE);
+        let manifest = Manifest::require_package_manifest(&manifest_path).await?;
         let package_type = manifest.package.as_ref().map(|p| p.kind);
 
-        Self::ensure_lib_not_depends_on_api(dependency, parent_type, package_type)?;
+        self.ensure_lib_not_depends_on_api(name, package_type)?;
 
-        let sub_dependencies: Vec<PackageName> = manifest.get_dependency_package_names();
-
-        // Add node with discovered metadata
+        // Insert before registering sub-edges so a back-edge into this package
+        // resolves against an existing node instead of looping.
         self.nodes.insert(
-            package_name.clone(),
+            name.clone(),
             DependencyNode {
-                name: package_name.clone(),
+                name: name.clone(),
                 package_type,
-                source: DependencySource::Remote {
-                    registry: registry.clone(),
-                    repository: repository.clone(),
+                source: DependencySource::Local {
+                    path: resolved_path.to_path_buf(),
                 },
-                dependencies: sub_dependencies.clone(),
-                version: version.clone(),
+                dependencies: manifest.get_dependency_package_names(),
+                version: VersionReq::STAR,
+                resolved_version: None,
             },
         );
 
-        // Recursively process transitive dependencies
-        for sub_dep in manifest.dependencies.unwrap_or_default() {
-            self.add_dependency(&sub_dep, package_type)
-                .await
-                .wrap_err_with(|| format!("while resolving dependencies of {}", package_name))?;
+        // Sub-dependency paths are relative to this package's directory.
+        let old_base = std::mem::replace(&mut self.base_path, resolved_path.to_path_buf());
+        let mut result = Ok(());
+        for sub_dep in manifest.dependencies.into_iter().flatten() {
+            result = self.add_edge(Some(name.clone()), &sub_dep);
+            if result.is_err() {
+                break;
+            }
         }
+        self.base_path = old_base;
 
-        Ok(())
+        result
     }
 
-    fn validate_compatibility(
-        &self,
-        dependency: &Dependency,
-        existing: &DependencyNode,
+    async fn resolve_remote(
+        &mut self,
+        name: &PackageName,
+        registry: &RegistryUri,
+        repository: &str,
     ) -> miette::Result<()> {
-        // Check for local/remote conflicts
-        self.validate_manifest_conflicts(dependency, existing)?;
+        let reqs: Vec<VersionReq> = self.requirements[name]
+            .iter()
+            .map(|e| e.req.clone())
+            .collect();
 
-        // Check for version conflicts on remote dependencies
-        self.validate_version_compatibility(dependency, existing)?;
-
-        Ok(())
-    }
-
-    /// Validates that version requirements are compatible when the same package is requested multiple times
-    fn validate_version_compatibility(
-        &self,
-        dependency: &Dependency,
-        existing: &DependencyNode,
-    ) -> miette::Result<()> {
-        // Only check version compatibility for remote dependencies
-        if let (DependencyManifest::Remote(new_remote), DependencySource::Remote { .. }) =
-            (&dependency.manifest, &existing.source)
+        // 1. Lockfile: the highest pinned version satisfying every requirement.
+        //    A pin that satisfies nothing is skipped, not an error — in a workspace
+        //    pool it may belong to another, independently-resolved member.
+        if let Some(lockfile) = &self.lockfile
+            && let Some((locked_version, file_req)) = lockfile.find_satisfying_all(name, &reqs)
+            && file_req.url().as_str().starts_with(registry.as_str())
         {
-            // For now, buffrs only supports pinned versions (see TODO #205)
-            // We check if the version requirements are equal since they should be exact pins
-            // In the future with dynamic version resolution, this would need to check for compatibility
-            if new_remote.version != existing.version {
-                bail!(DependencyError::VersionConflict {
-                    package: dependency.package.clone(),
-                    required_version: new_remote.version.clone(),
-                    existing_version: existing.version.clone(),
+            tracing::debug!("lockfile pins {}@{}", name, locked_version);
+
+            return self
+                .fetch_and_walk(name, registry, repository, locked_version, Some(file_req))
+                .await;
+        }
+
+        // 2. Registry.
+        let artifactory = self.registry_client(registry)?;
+        let (chosen, available) = artifactory
+            .resolve_version_for_all(repository.to_string(), name.clone(), &reqs)
+            .await
+            .wrap_err_with(|| format!("could not resolve {} from registry {}", name, registry))?;
+
+        let chosen = chosen.ok_or_else(|| DependencyError::NoCompatibleVersion {
+            package: name.clone(),
+            requirements: reqs,
+            available_versions: available,
+        })?;
+
+        tracing::debug!("resolved {} -> {}", name, chosen);
+
+        self.fetch_and_walk(name, registry, repository, chosen, None)
+            .await
+    }
+
+    async fn fetch_and_walk(
+        &mut self,
+        name: &PackageName,
+        registry: &RegistryUri,
+        repository: &str,
+        chosen: Version,
+        cached: Option<FileRequirement>,
+    ) -> miette::Result<()> {
+        if let Some(existing) = self.nodes.get(name) {
+            if existing.resolved_version.as_ref() == Some(&chosen) {
+                return Ok(());
+            }
+
+            // The pick changed: everything the old version pulled in is no longer
+            // justified by this package.
+            self.retract_contributions_from(name);
+        }
+
+        let cache = Cache::open().await?;
+        let cached_pkg = match cached {
+            Some(file_req) => cache.get(file_req).await.ok().flatten(),
+            None => None,
+        };
+
+        let package = match (cached_pkg, self.network_mode) {
+            (Some(pkg), _) => {
+                tracing::debug!("resolved {}@{} from local cache", name, chosen);
+                pkg
+            }
+            (None, NetworkMode::Online) => {
+                tracing::debug!("downloading {}@{} from registry", name, chosen);
+
+                let artifactory = self.registry_client(registry)?;
+                let dependency = Dependency {
+                    package: name.clone(),
+                    manifest: DependencyManifest::Remote(RemoteDependencyManifest {
+                        registry: registry.clone(),
+                        repository: repository.to_string(),
+                        version: exact_req(&chosen),
+                    }),
+                };
+
+                artifactory.download(dependency, &chosen).await?
+            }
+            (None, NetworkMode::Offline) => {
+                bail!(DependencyError::Offline {
+                    name: name.clone(),
+                    requirements: self.requirements[name]
+                        .iter()
+                        .map(|e| e.req.clone())
+                        .collect(),
+                });
+            }
+        };
+
+        let manifest = package.manifest;
+        let package_type = manifest.package.as_ref().map(|p| p.kind);
+
+        self.ensure_lib_not_depends_on_api(name, package_type)?;
+
+        // `version` is consumed by the installer to fetch the package, so it must
+        // pin the version the resolver actually chose — not one of the requirements
+        // that produced it, which would let the installer re-resolve upward.
+        self.nodes.insert(
+            name.clone(),
+            DependencyNode {
+                name: name.clone(),
+                package_type,
+                source: DependencySource::Remote {
+                    registry: registry.clone(),
+                    repository: repository.to_string(),
+                },
+                dependencies: manifest.get_dependency_package_names(),
+                version: exact_req(&chosen),
+                resolved_version: Some(chosen),
+            },
+        );
+
+        for sub_dep in manifest.dependencies.into_iter().flatten() {
+            self.add_edge(Some(name.clone()), &sub_dep)?;
+        }
+
+        Ok(())
+    }
+
+    /// Retracts every requirement edge contributed by `parent`, dropping packages
+    /// that become unreachable and rescheduling those whose pick no longer fits.
+    fn retract_contributions_from(&mut self, parent: &PackageName) {
+        let mut frontier: Vec<PackageName> = vec![parent.clone()];
+
+        while let Some(retractor) = frontier.pop() {
+            let affected: Vec<PackageName> = self
+                .requirements
+                .iter()
+                .filter(|(_, edges)| edges.iter().any(|e| e.from.as_ref() == Some(&retractor)))
+                .map(|(name, _)| name.clone())
+                .collect();
+
+            for name in affected {
+                // Never retract the originating package's own requirement set.
+                if name == *parent {
+                    continue;
+                }
+
+                let Some(edges) = self.requirements.get_mut(&name) else {
+                    continue;
+                };
+                edges.retain(|e| e.from.as_ref() != Some(&retractor));
+
+                if edges.is_empty() {
+                    self.requirements.remove(&name);
+                    self.sources.remove(&name);
+                    self.nodes.remove(&name);
+                    frontier.push(name);
+                } else if self.needs_visit(&name) && !self.worklist.contains(&name) {
+                    // Still reachable, but the shrunken set no longer fits the pick.
+                    // We deliberately do not re-optimize upward.
+                    self.worklist.push_back(name);
+                }
+            }
+        }
+    }
+
+    /// Ensures that no lib package depends on an api package
+    ///
+    /// Every `edge.from` is guaranteed to be in `nodes` already, because a parent
+    /// inserts its own node before registering sub-edges. Root edges (`from: None`)
+    /// use the root manifest's package type.
+    fn ensure_lib_not_depends_on_api(
+        &self,
+        name: &PackageName,
+        package_type: Option<PackageType>,
+    ) -> miette::Result<()> {
+        if package_type != Some(PackageType::Api) {
+            return Ok(());
+        }
+
+        let Some(edges) = self.requirements.get(name) else {
+            return Ok(());
+        };
+
+        for edge in edges {
+            let parent_type = match &edge.from {
+                None => self.root_package_type,
+                Some(parent) => self.nodes.get(parent).and_then(|n| n.package_type),
+            };
+
+            if parent_type == Some(PackageType::Lib) {
+                bail!(DependencyError::InvalidPackageTypeDependency {
+                    parent: edge
+                        .from
+                        .clone()
+                        .unwrap_or_else(|| PackageName::unchecked("parent")),
+                    dependency: name.clone(),
                 });
             }
         }
@@ -494,27 +656,41 @@ impl<'a> GraphBuilder<'a> {
         Ok(())
     }
 
-    /// Checks for conflicting dependencies between local / remote deps in the dependency tree
-    fn validate_manifest_conflicts(
-        &self,
-        dependency: &Dependency,
-        existing: &DependencyNode,
-    ) -> miette::Result<()> {
-        match (&dependency.manifest, &existing.source) {
-            (DependencyManifest::Local(_), DependencySource::Remote { .. }) => {
-                bail!(DependencyError::LocalRemoteConflict {
-                    package: dependency.package.clone(),
-                });
-            }
-            (DependencyManifest::Remote(_), DependencySource::Local { .. }) => {
-                bail!(DependencyError::LocalRemoteConflict {
-                    package: dependency.package.clone(),
-                });
-            }
-            _ => {}
+    fn registry_client(&mut self, registry: &RegistryUri) -> miette::Result<Artifactory> {
+        if let Some(client) = self.registry_clients.get(registry) {
+            return Ok(client.clone());
         }
 
-        Ok(())
+        let client = Artifactory::new(registry.clone(), self.credentials)
+            .wrap_err_with(|| format!("failed to initialize registry {}", registry))?;
+        self.registry_clients
+            .insert(registry.clone(), client.clone());
+
+        Ok(client)
+    }
+}
+
+/// Builds an exact (`=x.y.z`) requirement from a resolved version.
+fn exact_req(version: &Version) -> VersionReq {
+    VersionReq::parse(&format!("={}", version)).expect("resolved version is a valid exact req")
+}
+
+fn fmt_reqs(reqs: &[semver::VersionReq]) -> String {
+    reqs.iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn fmt_versions(versions: &[semver::Version]) -> String {
+    if versions.is_empty() {
+        "(none published)".to_string()
+    } else {
+        versions
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -541,38 +717,238 @@ pub enum DependencyError {
     #[error("circular dependency detected: {0}")]
     CircularDependency(String),
 
-    /// Version conflict between multiple dependants
-    #[error(
-        "version conflict for {package}: requires {required_version} but already resolved to {existing_version}"
-    )]
-    VersionConflict {
-        /// The package with conflicting versions
-        package: PackageName,
-        /// The version requirement that conflicts
-        required_version: VersionReq,
-        /// The version already resolved in the graph
-        existing_version: VersionReq,
-    },
-
-    /// Failed to download a dependency from the registry
-    #[error("failed to download dependency {name}@{version} from the registry")]
-    DownloadError {
-        /// Package name
-        name: PackageName,
-        /// Version requirement
-        version: VersionReq,
-    },
-
     /// A network request was needed but --offline mode is active
-    #[error("cannot fetch {name}@{version} in offline mode")]
+    #[error("cannot fetch {name} in offline mode (required: [{}])", fmt_reqs(.requirements))]
     #[diagnostic(help(
-        "run `buffrs install` without --offline to cache {name}@{version},\n
+        "run `buffrs install` without --offline to cache the package,\n\
          or set BUFFRS_CACHE to a pre-populated cache directory"
     ))]
     Offline {
         /// Package name
         name: PackageName,
-        /// Version requirement
-        version: VersionReq,
+        /// Version requirements that could not be satisfied offline
+        requirements: Vec<semver::VersionReq>,
     },
+
+    /// No single version satisfies the union of all requirements.
+    #[error(
+        "no version of {package} satisfies all requirements: [{}]; available versions: [{}]",
+        fmt_reqs(.requirements),
+        fmt_versions(.available_versions)
+    )]
+    NoCompatibleVersion {
+        /// The package with conflicting requirements
+        package: PackageName,
+        /// The set of requirements that could not be jointly satisfied
+        requirements: Vec<semver::VersionReq>,
+        /// All versions that were published for this package
+        available_versions: Vec<semver::Version>,
+    },
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+    use semver::Version;
+
+    #[test]
+    fn no_compatible_version_diagnostic_lists_requirements() {
+        let err = DependencyError::NoCompatibleVersion {
+            package: "leaf-lib".parse().unwrap(),
+            requirements: vec!["^1.1.0".parse().unwrap(), "<=1.2.0".parse().unwrap()],
+            available_versions: vec![Version::new(1, 0, 0), Version::new(1, 5, 0)],
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("leaf-lib"), "msg: {msg}");
+        assert!(msg.contains("1.0.0"), "msg: {msg}");
+        assert!(msg.contains("1.5.0"), "msg: {msg}");
+        assert!(msg.contains("^1.1.0"), "msg: {msg}");
+        assert!(msg.contains("<=1.2.0"), "msg: {msg}");
+    }
+}
+
+#[cfg(test)]
+mod retraction_tests {
+    use super::*;
+
+    fn pkg(name: &str) -> PackageName {
+        PackageName::unchecked(name)
+    }
+
+    fn remote_source() -> DependencySource {
+        DependencySource::Remote {
+            registry: "http://example.test/artifactory".parse().unwrap(),
+            repository: "test-repo".to_string(),
+        }
+    }
+
+    fn node(name: &str, version: &str, dependencies: Vec<PackageName>) -> DependencyNode {
+        let resolved: Version = version.parse().unwrap();
+
+        DependencyNode {
+            name: pkg(name),
+            package_type: Some(PackageType::Lib),
+            source: remote_source(),
+            dependencies,
+            version: exact_req(&resolved),
+            resolved_version: Some(resolved),
+        }
+    }
+
+    /// Builds a graph state directly, bypassing any network access.
+    fn builder<'a>(
+        credentials: &'a Credentials,
+        edges: &[(&str, Option<&str>, &str)],
+        nodes: Vec<DependencyNode>,
+    ) -> GraphBuilder<'a> {
+        let mut builder = GraphBuilder::new(
+            PathBuf::from("/nonexistent"),
+            Some(PackageType::Lib),
+            credentials,
+            None,
+            NetworkMode::Offline,
+        );
+
+        for (name, from, req) in edges {
+            builder
+                .requirements
+                .entry(pkg(name))
+                .or_default()
+                .push(RequirementEdge {
+                    from: from.map(pkg),
+                    req: req.parse().unwrap(),
+                });
+            builder
+                .sources
+                .entry(pkg(name))
+                .or_insert_with(remote_source);
+        }
+
+        for node in nodes {
+            builder.nodes.insert(node.name.clone(), node);
+        }
+
+        builder
+    }
+
+    /// Dropping a package must transitively drop everything that was only
+    /// reachable through it, not just its immediate dependencies.
+    ///
+    ///   root -> a          (retracted)
+    ///   a    -> b          (b's only contributor)
+    ///   b    -> c          (c's only contributor)
+    #[test]
+    fn retraction_cascades_through_multiple_levels() {
+        let credentials = Credentials::default();
+        let mut builder = builder(
+            &credentials,
+            &[
+                ("a", None, "^1.0.0"),
+                ("b", Some("a"), "^1.0.0"),
+                ("c", Some("b"), "^1.0.0"),
+            ],
+            vec![
+                node("a", "1.5.0", vec![pkg("b")]),
+                node("b", "1.0.0", vec![pkg("c")]),
+                node("c", "1.0.0", vec![]),
+            ],
+        );
+
+        builder.retract_contributions_from(&pkg("a"));
+
+        assert!(
+            !builder.nodes.contains_key(&pkg("b")),
+            "b was only reachable via a and must be dropped"
+        );
+        assert!(
+            !builder.nodes.contains_key(&pkg("c")),
+            "c was only reachable via b and must cascade out too"
+        );
+        for name in ["b", "c"] {
+            assert!(!builder.requirements.contains_key(&pkg(name)));
+            assert!(!builder.sources.contains_key(&pkg(name)));
+        }
+
+        assert!(
+            builder.nodes.contains_key(&pkg("a")),
+            "the retracting package itself is left in place for its caller to replace"
+        );
+        assert!(
+            builder.requirements.contains_key(&pkg("a")),
+            "a's own requirement set must survive retraction"
+        );
+    }
+
+    /// A package that keeps a contributor survives, but must be rescheduled when
+    /// the shrunken requirement set no longer admits its current version.
+    #[test]
+    fn retraction_reschedules_survivor_whose_pick_no_longer_fits() {
+        let credentials = Credentials::default();
+        let mut builder = builder(
+            &credentials,
+            &[
+                ("a", None, "^1.0.0"),
+                ("other", None, "^1.0.0"),
+                // `shared` is required by both `a` (loosely) and `other` (tightly).
+                ("shared", Some("a"), "^1.0.0"),
+                ("shared", Some("other"), "<=1.2.0"),
+            ],
+            vec![
+                node("a", "1.5.0", vec![pkg("shared")]),
+                node("other", "1.0.0", vec![pkg("shared")]),
+                // Currently at 1.5.0, which only `a`'s requirement admits.
+                node("shared", "1.5.0", vec![]),
+            ],
+        );
+
+        builder.retract_contributions_from(&pkg("a"));
+
+        assert!(
+            builder.nodes.contains_key(&pkg("shared")),
+            "shared is still reachable via other and must not be dropped"
+        );
+        assert_eq!(
+            builder.requirements[&pkg("shared")].len(),
+            1,
+            "only a's edge is retracted"
+        );
+        assert!(
+            builder.worklist.contains(&pkg("shared")),
+            "1.5.0 no longer satisfies <=1.2.0, so shared must be re-resolved"
+        );
+    }
+
+    /// A survivor whose current version still satisfies the shrunken set is left
+    /// alone: retraction never re-optimizes upward.
+    #[test]
+    fn retraction_leaves_still_satisfied_survivor_alone() {
+        let credentials = Credentials::default();
+        let mut builder = builder(
+            &credentials,
+            &[
+                ("a", None, "^1.0.0"),
+                ("other", None, "^1.0.0"),
+                ("shared", Some("a"), "^1.0.0"),
+                ("shared", Some("other"), ">=1.0.0"),
+            ],
+            vec![
+                node("a", "1.5.0", vec![pkg("shared")]),
+                node("other", "1.0.0", vec![pkg("shared")]),
+                node("shared", "1.5.0", vec![]),
+            ],
+        );
+
+        builder.retract_contributions_from(&pkg("a"));
+
+        assert!(builder.nodes.contains_key(&pkg("shared")));
+        assert!(
+            !builder.worklist.contains(&pkg("shared")),
+            "1.5.0 still satisfies >=1.0.0, so no re-resolution is scheduled"
+        );
+        assert_eq!(
+            builder.nodes[&pkg("shared")].resolved_version,
+            Some(Version::new(1, 5, 0)),
+            "the existing pick is kept rather than re-optimized"
+        );
+    }
 }

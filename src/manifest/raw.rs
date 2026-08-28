@@ -79,12 +79,15 @@ impl RawManifest {
 
     pub(crate) fn dependencies_as_vec(&self) -> Option<Vec<Dependency>> {
         self.dependencies().map(|deps| {
-            deps.iter()
+            let mut out: Vec<_> = deps
+                .iter()
                 .map(|(package, manifest)| Dependency {
                     package: package.to_owned(),
                     manifest: manifest.to_owned(),
                 })
-                .collect()
+                .collect();
+            out.sort_by(|a, b| a.package.cmp(&b.package));
+            out
         })
     }
 
@@ -456,6 +459,50 @@ mod tests {
             vec_deps[0].package,
             PackageName::from_str("test-dep").unwrap()
         );
+    }
+
+    #[test]
+    fn dependencies_as_vec_is_sorted_by_name() {
+        let mut deps = HashMap::new();
+        deps.insert(
+            "zeta".parse::<PackageName>().unwrap(),
+            DependencyManifest::Remote(RemoteDependencyManifest {
+                registry: "http://example.test/artifactory".parse().unwrap(),
+                repository: "test".to_string(),
+                version: VersionReq::STAR,
+            }),
+        );
+        deps.insert(
+            "alpha".parse::<PackageName>().unwrap(),
+            DependencyManifest::Remote(RemoteDependencyManifest {
+                registry: "http://example.test/artifactory".parse().unwrap(),
+                repository: "test".to_string(),
+                version: VersionReq::STAR,
+            }),
+        );
+        deps.insert(
+            "mu".parse::<PackageName>().unwrap(),
+            DependencyManifest::Remote(RemoteDependencyManifest {
+                registry: "http://example.test/artifactory".parse().unwrap(),
+                repository: "test".to_string(),
+                version: VersionReq::STAR,
+            }),
+        );
+
+        let raw = RawManifest::Canary {
+            package: None,
+            dependencies: Some(deps),
+            workspace: None,
+        };
+
+        let names: Vec<String> = raw
+            .dependencies_as_vec()
+            .unwrap()
+            .into_iter()
+            .map(|d| d.package.to_string())
+            .collect();
+
+        assert_eq!(names, vec!["alpha", "mu", "zeta"]);
     }
 
     #[test]

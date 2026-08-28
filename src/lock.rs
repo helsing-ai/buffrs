@@ -18,7 +18,7 @@ use std::{
 };
 
 use miette::{Context, IntoDiagnostic, ensure};
-use semver::Version;
+use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::fs;
@@ -110,11 +110,18 @@ impl<'de> Deserialize<'de> for LockedDependency {
         let s = String::deserialize(deserializer)?;
         let parts: Vec<&str> = s.split_whitespace().collect();
 
-        if parts.len() != 2 {
+        if parts.len() == 1 {
             let name = PackageName::new(parts[0])
                 .map_err(|e| serde::de::Error::custom(format!("invalid package name: {}", e)))?;
 
             return Ok(Self::Named { name });
+        }
+
+        if parts.len() != 2 {
+            return Err(serde::de::Error::custom(format!(
+                "invalid locked dependency format: expected 'name' or 'name version', got '{}'",
+                s
+            )));
         }
 
         let name = PackageName::new(parts[0])
@@ -251,6 +258,22 @@ impl PackageLockfile {
     pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
         self.packages.values()
     }
+
+    /// Finds the locked package for `name` if its version satisfies `req`
+    pub fn find_satisfying(&self, name: &PackageName, req: &VersionReq) -> Option<&LockedPackage> {
+        self.packages.get(name).filter(|p| req.matches(&p.version))
+    }
+
+    /// Finds the locked package for `name` if its version satisfies every requirement
+    pub fn find_satisfying_all(
+        &self,
+        name: &PackageName,
+        reqs: &[VersionReq],
+    ) -> Option<&LockedPackage> {
+        self.packages
+            .get(name)
+            .filter(|p| reqs.iter().all(|r| r.matches(&p.version)))
+    }
 }
 
 #[async_trait::async_trait]
@@ -371,6 +394,31 @@ impl WorkspaceLockfile {
         self.packages.get(&(name.clone(), version.clone()))
     }
 
+    /// Finds the highest locked version of `name` that satisfies `req`
+    pub fn find_satisfying(&self, name: &PackageName, req: &VersionReq) -> Option<&LockedPackage> {
+        self.packages
+            .values()
+            .filter(|p| p.name == *name && req.matches(&p.version))
+            .max_by_key(|p| &p.version)
+    }
+
+    /// Finds the highest locked version of `name` that satisfies every requirement
+    ///
+    /// The workspace lockfile is a pool shared by independently-resolved members,
+    /// so entries that satisfy nothing here may legitimately belong to another
+    /// member. They are skipped, not treated as errors.
+    pub fn find_satisfying_all(
+        &self,
+        name: &PackageName,
+        reqs: &[VersionReq],
+    ) -> Option<&LockedPackage> {
+        self.packages
+            .values()
+            .filter(|p| p.name == *name)
+            .filter(|p| reqs.iter().all(|r| r.matches(&p.version)))
+            .max_by_key(|p| &p.version)
+    }
+
     /// Returns all packages in the lockfile
     pub fn packages(&self) -> impl Iterator<Item = &LockedPackage> {
         self.packages.values()
@@ -477,7 +525,7 @@ pub enum Lockfile {
 }
 
 impl Lockfile {
-    /// Locates a package by name and version
+    /// Locates a package by name and exact version
     pub fn get(&self, name: &PackageName, version: &Version) -> Option<FileRequirement> {
         match self {
             Self::Package(lock) => lock
@@ -567,6 +615,44 @@ impl Lockfile {
             Self::Package(_) => Err(miette::miette!(
                 "A workspace lockfile was expected but a package lockfile was found"
             )),
+        }
+    }
+
+    /// Finds the highest locked version of `name` that satisfies `req`, returning its concrete
+    /// version and file requirement
+    pub fn find_satisfying(
+        &self,
+        name: &PackageName,
+        req: &VersionReq,
+    ) -> Option<(Version, FileRequirement)> {
+        match self {
+            Self::Package(lock) => lock
+                .find_satisfying(name, req)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
+            Self::Workspace(lock) => lock
+                .find_satisfying(name, req)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
+        }
+    }
+
+    /// Finds the highest locked version of `name` satisfying every requirement,
+    /// returning its concrete version and file requirement
+    ///
+    /// A pin that satisfies none of the requirements is simply absent from the
+    /// answer rather than an error: in a workspace pool it may belong to another,
+    /// independently-resolved member.
+    pub fn find_satisfying_all(
+        &self,
+        name: &PackageName,
+        reqs: &[VersionReq],
+    ) -> Option<(Version, FileRequirement)> {
+        match self {
+            Self::Package(lock) => lock
+                .find_satisfying_all(name, reqs)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
+            Self::Workspace(lock) => lock
+                .find_satisfying_all(name, reqs)
+                .map(|p| (p.version.clone(), FileRequirement::from(p))),
         }
     }
 }
@@ -755,8 +841,8 @@ mod tests {
     use crate::{io::File, package::PackageName, registry::RegistryUri};
 
     use super::{
-        Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, PackageLockfile,
-        WorkspaceLockfile,
+        Digest, DigestAlgorithm, FileRequirement, LockedDependency, LockedPackage, Lockfile,
+        PackageLockfile, WorkspaceLockfile,
     };
 
     fn simple_lockfile() -> PackageLockfile {
@@ -1171,5 +1257,86 @@ mod tests {
         // Should return None for wrong version
         let result = resolved.get(&PackageName::unchecked("ws-pkg"), &Version::new(2, 0, 0));
         assert!(result.is_none());
+    }
+
+    fn locked(name: &str, version: Version) -> LockedPackage {
+        LockedPackage {
+            name: PackageName::new(name).unwrap(),
+            digest: Digest::from_parts(
+                DigestAlgorithm::SHA256,
+                "c109c6b120c525e6ea7b2db98335d39a3272f572ac86ba7b2d65c765c353c122",
+            )
+            .unwrap(),
+            registry: RegistryUri::from_str("http://my-registry.com").unwrap(),
+            repository: "my-repo".to_owned(),
+            version,
+            dependencies: Default::default(),
+            dependants: 1,
+        }
+    }
+
+    fn reqs(specs: &[&str]) -> Vec<semver::VersionReq> {
+        specs.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn find_satisfying_all_accepts_version_satisfying_every_req() {
+        let lock = Lockfile::Package(PackageLockfile::from_iter(vec![locked(
+            "lib-a",
+            Version::new(1, 2, 0),
+        )]));
+
+        let got = lock
+            .find_satisfying_all(
+                &PackageName::new("lib-a").unwrap(),
+                &reqs(&["^1.0.0", "<=1.2.0"]),
+            )
+            .expect("1.2.0 satisfies both");
+        assert_eq!(got.0, Version::new(1, 2, 0));
+    }
+
+    #[test]
+    fn find_satisfying_all_skips_pin_that_satisfies_only_some_reqs() {
+        let lock = Lockfile::Package(PackageLockfile::from_iter(vec![locked(
+            "lib-a",
+            Version::new(1, 5, 0),
+        )]));
+
+        assert!(
+            lock.find_satisfying_all(&PackageName::new("lib-a").unwrap(), &reqs(&["<=1.2.0"]))
+                .is_none(),
+            "a non-satisfying pin is absent, not an error"
+        );
+    }
+
+    #[test]
+    fn find_satisfying_all_picks_highest_satisfying_entry_from_the_workspace_pool() {
+        // A workspace pool legitimately holds several versions of one package,
+        // contributed by independently-resolved members.
+        let lock = Lockfile::Workspace(WorkspaceLockfile::from_iter(vec![
+            locked("lib-a", Version::new(1, 2, 0)),
+            locked("lib-a", Version::new(1, 5, 0)),
+        ]));
+
+        let got = lock
+            .find_satisfying_all(
+                &PackageName::new("lib-a").unwrap(),
+                &reqs(&["^1.0.0", "<=1.2.0"]),
+            )
+            .expect("1.2.0 is in the pool");
+        assert_eq!(
+            got.0,
+            Version::new(1, 2, 0),
+            "must not be misled by the higher pooled entry"
+        );
+    }
+
+    #[test]
+    fn find_satisfying_all_returns_none_when_package_absent() {
+        let lock = Lockfile::Package(PackageLockfile::from_iter(Vec::new()));
+        assert!(
+            lock.find_satisfying_all(&PackageName::new("missing").unwrap(), &reqs(&["^1.0.0"]))
+                .is_none()
+        );
     }
 }
