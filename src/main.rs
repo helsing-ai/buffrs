@@ -70,7 +70,19 @@ enum Command {
     },
 
     /// Check rule violations for this package.
-    Lint,
+    Lint {
+        /// Fail the command when violations of this severity are reported.
+        ///
+        /// Error-level violations always fail the command. Warnings are printed
+        /// either way, and fail the command only when denied.
+        #[arg(long, value_name = "LEVEL", conflicts_with = "allow")]
+        deny: Option<LintSeverity>,
+        /// Do not fail the command when violations of this severity are reported.
+        ///
+        /// This is the default for warnings.
+        #[arg(long, value_name = "LEVEL", conflicts_with = "deny")]
+        allow: Option<LintSeverity>,
+    },
 
     /// Adds dependencies to a manifest file
     Add {
@@ -272,10 +284,14 @@ async fn main() -> miette::Result<()> {
         .wrap_err(miette!(
             "failed to publish `{package}` to `{registry}:{repository}`",
         )),
-        Command::Lint => command::lint().await.wrap_err(miette!(
-            "failed to lint protocol buffers in `{}`",
-            PackageStore::PROTO_PATH
-        )),
+        Command::Lint { deny, allow: _ } => {
+            let deny_warnings = matches!(deny, Some(LintSeverity::Warnings));
+
+            command::lint(deny_warnings).await.wrap_err(miette!(
+                "failed to lint protocol buffers in `{}`",
+                PackageStore::PROTO_PATH
+            ))
+        }
         Command::Install {
             preserve_local_mtime,
             offline,
@@ -301,6 +317,12 @@ async fn main() -> miette::Result<()> {
             )),
         },
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
+enum LintSeverity {
+    /// Warning-level rule violations.
+    Warnings,
 }
 
 fn infer_package_type(lib: bool, api: bool) -> Option<PackageType> {

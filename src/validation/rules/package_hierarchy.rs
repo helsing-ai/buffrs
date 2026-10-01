@@ -48,7 +48,7 @@ impl Rule for PackageHierarchy {
                     for (expected, component) in expected_components.iter().zip(components) {
                         if component != *expected {
                             return Some(self.to_violation(violation::Message {
-                                message: format!("expected file {} to live in {}.", path.to_string_lossy(), &expected_path),
+                                message: format!("expected file {} to live in {}.", path.to_string_lossy(), expected_path),
                                 help: "Package names should be mirrored in folder structure, eg mypackage.subpackage should live in proto/subpackage.".into(),
                             }));
                         }

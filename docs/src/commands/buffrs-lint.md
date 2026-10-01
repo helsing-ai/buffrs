@@ -5,7 +5,14 @@ Rules](../reference/protocol-buffer-rules.md))
 
 ### Synopsis
 
-`buffrs lint`
+`buffrs lint [--deny warnings | --allow warnings]`
+
+### Exit status
+
+Every violation is printed. The command exits with a non-zero status when any
+error-level violation is reported. Warning-level violations are printed and do
+not change the exit status unless `--deny warnings` is passed. `--allow
+warnings` selects the default, which reports warnings without failing.
 
 ### Description
 

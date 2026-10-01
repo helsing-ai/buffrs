@@ -397,8 +397,11 @@ pub async fn list() -> miette::Result<()> {
 }
 
 /// Parses current package and validates rules.
+///
+/// Every violation is printed. The command fails when an error-level violation
+/// is present, and also when `deny_warnings` is set and a warning is present.
 #[cfg(feature = "validation")]
-pub async fn lint() -> miette::Result<()> {
+pub async fn lint(deny_warnings: bool) -> miette::Result<()> {
     let manifest_path = PathBuf::from(MANIFEST_FILE);
     let manifest = Manifest::require_package_manifest(&manifest_path).await?;
     let store = PackageStore::current().await?;
@@ -409,11 +412,19 @@ pub async fn lint() -> miette::Result<()> {
 
     store.populate(&pkg).await?;
     let violations = store.validate(&pkg).await?;
+    let fatal = violations
+        .iter()
+        .filter(|violation| violation.level.causes_lint_failure(deny_warnings))
+        .count();
 
     violations
         .into_iter()
         .map(miette::Report::new)
         .for_each(|r| eprintln!("{r:?}"));
+
+    if fatal > 0 {
+        bail!("found {fatal} rule violation(s)");
+    }
 
     Ok(())
 }

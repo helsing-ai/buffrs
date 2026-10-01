@@ -28,6 +28,20 @@ pub enum Level {
     Error,
 }
 
+impl Level {
+    /// Whether `buffrs lint` should exit with a failure for this severity.
+    ///
+    /// Errors always fail the command. Warnings fail only when `deny_warnings`
+    /// is set. Informational violations are reported and never fail the command.
+    pub fn causes_lint_failure(self, deny_warnings: bool) -> bool {
+        match self {
+            Self::Error => true,
+            Self::Warning => deny_warnings,
+            Self::Info => false,
+        }
+    }
+}
+
 /// Location of violation.
 #[derive(Default, PartialEq, Clone, Eq, Debug)]
 pub struct Location {
@@ -73,7 +87,7 @@ impl std::error::Error for Violation {}
 
 impl Display for Violation {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.info)
+        write!(f, "{}", self.info)
     }
 }
 
@@ -132,5 +146,28 @@ impl SourceCode for Location {
             0,
             0,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Level;
+
+    #[test]
+    fn errors_fail_lint_regardless_of_warning_policy() {
+        assert!(Level::Error.causes_lint_failure(false));
+        assert!(Level::Error.causes_lint_failure(true));
+    }
+
+    #[test]
+    fn warnings_fail_lint_only_when_denied() {
+        assert!(!Level::Warning.causes_lint_failure(false));
+        assert!(Level::Warning.causes_lint_failure(true));
+    }
+
+    #[test]
+    fn info_never_fails_lint() {
+        assert!(!Level::Info.causes_lint_failure(false));
+        assert!(!Level::Info.causes_lint_failure(true));
     }
 }
