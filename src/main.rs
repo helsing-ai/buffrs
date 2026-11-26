@@ -128,8 +128,15 @@ enum Command {
         #[clap(long)]
         set_version: Option<Version>,
         /// Indicate whether access time information is preserved when creating a package.
+        ///
+        /// Pass `--preserve-mtime=false` to disable it.
         #[clap(long)]
-        #[arg(default_value_t = true)]
+        #[arg(
+            default_value_t = true,
+            num_args = 0..=1,
+            require_equals = true,
+            default_missing_value = "true"
+        )]
         preserve_mtime: bool,
     },
 
